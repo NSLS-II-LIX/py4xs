@@ -1,0 +1,2 @@
+# example notebooks with data
+recursive-include pyXS/docs *

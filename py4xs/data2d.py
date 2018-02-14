@@ -413,7 +413,7 @@ class Data2d:
     stores the scattering pattern itself, 
     """
 
-    def __init__(self, filename, im=None, flip=0):
+    def __init__(self, filename, im=None, timestamp=None, uid='', exp=None):
         """ read 2D scattering pattern
         will rely on Fabio to recognize the file format 
         """
@@ -424,7 +424,7 @@ class Data2d:
         self.qrqz_data = MatrixWithCoords()
         self.qphi_data = MatrixWithCoords()
         
-        if im==None:
+        if im is None:
             f = fabio.open(filename)
             self.im = f.data
             # get other useful information from the header
@@ -439,11 +439,17 @@ class Data2d:
                         self.uid = ''
         else:
             self.im = im
+            self.timestamp = timestamp
+            self.uid = uid
 
         # self.im always stores the original image
         # self.data store the array data after the flip operation
-        self.flip(flip)
-        self.height, self.width = self.data.d.shape
+        if exp is not None:
+            self.set_exp_para(exp)
+        else:
+            # temporarily set data to img, without a defined exp_para
+            self.flip(0)
+            self.height, self.width = self.data.d.shape
 
     def set_timestamp(self, ts):
         # ts must be a valid datetime structure

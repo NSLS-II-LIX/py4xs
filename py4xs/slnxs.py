@@ -33,10 +33,10 @@ TRANS_FROM_BEAM_CENTER = 1
 TRANS_FROM_WAXS = 2
 
 # trans_mode=TRANS_FROM_BEAM_CENTER
-trans_mode = TRANS_FROM_WAXS
 BEAM_SIZE_hW = 5
 BEAM_SIZE_hH = 4
 
+trans_mode = TRANS_FROM_WAXS
 # this is the minimum intensity to be used for trans calculations
 WAXS_THRESH = 300
 
@@ -50,24 +50,28 @@ class Data1d:
         self.comments = ""
         self.label = "data"
         self.overlaps = []
+        self.raw_data = {}
         self.timestamp = None
         
     def load_from_2D(self, imageFn, exp_para, qgrid, pre_process, mask=None, save_ave=False, debug=False):
         """
-        imageFn: file name for the 2D pattern
+        imageFn: file name for the 2D pattern, or a Data2d instance
         qgrid: for the 1D data
         ep: ExpPara
         """
-        if debug==True:
-            print("loading data from %s ..." % imageFn)
         self.qgrid = qgrid
 
-        d2 = Data2d(imageFn)
-        self.comments += "# loaded from %s\n" % imageFn
-        self.label = imageFn.split("/")[-1]
-        d2.set_exp_para(exp_para)
-        self.timestamp = d2.timestamp
-        
+        if isinstance(imageFn, str):
+            if debug==True:
+                print("loading data from %s ..." % imageFn)
+            d2 = Data2d(imageFn)
+            self.comments += "# loaded from %s\n" % imageFn
+            self.label = imageFn.split("/")[-1]
+            d2.set_exp_para(exp_para)
+            self.timestamp = d2.timestamp
+        elif isinstance(imageFn, Data2d):
+            d2 = imageFn
+            
         # deal with things like dark current, flat field, and dezinger corrections on the 2D data
         pre_process(d2.data)
         
@@ -180,8 +184,7 @@ class Data1d:
             if debug==True:
                 print("%s " % d1.label, end=' ')
             if not (d0.qgrid == d1.qgrid).all():
-                print("\n1D sets cannot be averaged: qgrid mismatch")
-                exit()
+                raise Exception("\n1D sets cannot be averaged: qgrid mismatch")
             d0.trans += d1.trans
             d0.data += d1.data
             d0.err += d1.err
@@ -199,8 +202,6 @@ class Data1d:
                 d0.overlaps[i]['raw_data2'] += d1.overlaps[i]['raw_data2']
             n += 1
             d0.label = common_name(d0.label, d1.label)
-
-        print()
 
         d0.trans /= n
         d0.data /= n
@@ -522,6 +523,10 @@ def calculate(ds0, ds1):
     return diff_coef            
             
 def filter_by_similarity(datasets, similarity_threshold=0.5):
+    
+    if len(datasets)==1:
+        return datasets,None
+    
     number_of_cpus = os.cpu_count()
     number_of_datasets = len(datasets)
     combinations = list(it.combinations(range(number_of_datasets), 2))

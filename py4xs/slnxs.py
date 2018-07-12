@@ -53,24 +53,32 @@ class Data1d:
         self.raw_data = {}
         self.timestamp = None
         
-    def load_from_2D(self, imageFn, exp_para, qgrid, pre_process, mask=None, save_ave=False, debug=False):
+    def load_from_2D(self, image, exp_para, qgrid, pre_process, 
+                     mask=None, save_ave=False, debug=False, label=None):
         """
-        imageFn: file name for the 2D pattern, or a Data2d instance
+        image: a filename, or a Data2d instance, or a numpy array
         qgrid: for the 1D data
         ep: ExpPara
         """
         self.qgrid = qgrid
 
-        if isinstance(imageFn, str):
-            if debug==True:
-                print("loading data from %s ..." % imageFn)
-            d2 = Data2d(imageFn)
-            self.comments += "# loaded from %s\n" % imageFn
-            self.label = imageFn.split("/")[-1]
-            d2.set_exp_para(exp_para)
+        if debug==True:
+            print("loading data from: ", image)
+        if isinstance(image, str):
+            d2 = Data2d(image, exp=exp_para)
+            self.comments += "# loaded from %s\n" % image
+            self.label = image.split("/")[-1]
             self.timestamp = d2.timestamp
-        elif isinstance(imageFn, Data2d):
-            d2 = imageFn
+        elif isinstance(image, np.ndarray):
+            d2 = Data2d(None, im=image, exp=exp_para)
+            if label is not None:
+                self.label = label
+        elif isinstance(image, Data2d):
+            d2 = image
+            if label is not None:
+                self.label = label
+        else:
+            raise Exception("unable to create load data from image:", image)
             
         # deal with things like dark current, flat field, and dezinger corrections on the 2D data
         pre_process(d2.data)
@@ -84,9 +92,12 @@ class Data1d:
 
         self.data,self.err = d2.conv_Iq(qgrid, mask,
                                         cor_factor = exp_para.FPol)  # exp_para.FSA*exp_para.FPol)
-
-        if save_ave:
-            self.save(imageFn + ".ave", debug=debug)
+        if isinstance(image, np.ndarray):
+            del d2      # d2 is only used temporarily
+        
+        if save_ave and isinstance(image, str):
+            self.save(image + ".ave", debug=debug)     
+        
 
     def set_trans(self, trans=-1, ref_trans=-1, debug=False):
         """
@@ -163,6 +174,7 @@ class Data1d:
         """
         if debug!='quiet':
             print("averaging data with %s:" % self.label, end=' ')
+ 
         n = 1
         if plot_data:
             if ax is None:
@@ -180,6 +192,8 @@ class Data1d:
                 ax.plot(ov['q_overlap'], ov['raw_data2'], "^")
         
         d0 = copy.deepcopy(self)
+        if len(dsets)==0:
+            return d0
         for d1 in dsets:
             if debug==True:
                 print("%s " % d1.label, end=' ')
@@ -496,7 +510,7 @@ class Data1d:
         ff.write(self.comments)
         ff.close()
 
-    def plot(self, ax=None):
+    def plot(self, ax=None, scale=1.):
         if ax is None:
             plt.figure()
             plt.subplots_adjust(bottom=0.15)
@@ -505,10 +519,10 @@ class Data1d:
         ax.set_ylabel("$I$", fontsize='x-large')
         ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.errorbar(self.qgrid, self.data, self.err, label=self.label)
+        ax.errorbar(self.qgrid, self.data*scale, self.err*scale, label=self.label)
         for ov in self.overlaps:
-            ax.plot(ov['q_overlap'], ov['raw_data1'], "v")
-            ax.plot(ov['q_overlap'], ov['raw_data2'], "^")
+            ax.plot(ov['q_overlap'], ov['raw_data1']*scale, "v")
+            ax.plot(ov['q_overlap'], ov['raw_data2']*scale, "^")
         leg = ax.legend(loc='upper right', frameon=False)
 
         for t in leg.get_texts():

@@ -28,3 +28,12 @@ include geometric corrections in solution scattering
 2017:
 bug fixes related to corrections applied to solution scattering data
 
+2018-01: 
+minor changes in Data2d.conv_Iqphi()
+
+2018-02:
+changes in Data2d and Data1d to prepare for hdf5 support
+
+2018-07:
+fixed a bug that caused uneven bins in Data2d.conv_Iq()
+

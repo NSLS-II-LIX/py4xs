@@ -512,11 +512,10 @@ class Data2d:
         dd = np.asarray(dd[idx].flatten(), dtype=np.float)  # other wise dd*dd might become negative
 
         # generate bins from qgrid, 
-        bins = np.ones(len(qgrid)+1)
-        bins[0] = qgrid[0]-0.5*(qgrid[1]-qgrid[0])
-        for i in range(len(qgrid)):
-            bins[i+1] = 2*qgrid[i]-bins[i]
-        
+        bins = np.append([2*qgrid[0]-qgrid[1]], qgrid) 
+        bins += np.append(qgrid , [2*qgrid[-1]-qgrid[-2]])
+        bins *= 0.5
+
         norm,edges = np.histogram(qd, bins=bins, weights=np.ones(len(qd))) 
         Iq,edges = np.histogram(qd, bins=bins, weights=dd)
         Iq2,edges = np.histogram(qd, bins=bins, weights=dd*dd)

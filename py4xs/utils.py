@@ -27,7 +27,6 @@ def common_name(s1, s2):
         s = s1.copy()
     return s.rstrip("-_ ")
 
-
 def reduced_cmap(cmap, step):
     return np.array(cmap(step)[0:3])
 

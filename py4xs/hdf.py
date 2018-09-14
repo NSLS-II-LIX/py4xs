@@ -226,10 +226,12 @@ class h5sol():
         else:
             grp = fh5[sn+'/processed']
         
-        for k in list(self.attrs[sn].keys()):
-            grp.attrs[k] = self.attrs[sn][k]
-            if debug:
-                print("writting attribute to %s: %s" % (sn, k))
+        # these attributes are not necessarily available when save_d1s() is called
+        if sn in list(self.attrs.keys()):
+            for k in list(self.attrs[sn].keys()):
+                grp.attrs[k] = self.attrs[sn][k]
+                if debug:
+                    print("writting attribute to %s: %s" % (sn, k))
 
         ds_names = lsh5(grp, top_only=True, silent=True)
         #if 'qgrid' not in ds_names:
@@ -355,7 +357,7 @@ class h5sol_HPLC(h5sol):
             queue_list.append(que)
             th = mp.Process(target=proc_sample, 
                             args=(que, images, sn, nframes,
-                                  self.detectors, reft, save_1d, save_merged, debug, i*c_size) )
+                                  self.detectors, self.qgrid, reft, save_1d, save_merged, debug, i*c_size) )
             th.start()
             processes.append(th)
                 
@@ -611,8 +613,15 @@ class h5sol_HT(h5sol):
         """
         header = db[uid]
         
-    def load_d1s(self):
-        for sn in self.samples:
+    def load_d1s(self, sn=None):
+        if sn==None:
+            samples = self.samples
+        elif isinstance(sn, str):
+            samples = [sn]
+        else:
+            samples = sn
+        
+        for sn in samples:
             super().load_d1s(sn)
             if 'buffer' in list(self.fh5[sn].attrs.keys()):
                 self.buffer_list[sn] = self.fh5[sn].attrs['buffer'].split()
@@ -630,6 +639,7 @@ class h5sol_HT(h5sol):
                 self.buffer_list[sn] = [buf_list[sn]]
             else:
                 self.buffer_list[sn] = buf_list[sn]
+            #self.attrs[sn]['buffer'] = self.buffer_list[sn] 
         
         if debug:
             print('updating buffer assignments')
@@ -681,10 +691,12 @@ class h5sol_HT(h5sol):
         processes = []
         queue_list = []
         for sn in self.samples:
+            if sn not in list(self.attrs.keys()):
+                self.attrs[sn] = {}
             if 'buffer' in list(fh5[sn].attrs):
                 self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
-            self.load_d1s(sn)   # load processed data saved in the file
             if update_only and sn in list(self.d1s.keys()):
+                self.load_d1s(sn)   # load processed data saved in the file
                 continue
                 
             images = {}
@@ -738,6 +750,7 @@ class h5sol_HT(h5sol):
                     self.attrs[sn]['selected'].append(d1 in d1keep)
             else:
                 if  selection==None:
+                    # if there is an error, run with filter_data=True
                     selection = self.attrs[sn]['selected']
                 else:
                     self.attrs[sn]['selected'] = selection

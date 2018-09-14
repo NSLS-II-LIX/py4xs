@@ -58,9 +58,11 @@ class Data1d:
         """
         image: a filename, or a Data2d instance, or a numpy array
         qgrid: for the 1D data
-        ep: ExpPara
+        exp_para: ExpPara
+        mask: no longer used, extract from exp_para
         """
         self.qgrid = qgrid
+        mask = exp_para.mask
 
         if debug==True:
             print("loading data from: ", image)
@@ -178,7 +180,7 @@ class Data1d:
         to evaluate the consistency between them
         """
         if debug!='quiet':
-            print("averaging data with %s:" % self.label, end=' ')
+            print("averaging data with %s: \n" % self.label, end=' ')
  
         n = 1
         if plot_data:
@@ -584,7 +586,7 @@ def filter_by_similarity(datasets, similarity_threshold=0.5):
     return valid_entries, invalid_entries
 
 
-def merge_detectors(fns, detectors, reft=-1, plot_data=False, save_ave=False, save_merged=False, ax=None, qmax=-1, qmin=-1, fix_scale=1, debug=False):
+def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=False, save_merged=False, ax=None, qmax=-1, qmin=-1, fix_scale=1, debug=False):
     """
     fns: filename, without the _SAXS/_WAXS suffix
     fix_scale is now default to 1
@@ -616,7 +618,7 @@ def merge_detectors(fns, detectors, reft=-1, plot_data=False, save_ave=False, sa
             if debug==True:
                 print(fn, det.extension, fn1) 
 
-            s0.load_from_2D(fn1, det.exp_para, det.qgrid, det.pre_process, det.mask,
+            s0.load_from_2D(fn1, det.exp_para, qgrid, det.pre_process,
                             save_ave=save_ave, debug=debug)
 
             if save_ave:
@@ -662,7 +664,7 @@ def merge_detectors(fns, detectors, reft=-1, plot_data=False, save_ave=False, sa
     return ss
 
 
-def average(fns, detectors, reft=-1, plot_data=False, save1d=0, ax=None, qmax=-1, qmin=-1, fix_scale=-1,
+def average(fns, detectors, qgrid, reft=-1, plot_data=False, save1d=0, ax=None, qmax=-1, qmin=-1, fix_scale=-1,
             filter_datasets=True, similarity_threshold=0.5, debug=False):
     """
     fns: filename, without the _SAXS/_WAXS suffix
@@ -681,7 +683,8 @@ def average(fns, detectors, reft=-1, plot_data=False, save1d=0, ax=None, qmax=-1
         save_ave = True
 
     t0 = time.time()
-    ss = merge_detectors(fns, detectors, reft, plot_data, save_ave, save_dd, ax, qmax, qmin, fix_scale, debug=debug)
+    ss = merge_detectors(fns, detectors, qgrid, reft, plot_data, save_ave, save_dd, 
+                         ax, qmax, qmin, fix_scale, debug=debug)
     t1 = time.time()
     if filter_datasets:
         ss, invalids = filter_by_similarity(ss, similarity_threshold=similarity_threshold)
@@ -712,7 +715,8 @@ def average(fns, detectors, reft=-1, plot_data=False, save1d=0, ax=None, qmax=-1
     return ss[0]
 
 
-def process(sfns, bfns, detectors, qmax=-1, qmin=-1, reft=-1, save1d=False, conc=0., plot_data=True, fix_scale=-1,
+def process(sfns, bfns, detectors, qgrid, qmax=-1, qmin=-1, 
+            reft=-1, save1d=False, conc=0., plot_data=True, fix_scale=-1,
             filter_datasets=True, similarity_threshold=0.5, debug=False):
     vfrac = 0.001 * conc / PROTEIN_WATER_DENSITY_RATIO
 
@@ -727,9 +731,9 @@ def process(sfns, bfns, detectors, qmax=-1, qmin=-1, reft=-1, save1d=False, conc
         bkg_cor_axis = plt.subplot2grid((2, 2), (1, 0), colspan=2, title="Background Correction")
 
     # TODO: Run the next two lines in parallel
-    args_sample = (sfns, detectors, reft, plot_data, save1d, sample_axis, qmax,
+    args_sample = (sfns, detectors, qgrid, reft, plot_data, save1d, sample_axis, qmax,
                    qmin, fix_scale, filter_datasets, similarity_threshold)
-    args_buffer = (bfns, detectors, reft, plot_data, save1d, buffer_axis, qmax,
+    args_buffer = (bfns, detectors, qgrid, reft, plot_data, save1d, buffer_axis, qmax,
                    qmin, fix_scale, filter_datasets, similarity_threshold)
 
     # In order for the Pool to work we need to make the ExpPara something other than a SwigObject.

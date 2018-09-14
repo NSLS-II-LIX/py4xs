@@ -3,18 +3,13 @@ import h5py
 import numpy as np
 import time, datetime
 import copy
-
+import json
 import multiprocessing as mp
 
-from py4xs.slnxs import Data1d, average
+from py4xs.slnxs import Data1d, average, filter_by_similarity
 from py4xs.utils import common_name
-from py4xs.slnxs import filter_by_similarity
-
-# these are the entries in the NSLS-II data broker for the detector images
-det_name = {"_SAXS": "pil1M_image",
-            "_WAXS1": "pilW1_image",
-            "_WAXS2": "pilW2_image",
-           }
+from py4xs.detector_config import create_det_from_attrs
+from py4xs.local import det_name    # e.g. "_SAXS": "pil1M_image"
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
     """ list the content of a HDF5 file
@@ -65,11 +60,11 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
     """
     s0 = Data1d()
     s0.qgrid = d1s[0].qgrid
-    d_tot = np.zeros(detectors[0].qgrid.shape)
-    d_max = np.zeros(detectors[0].qgrid.shape)
-    d_min = np.zeros(detectors[0].qgrid.shape)+1.e32
-    e_tot = np.zeros(detectors[0].qgrid.shape)
-    c_tot = np.zeros(detectors[0].qgrid.shape)
+    d_tot = np.zeros(s0.qgrid.shape)
+    d_max = np.zeros(s0.qgrid.shape)
+    d_min = np.zeros(s0.qgrid.shape)+1.e32
+    e_tot = np.zeros(s0.qgrid.shape)
+    c_tot = np.zeros(s0.qgrid.shape)
     label = None
     comments = ""
                 
@@ -94,7 +89,7 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
     s0.data = d_tot
     s0.err = e_tot
     idx = (c_tot>1)
-    s0.overlaps.append({'q_overlap': detectors[0].qgrid[idx],
+    s0.overlaps.append({'q_overlap': s0.qgrid[idx],
                         'raw_data1': d_max[idx],
                         'raw_data2': d_min[idx]})
     s0.data[idx] /= c_tot[idx]
@@ -107,7 +102,7 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
         
     return s0
 
-def proc_sample(queue, images, sn, nframes, detectors, reft, save_1d, save_merged, debug,
+def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, save_merged, debug,
                starting_frame_no=0):
     """ utility function to process solution scattering data using functions defined in slnxs
     """
@@ -126,7 +121,7 @@ def proc_sample(queue, images, sn, nframes, detectors, reft, save_1d, save_merge
             dt = Data1d()
             label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
             dt.load_from_2D(images[det.extension][i+starting_frame_no], 
-                            det.exp_para, det.qgrid, det.pre_process, det.mask,
+                            det.exp_para, qgrid, det.pre_process, det.exp_para.mask,
                             save_ave=False, debug=debug, label=label)
             dt.scale(sc[det.extension])
             ret[det.extension].append(dt)
@@ -145,10 +140,27 @@ class h5sol():
     samples = []
     attrs = {}
     
-    def __init__(self, fn, detectors):
-        self.detectors = detectors
+    def __init__(self, fn, exp_setup=None):
         self.fn = fn
         self.fh5 = h5py.File(self.fn, "a")
+        if exp_setup==None:     # assume the h5 file will provide the detector config
+            self.qgrid = self.read_detectors()
+        else:
+            self.detectors, self.qgrid = exp_setup
+            self.save_detectors()
+        self.list_samples(quiet=True)
+        
+    def save_detectors(self):
+        dets_attr = [det.pack_dict() for det in self.detectors]
+        self.fh5.attrs['detectors'] = json.dumps(dets_attr)
+        self.fh5.attrs['qgrid'] = list(self.qgrid)
+        self.fh5.flush()
+    
+    def read_detectors(self):
+        dets_attr = self.fh5.attrs['detectors']
+        qgrid = self.fh5.attrs['qgrid']
+        self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+        return np.asarray(qgrid)
         
     def list_samples(self, quiet=False):
         self.samples = lsh5(self.fh5, top_only=True, silent=True)
@@ -183,23 +195,22 @@ class h5sol():
         grp = fh5[sn+'/processed']
         for k in list(grp.attrs.keys()):
             self.attrs[sn][k] = grp.attrs[k]   
-        qgrid = grp['qgrid'].value
+        #qgrid = grp['qgrid'].value
         #self.d1s[sn]['buf average'] = grp['buf average'].value
         for k in lsh5(grp, top_only=True, silent=True):
-            if k=='qgrid':
-                continue
-            elif k=='buf average':
+            #if k=='qgrid':
+            #    continue
+            if k=='buf average':
                 self.d1s[sn][k] = grp[k].value
             else:
-                self.d1s[sn][k] = unpack_d1(grp[k], qgrid, sn+k)      
+                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k)      
         #fh5.close()
         
     def save_d1s(self, sn=None, debug=False):
         """
         save the 1d data in memory to the hdf5 file 
-        save the qgrid just once, since all data1d share the same qgrid
         processed data go under the group sample_name/processed
-        assume that the shape of the data/qgrid is unchanged
+        assume that the shape of the data is unchanged
         """
         #self.fh5.close()
         #fh5 = h5py.File(self.fn, "a")
@@ -221,10 +232,10 @@ class h5sol():
                 print("writting attribute to %s: %s" % (sn, k))
 
         ds_names = lsh5(grp, top_only=True, silent=True)
-        if 'qgrid' not in ds_names:
-            grp.create_dataset('qgrid', data=self.d1s[sn]['merged'][0].qgrid)
-        else:
-            grp['qgrid'][...] = self.d1s[sn]['merged'][0].qgrid
+        #if 'qgrid' not in ds_names:
+        #    grp.create_dataset('qgrid', data=self.d1s[sn]['merged'][0].qgrid)
+        #else:
+        #    grp['qgrid'][...] = self.d1s[sn]['merged'][0].qgrid
         for k in list(self.d1s[sn].keys()):
             data = pack_d1(self.d1s[sn][k])
             if k not in ds_names:
@@ -266,7 +277,8 @@ class h5sol():
                     dt = Data1d()
                     label = "%s_f%05d_%s" % (sn, i, det.extension)
                     dt.load_from_2D(images[det.extension][i], det.exp_para, 
-                                    det.qgrid, det.pre_process, det.mask,
+                                    #det.qgrid, det.pre_process, det.mask,
+                                    self.qgrid, det.pre_process, det.mask,
                                     save_ave=False, debug=debug, label=label)
                     ret[det.extension] = dt
                 dt = Data1d()
@@ -452,9 +464,10 @@ class h5sol_HPLC(h5sol):
             raise Exception("processed data not present.")
             
         data = self.d1s[sn][dkey]
-        qgrid = data[0].qgrid
+        #qgrid = data[0].qgrid
         ts = fh5[sn+'/primary/time'].value
-        idx = (qgrid>i_minq) & (qgrid<i_maxq) 
+        #idx = (qgrid>i_minq) & (qgrid<i_maxq) 
+        idx = (self.qgrid>i_minq) & (self.qgrid<i_maxq) 
         data_t = []
         data_i = []
         data_rg = []
@@ -542,8 +555,10 @@ class h5sol_HPLC(h5sol):
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             #ax3 = ax1.twinx()
             d2 = np.vstack(ds).T + clim[0]/2
-            ext = [0, len(data), qgrid[-1], qgrid[0]]
-            asp = len(data)/qgrid[-1]/2
+            #ext = [0, len(data), qgrid[-1], qgrid[0]]
+            #asp = len(data)/qgrid[-1]/2
+            ext = [0, len(data), self.qgrid[-1], self.qgrid[0]]
+            asp = len(data)/self.qgrid[-1]/2
             if logScale:
                 plt.imshow(np.log(d2), extent=ext, aspect=asp) 
                 plt.clim(np.log(clim))
@@ -596,7 +611,13 @@ class h5sol_HT(h5sol):
         """
         header = db[uid]
         
-    def assign_buffer(self, buf_list):
+    def load_d1s(self):
+        for sn in self.samples:
+            super().load_d1s(sn)
+            if 'buffer' in list(self.fh5[sn].attrs.keys()):
+                self.buffer_list[sn] = self.fh5[sn].attrs['buffer'].split()
+        
+    def assign_buffer(self, buf_list, debug=False):
         """ buf_list should be a dict:
             {"sample_name": "buffer_name",
              "sample_name": ["buffer1_name", "buffer2_name"],
@@ -609,13 +630,22 @@ class h5sol_HT(h5sol):
                 self.buffer_list[sn] = [buf_list[sn]]
             else:
                 self.buffer_list[sn] = buf_list[sn]
-    
+        
+        if debug:
+            print('updating buffer assignments')
+        for sn in self.samples:
+            if sn in list(self.buffer_list.keys()):
+                self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
+        self.fh5.flush()               
+                
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
             save sample-buffer assignment
             save processed data
         """
         #fh5 = h5py.File(self.fn, "r+")
+        if debug:
+            print("updating 1d data and buffer info") 
         fh5 = self.fh5
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
@@ -669,7 +699,7 @@ class h5sol_HT(h5sol):
             queue_list.append(que)
             th = mp.Process(target=proc_sample,
                             args=(que, images, sn, nframes, 
-                                  self.detectors, reft, save_1d, save_merged, debug) )
+                                  self.detectors, self.qgrid, reft, save_1d, save_merged, debug) )
             th.start()
             processes.append(th)
 
@@ -680,7 +710,7 @@ class h5sol_HT(h5sol):
             print("data received: ", sn)
             self.d1s[sn] = data
             self.save_d1s(sn, debug=debug)
-            
+        
         #fh5.close()        
         if debug:
             t2 = time.time()
@@ -688,6 +718,7 @@ class h5sol_HT(h5sol):
             
     def average_samples(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data
+            selection: if None, retrieve from dataset attribute
         """
         if debug:
             print("start processing: average_samples()")
@@ -700,13 +731,16 @@ class h5sol_HT(h5sol):
         for sn in samples:
             if update_only and 'merged' in list(self.d1s[sn].keys()): continue
                 
-            if filter_data or selection==None:
+            if filter_data:
                 d1keep,d1disc = filter_by_similarity(self.d1s[sn]['merged'])
                 self.attrs[sn]['selected'] = []
                 for d1 in self.d1s[sn]['merged']:
                     self.attrs[sn]['selected'].append(d1 in d1keep)
             else:
-                self.attrs[sn]['selected'] = selection
+                if  selection==None:
+                    selection = self.attrs[sn]['selected']
+                else:
+                    self.attrs[sn]['selected'] = selection
                 d1keep = [self.d1s[sn]['merged'][i] for i in range(len(selection)) if selection[i]]
             
             if len(d1keep)>1:
@@ -720,6 +754,7 @@ class h5sol_HT(h5sol):
             
     def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., debug=False):
         """ if update_only is true: only work on samples that do not have "subtracted' data
+            sc_factor: if <0, read from the dataset attribute
         """
         if samples is None:
             samples = list(self.buffer_list.keys())
@@ -739,9 +774,12 @@ class h5sol_HT(h5sol):
             else:
                 self.d1b[sn] = self.d1s[bns[0]]['averaged'].avg([self.d1s[bn]['averaged'] for bn in bns[1:]], 
                                                                 debug=debug)
+            if sc_factor<0:
+                sc_factor = self.attrs[sn]['sc_factor']
+            else:
+                self.attrs[sn]['sc_factor'] = sc_factor
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
                                                                           sc_factor =sc_factor, debug=debug)
-            self.attrs[sn]['sc_factor'] = sc_factor
 
         self.fh5.flush()
         if debug:

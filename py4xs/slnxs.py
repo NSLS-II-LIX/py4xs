@@ -127,11 +127,16 @@ class Data1d:
                     print "no suitable WAXS data found to calculate trans. q(WAXS>THRESH)=%f" % self.qgrid[idx][-1]
                     exit()
                 """
-                idx = (self.data > 0)
-                if (self.data[-12:-2] < WAXS_THRESH).any() and debug!='quiet':
-                    print("the data points for trans calculation are below WAXS_THRESH")
-                self.trans = np.sum(self.data[idx][-12:-2])
-                qavg = np.average(self.qgrid[idx][-12:-2])
+                #idx = (self.data > 0)
+                #if (self.data[-12:-2] < WAXS_THRESH).any() and debug!='quiet':
+                #    print("the data points for trans calculation are below WAXS_THRESH")
+                #self.trans = np.sum(self.data[idx][-12:-2])
+                #qavg = np.average(self.qgrid[idx][-12:-2])
+                idx1 = idx & (self.data > 0.95*np.max(self.data[idx]))
+                if (self.data[idx1] < WAXS_THRESH).any() and debug!='quiet':
+                    print("the data points for trans calculation are below WAXS_THRESH")                
+                self.trans = np.sum(self.data[idx1])
+                qavg = np.average(self.qgrid[idx1])
                 if debug==True:
                     print("using data near the high q end (q~%f)" % qavg, end=' ')
             else:
@@ -495,7 +500,7 @@ class Data1d:
         ax.set_ylabel("$P(r)$", fontsize='x-large')
         # plt.subplots_adjust(bottom=0.15)
 
-    def save(self, fn, nz=True, debug=False):
+    def save(self, fn, nz=True, save_comments=False, debug=False):
         """
         should save all the relevant information, such as scaling, merging, averaging
         save data points with non-zero intensity only if nz==1
@@ -506,9 +511,10 @@ class Data1d:
         if debug==True:
             print("saving file: %s, nz=%d" % (fn, nz))
         np.savetxt(fn, qidi.T, "%12.5f")
-        ff = open(fn, "a")
-        ff.write(self.comments)
-        ff.close()
+        if save_comments:
+            ff = open(fn, "a")
+            ff.write(self.comments)
+            ff.close()
 
     def plot(self, ax=None, scale=1.):
         if ax is None:

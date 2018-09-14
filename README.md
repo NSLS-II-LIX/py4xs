@@ -36,7 +36,11 @@ changes in Data2d and Data1d to prepare for hdf5 support
 
 2018-07:
 fixed a bug that caused uneven bins in Data2d.conv_Iq()
-first versio of hdf5 support
+first version of hdf5 support
+
+2018-09:
+improved functionality and bug fixes for hdf support
+bug fix for slnXS
 
  
 

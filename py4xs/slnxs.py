@@ -295,7 +295,7 @@ class Data1d:
 
         dset.comments += "# background subtraction using the following set, scaled by %f (trans):\n" % sc
         if not sc_factor == 1.:
-            dset.comments += "# with addtional scaling factor of %f\n:" % sc_factor
+            dset.comments += "# with addtional scaling factor of: %f\n" % sc_factor
         dset.comments += dbak.comments.replace("# ", "## ")
 
         return dset

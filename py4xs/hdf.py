@@ -98,7 +98,7 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
     s0.label = label
     s0.comments = comments # .replace("# ", "## ")
     if save_merged:
-        s0.save(dt.label+".dd", debug=debug)
+        s0.save(s0.label+".dd", debug=debug)
         
     return s0
 
@@ -792,7 +792,7 @@ class h5sol_HT(h5sol):
             else:
                 self.attrs[sn]['sc_factor'] = sc_factor
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
-                                                                          sc_factor =sc_factor, debug=debug)
+                                                                          sc_factor=sc_factor, debug=debug)
 
         self.fh5.flush()
         if debug:

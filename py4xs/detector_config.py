@@ -13,7 +13,7 @@ def create_det_from_attrs(attrs): #, qgrid):
 class DetectorConfig():
     """ tis deals with things that are specific to 
     """
-    def __init__(self, extension = "", exp_para = None, #qgrid = None, 
+    def __init__(self, extension = "", exp_para = None, qgrid = None, 
                  dark = None, flat = None, dezinger = False, 
                  fix_scale = None, bad_pixels = [[], []]):
         self.extension = extension
@@ -22,6 +22,8 @@ class DetectorConfig():
             self.ImageWidth = exp_para.ImageWidth
             self.ImageHeight = exp_para.ImageHeight
         #self.qgrid = qgrid
+        if qgrid!=None:
+            print("Warning: qgrid under DectprConfig is no longer in use.")
         self.fix_scale = fix_scale
         
         self.dark = dark

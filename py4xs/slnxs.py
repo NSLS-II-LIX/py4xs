@@ -65,7 +65,7 @@ class Data1d:
         mask = exp_para.mask
 
         if debug==True:
-            print("loading data from: ", image)
+            print("loading data from 2D image: ", label)
         if isinstance(image, str):
             d2 = Data2d(image, exp=exp_para)
             self.comments += "# loaded from %s\n" % image
@@ -116,36 +116,17 @@ class Data1d:
         elif trans_mode == TRANS_FROM_WAXS:
             # get trans for the near the maximum in the WAXS data
             # for solution scattering, hopefully this reflect the intensity of water scattering
-            idx = (self.qgrid > 1.45) & (self.qgrid < 3.45)  # & (self.data>0.5*np.max(self.data))
+            idx = (self.qgrid > 1.85) & (self.qgrid < 2.15)  # & (self.data>0.5*np.max(self.data))
             if len(self.qgrid[idx]) < 5:
-                # not enough data points at the water peak
-                # use the last 10 data points instead
-                """ these lines usually cause trouble when WAXS_THRESH is set low
-                idx = self.data>WAXS_THRESH
-                if len(self.data[idx])<1:
-                    print "no suitable WAXS data found to calculate trans. max(WAXS)=%f" % np.max(self.data)
-                    exit()
-                elif (self.qgrid<1.0).all():
-                    print "no suitable WAXS data found to calculate trans. q(WAXS>THRESH)=%f" % self.qgrid[idx][-1]
-                    exit()
-                """
-                #idx = (self.data > 0)
-                #if (self.data[-12:-2] < WAXS_THRESH).any() and debug!='quiet':
-                #    print("the data points for trans calculation are below WAXS_THRESH")
-                #self.trans = np.sum(self.data[idx][-12:-2])
-                #qavg = np.average(self.qgrid[idx][-12:-2])
-                idx1 = idx & (self.data > 0.95*np.max(self.data[idx]))
-                if (self.data[idx1] < WAXS_THRESH).any() and debug!='quiet':
-                    print("the data points for trans calculation are below WAXS_THRESH")                
-                self.trans = np.sum(self.data[idx1])
-                qavg = np.average(self.qgrid[idx1])
-                if debug==True:
-                    print("using data near the high q end (q~%f)" % qavg, end=' ')
-            else:
-                self.trans = np.sum(self.data[idx])
-                qavg = np.average(self.qgrid[idx])
-                if debug==True:
-                    print("using data near water peak (q~%f)" % qavg, end=' ')
+                print("not enough data points under the water peak, consider using a different trans_mode.")
+                raise Exception()
+            idx1 = idx & (self.data > 0.95*np.max(self.data[idx]))
+            if (self.data[idx1] < WAXS_THRESH).any() and debug!='quiet':
+                print("the data points for trans calculation are below WAXS_THRESH")                
+            self.trans = np.sum(self.data[idx1])
+            qavg = np.average(self.qgrid[idx1])
+            if debug==True:
+                print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg
         elif trans_mode == TRANS_EXTERNAL:
             if trans <= 0:

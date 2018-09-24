@@ -38,7 +38,7 @@ BEAM_SIZE_hH = 4
 
 trans_mode = TRANS_FROM_WAXS
 # this is the minimum intensity to be used for trans calculations
-WAXS_THRESH = 300
+WAXS_THRESH = 100
 
 # this is the scaling factor for indivudual curves that belong to the same sample
 # they are offset for clarity in the plots
@@ -119,10 +119,11 @@ class Data1d:
             idx = (self.qgrid > 1.85) & (self.qgrid < 2.15)  # & (self.data>0.5*np.max(self.data))
             if len(self.qgrid[idx]) < 5:
                 print("not enough data points under the water peak, consider using a different trans_mode.")
-                raise Exception()
+                #raise Exception()
             idx1 = idx & (self.data > 0.95*np.max(self.data[idx]))
-            if (self.data[idx1] < WAXS_THRESH).any() and debug!='quiet':
-                print("the data points for trans calculation are below WAXS_THRESH")                
+            if (self.data[idx1]<WAXS_THRESH).all() and debug!='quiet':
+                print("the data points for trans calculation are below WAXS_THRESH: ", 
+                      np.max(self.data[idx1]), WAXS_THRESH)                
             self.trans = np.sum(self.data[idx1])
             qavg = np.average(self.qgrid[idx1])
             if debug==True:

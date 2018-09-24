@@ -22,8 +22,8 @@ class DetectorConfig():
             self.ImageWidth = exp_para.ImageWidth
             self.ImageHeight = exp_para.ImageHeight
         #self.qgrid = qgrid
-        if qgrid!=None:
-            print("Warning: qgrid under DectprConfig is no longer in use.")
+        if qgrid is not None:
+            print("Warning: qgrid under DectorConfig is no longer in use.")
         self.fix_scale = fix_scale
         
         self.dark = dark

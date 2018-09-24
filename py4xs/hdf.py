@@ -1,3 +1,5 @@
+# need to have a more uniform method to exchange (pack/unpack) 1D and 2D PROCESSED data with hdf5
+# type of data: Data1d, MatrixWithCoordinates (not just simple numpy arrays)
 import pylab as plt
 import h5py
 import numpy as np
@@ -10,6 +12,7 @@ from py4xs.slnxs import Data1d, average, filter_by_similarity
 from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_name    # e.g. "_SAXS": "pil1M_image"
+from itertools import combinations
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
     """ list the content of a HDF5 file
@@ -39,19 +42,20 @@ def pack_d1(data):
     elif isinstance(data, list):
         return np.asarray([pack_d1(d) for d in data])
     
-def unpack_d1(data, qgrid, label):
+def unpack_d1(data, qgrid, label, set_trans=False):
     """ utility function to creat a Data1d object from sepatately given data[intensity and error], qgrid, and label 
         works for a list as well, in which case data should be a list of 
     """
     if len(data.shape)>2:
-        return [unpack_d1(d, qgrid, label+("f%05d" % i)) for i,d in enumerate(data)]
+        return [unpack_d1(d, qgrid, label+("f%05d" % i), set_trans=set_trans) for i,d in enumerate(data)]
     else:
         ret = Data1d()
         ret.qgrid = qgrid
         ret.data = data[0]
         ret.err = data[1]
         ret.label = label
-        ret.set_trans()   
+        if set_trans:
+            ret.set_trans()    # this won't work before SAXS/WAXS merge
         return ret
 
 def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
@@ -161,7 +165,7 @@ class h5sol():
         qgrid = self.fh5.attrs['qgrid']
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
-        
+
     def list_samples(self, quiet=False):
         self.samples = lsh5(self.fh5, top_only=True, silent=True)
         if not quiet:
@@ -198,12 +202,11 @@ class h5sol():
         #qgrid = grp['qgrid'].value
         #self.d1s[sn]['buf average'] = grp['buf average'].value
         for k in lsh5(grp, top_only=True, silent=True):
-            #if k=='qgrid':
-            #    continue
             if k=='buf average':
-                self.d1s[sn][k] = grp[k].value
-            else:
-                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k)      
+                self.d1s[sn][k] = grp[k].value   # just a 2d array
+            else: # usually a collection of 2d arrays    
+                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, 
+                                            set_trans=(k in ['merged', 'averaged']))      
         #fh5.close()
         
     def save_d1s(self, sn=None, debug=False):
@@ -240,12 +243,12 @@ class h5sol():
         #    grp['qgrid'][...] = self.d1s[sn]['merged'][0].qgrid
         for k in list(self.d1s[sn].keys()):
             data = pack_d1(self.d1s[sn][k])
+            if debug:
+                print("writting attribute to %s: %s" % (sn, k))
             if k not in ds_names:
                 grp.create_dataset(k, data=data)
             else:
                 grp[k][...] = data   
-            if debug:
-                print("writting attribute to %s: %s" % (sn, k))
                 
         fh5.flush()
         #fh5.close()
@@ -787,20 +790,26 @@ class h5sol_HT(h5sol):
             else:
                 self.d1b[sn] = self.d1s[bns[0]]['averaged'].avg([self.d1s[bn]['averaged'] for bn in bns[1:]], 
                                                                 debug=debug)
-            if sc_factor<0:
-                sc_factor = self.attrs[sn]['sc_factor']
-            else:
+            if sc_factor>0:
                 self.attrs[sn]['sc_factor'] = sc_factor
+            sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
-                                                                          sc_factor=sc_factor, debug=debug)
+                                                                          sc_factor=sf, debug=debug)
 
         self.fh5.flush()
         if debug:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
                 
-    def plot_sample(self, sn, ax=None, offset=1.5, show_subtracted=False):
-        """ if background-subtracted, show both sample and buffer 
+    def plot_sample(self, sn, ax=None, offset=1.5, 
+                    show_overlap=False, show_subtracted=False, show_subtraction=True):
+        """ show_subtracted:
+                work only if sample is background-subtracted, show the subtracted result
+            show_subtraction: 
+                if True, show sample and boffer when show_subtracted
+            show_overlap: 
+                also show data in the overlapping range from individual detectors
+                only allow if show_subtracted is False
         """
 
         if ax is None:
@@ -808,10 +817,11 @@ class h5sol_HT(h5sol):
             ax = plt.gca()
         if show_subtracted:
             if 'subtracted' not in list(self.d1s[sn].keys()):
-                raise Exception("sample not found/bkg-subtracted: ", sn)
+                raise Exception("bkg-subtracted data not found: ", sn)
             self.d1s[sn]['subtracted'].plot(ax=ax)
-            self.d1s[sn]['averaged'].plot(ax=ax)
-            self.d1b[sn].plot(ax=ax)
+            if show_subtraction:
+                self.d1s[sn]['averaged'].plot(ax=ax)
+                self.d1b[sn].plot(ax=ax)
         else:
             sc = 1
             for i,d1 in enumerate(self.d1s[sn]['merged']):
@@ -820,6 +830,14 @@ class h5sol_HT(h5sol):
                     plt.plot(self.d1s[sn]['averaged'].qgrid, 
                              self.d1s[sn]['averaged'].data*sc, 
                              color="gray", lw=2, ls="--")
+                    if show_overlap:
+                        for det1,det2 in combinations(list(det_name.keys()), 2):
+                            idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
+                            if len(idx_ov)>0:
+                                plt.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
+                                         self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
+                                plt.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
+                                         self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
                 else:
                     plt.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
                              color="gray", lw=2, ls=":")

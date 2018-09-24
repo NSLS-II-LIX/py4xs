@@ -35,7 +35,7 @@ minor changes in Data2d.conv_Iqphi()
 changes in Data2d and Data1d to prepare for hdf5 support
 
 2018-07:
-fix0ed a bug that caused uneven bins in Data2d.conv_Iq(); 
+fixed a bug that caused uneven bins in Data2d.conv_Iq(); 
 first version of hdf5 support
 
 2018-09:
@@ -43,5 +43,4 @@ improved functionality and bug fixes for hdf support;
 bug fix for slnXS; 
 fix azimuthal angular range to avoid large gap between values near Pi/-Pi;  
 attach exp_para to hdf; 
-removing qgrid from DetectorConfig (this affects the syntax of process/average/merge in slnxs)
-
+removing qgrid from DetectorConfig (this affects the syntax of process/average/merge in slnxs); 

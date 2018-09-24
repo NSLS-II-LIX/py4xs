@@ -33,7 +33,10 @@ class MatrixWithCoords:
         return ret
     
     def conv(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det):
-        """ Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
+        """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
+            returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
+            Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
+            datatype is used to describe the type of the 2D data (detector image, qr-qz map, q-phi map)
         """
         ret = MatrixWithCoords()
         ret.datatype = datatype
@@ -65,6 +68,8 @@ class MatrixWithCoords:
         return ret
 
     def roi(self, x1, x2, y1, y2, mask=None):
+        """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
+        """
         ret = MatrixWithCoords()      
         ret.datatype = self.datatype
         
@@ -83,14 +88,20 @@ class MatrixWithCoords:
         
         return ret
 
-    # return the averaged value of the data at coordinates (x0,y0), with a box of (dx, dy) 
     def val(self, x0, y0, dx, dy, mask=None):
+        """ return the averaged value of the data at coordinates (x0,y0), within a box of (dx, dy) 
+        """
         roi = self.roi(x0-0.5*dx, x0+0.5*dx, y0-0.5*dy, y0+0.5*dy, mask=mask)
         d = roi[~np.isnan(roi)]
         return np.sum(d)/len(d)
     
-    # unit of ang is degrees
     def line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None):
+        """ take a line cut
+                (x0, y0): center
+                ang: orientation (in degrees) 
+                lT, lN: half length (tangential) and half width (normal) of the cut in pixels 
+                lN, nN: number of returned data points logn the legnth and width of the cut
+        """
         ret = MatrixWithCoords()
         ret.datatype = self.datatype
         ang = np.radians(ang)
@@ -130,8 +141,10 @@ class MatrixWithCoords:
         
         return ret
     
-    # collapse the matrix into an array along x coordinates if axis=0, along y coordinates if axis=1
     def flatten(self, axis=0):
+        """ collapse the matrix into an array 
+            along x coordinates if axis=0, along y coordinates if axis=1
+        """
         cor = np.ones(self.d.shape)
         data = np.copy(self.d)
         
@@ -157,8 +170,10 @@ class MatrixWithCoords:
             # the index is stored with 
             return np.flipud(dd)
 
-    # average with the list of data given, all data must have the same coordinates and datatype
     def average(self, datalist):
+        """ average with the list of data given
+            all data must have the same coordinates and datatype
+        """
         ret = copy.deepcopy(self)
         for d in datalist:
             if not np.array_equal(ret.xc, d.xc) or not np.array_equal(ret.xc, d.xc) or ret.datatype!=d.datatype:
@@ -168,14 +183,15 @@ class MatrixWithCoords:
         
         return ret
     
-    # merge with the list of data given, not necessarily having the same coordinates
     def merge(self, datalist):
+        """ merge with the list of data given, not necessarily having the same coordinates
+        """
         pass 
 
 
 class Data2d:
     """ 2D scattering data class
-    stores the scattering pattern itself, 
+        stores the scattering pattern itself, 
     """
 
     def __init__(self, filename, im=None, timestamp=None, uid='', exp=None):

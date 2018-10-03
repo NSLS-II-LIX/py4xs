@@ -578,11 +578,11 @@ def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=Fa
     t0 = time.time()
     for fn in fns:
         s0 = Data1d()
-        d_tot = np.zeros(detectors[0].qgrid.shape)
-        d_max = np.zeros(detectors[0].qgrid.shape)
-        d_min = np.zeros(detectors[0].qgrid.shape)+1.e32
-        e_tot = np.zeros(detectors[0].qgrid.shape)
-        c_tot = np.zeros(detectors[0].qgrid.shape)
+        d_tot = np.zeros(qgrid.shape)
+        d_max = np.zeros(qgrid.shape)
+        d_min = np.zeros(qgrid.shape)+1.e32
+        e_tot = np.zeros(qgrid.shape)
+        c_tot = np.zeros(qgrid.shape)
         label = None
         comments = ""
         #t1 = time.time()
@@ -630,7 +630,7 @@ def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=Fa
         s0.data = d_tot
         s0.err = e_tot
         idx = (c_tot>1)
-        s0.overlaps.append({'q_overlap': detectors[0].qgrid[idx],
+        s0.overlaps.append({'q_overlap': qgrid[idx],
                              'raw_data1': d_max[idx],
                              'raw_data2': d_min[idx]})
         s0.data[idx] /= c_tot[idx]

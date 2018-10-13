@@ -40,7 +40,10 @@ first version of hdf5 support
 
 2018-09:
 improved functionality and bug fixes for hdf support; 
-bug fix for slnXS; 
+bug fix for slnxs; 
 fix azimuthal angular range to avoid large gap between values near Pi/-Pi;  
 attach exp_para to hdf; 
 removing qgrid from DetectorConfig (this affects the syntax of process/average/merge in slnxs); 
+
+2018-10:
+bugfixes, slnxs and hdf 

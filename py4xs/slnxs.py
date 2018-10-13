@@ -120,12 +120,15 @@ class Data1d:
             if len(self.qgrid[idx]) < 5:
                 print("not enough data points under the water peak, consider using a different trans_mode.")
                 #raise Exception()
-            idx1 = idx & (self.data > 0.95*np.max(self.data[idx]))
+            idx1 = idx & (self.data >= 0.95*np.max(self.data[idx]))
             if (self.data[idx1]<WAXS_THRESH).all() and debug!='quiet':
                 print("the data points for trans calculation are below WAXS_THRESH: ", 
                       np.max(self.data[idx1]), WAXS_THRESH)                
             self.trans = np.sum(self.data[idx1])
             qavg = np.average(self.qgrid[idx1])
+            if self.trans<1.0:
+                print('caluclated trans is %f, setting it artifically to WAXS_THRESH.' % self.trans)
+                self.trans = WAXS_THRESH
             if debug==True:
                 print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg

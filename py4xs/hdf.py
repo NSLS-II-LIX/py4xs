@@ -133,9 +133,12 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
         ret['merged'].append(merge_d1s([ret[det.extension][i] for det in detectors],
                                        detectors, reft, save_merged, debug))
 
-    queue.put([sn,starting_frame_no,ret])
     if debug:
         print("processing completed: ", sn, starting_frame_no)
+    if queue is None: # single-thread
+        return ([sn,starting_frame_no,ret])
+    else: # multi-processing    
+        queue.put([sn,starting_frame_no,ret])
 
         
 class h5sol():
@@ -321,7 +324,41 @@ class h5sol_HPLC(h5sol):
         
         return fh5,sn 
         
-    def load_data_mp(self, update_only=False, sn=None,
+    def load_data_sp(self, update_only=False, sn=None,
+                   reft=-1, save_1d=False, save_merged=False, debug=False):
+        """ single-thread processing
+        """
+        if debug:
+            print("start processing: load_1d()")
+            t1 = time.time()
+        
+        fh5,sn = self.process_sample_name(sn)
+        images = {}
+        for det in self.detectors:
+            ti = fh5["%s/primary/data/%s" % (sn, det_name[det.extension])].value
+            if len(ti.shape)==4:
+                ti = ti[0]      # quirk of suitcase
+            images[det.extension] = ti
+        
+        result = {}
+        n_total_frames = len(images[self.detectors[0].extension])
+        for i in range(n_total_frames):
+            [sn, fr1, data] = proc_sample(None, images, sn, i,
+                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
+            result[fr1] = data
+        
+        dns = [det.extension for det in self.detectors]+["merged"]
+        frns = list(result.keys())
+        frns.sort()
+        for dn in dns:
+            self.d1s[sn][dn] = []
+            for frn in frns:
+                self.d1s[sn][dn] += result[frn][dn]
+        
+        self.save_d1s(sn, debug=debug)
+            
+    
+    def load_data_mp(self, update_only=False, sn=None, 
                    reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
         """ assume single sample, parallel-process by grouping frames into chunks
             if update_only is true, only create 1d data for new frames (empty self.d1s)
@@ -350,6 +387,8 @@ class h5sol_HPLC(h5sol):
             images[det.extension] = ti
             
         n_total_frames = len(images[self.detectors[0].extension])
+        if n_total_frames<N:
+            raise Exception("strange n_total_frame: %s" % n_total_frame)
         c_size = int(n_total_frames/N)
         for i in range(N):
             if i==N-1:
@@ -378,7 +417,7 @@ class h5sol_HPLC(h5sol):
         frns = list(result.keys())
         frns.sort()
         for dn in dns:
-            self.d1s[sn][dn] = []
+            self.d1s[sn][dn] = []  
             for frn in frns:
                 self.d1s[sn][dn] += result[frn][dn]
         
@@ -390,11 +429,13 @@ class h5sol_HPLC(h5sol):
             print("done, time lapsed: %.2f sec" % (t2-t1))
 
 
-    def subtract_buffer(self, buffer_frame_range, sample_frame_range=None,
+    def subtract_buffer(self, buffer_frame_range, sample_frame_range=None, first_frame=0,
                         sn=None, update_only=False, sc_factor=1., normalize_int=True, debug=False):
         """ buffer_frame_range should be a list of frame numbers, could be range(frame_s, frame_e)
             if sample_frame_range is None: subtract all dataset; otherwise subtract and test-plot
             update_only is not used currently
+            first_frame:    duplicate data in the first few frames subtracted data from first_frame
+                            this is useful when the beam is not on for the first few frames
         """
 
         fh5,sn = self.process_sample_name(sn, debug=debug)
@@ -423,6 +464,9 @@ class h5sol_HPLC(h5sol):
                     d1.set_trans(ref_trans=self.d1s[sn]['merged'][0].trans)
                 d1t = d1.bkg_cor(d1b, plot_data=False, debug="quiet", sc_factor=sc_factor)
                 self.d1s[sn]['subtracted'].append(d1t) 
+            if first_frame>0:
+                for i in range(first_frame):
+                    self.d1s[sn]['subtracted'][i].data = self.d1s[sn]['subtracted'][first_frame].data
             self.save_d1s(sn, debug=debug)
         else:
             lists  = [self.d1s[sn]['merged'][i] for i in sample_frame_range]

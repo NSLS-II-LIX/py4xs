@@ -10,8 +10,10 @@ exp_attr = ['wavelength', 'bm_ctr_x', 'bm_ctr_y', 'ratioDw',
 
 # these are the entries in the NSLS-II data broker for the detector images
 # they should match the extensions defined in the DetectorConfig instance for each detector
-det_name = {"_SAXS": "pil1M_image",
-            "_WAXS1": "pilW1_image",
-            "_WAXS2": "pilW2_image",
-           }
-
+# at LiX there are two different configurations, hence this is defined as a list
+det_names = [{"_SAXS": "pil1M_image",
+              "_WAXS1": "pilW1_image",
+              "_WAXS2": "pilW2_image"}, 
+             {"_SAXS": "pil1M_ext_image",
+              "_WAXS1": "pilW1_ext_image",
+              "_WAXS2": "pilW2_ext_image"}]

@@ -11,7 +11,7 @@ import multiprocessing as mp
 from py4xs.slnxs import Data1d, average, filter_by_similarity
 from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.local import det_name    # e.g. "_SAXS": "pil1M_image"
+from py4xs.local import det_names    # e.g. "_SAXS": "pil1M_image"
 from itertools import combinations
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
@@ -156,6 +156,17 @@ class h5sol():
             self.detectors, self.qgrid = exp_setup
             self.save_detectors()
         self.list_samples(quiet=True)
+        # find out what are the fields corresponding to the 2D detectors
+        # at LiX there are two possibilities
+        data_fields = list(self.fh5[self.samples[0]+'/primary/data'])
+        self.det_name = None
+        for det_name in det_names:
+            if set(det_name.values()).issubset(data_fields):
+                self.det_name = det_name
+                break
+        if self.det_name is None:
+            print('fields in the h5 file: ', data_fields)
+            raise Exception("COuld not find the data corresponding to the detectors.")
         
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -273,7 +284,7 @@ class h5sol():
             self.d1s[sn] = []
             images = {}
             for det in self.detectors:
-                data = fh5["%s/primary/data/%s" % (sn, det_name[det.extension])].value 
+                data = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value 
                 if len(data.shape)==4:
                     # quirk of suitcase
                     data = data[0]
@@ -329,13 +340,13 @@ class h5sol_HPLC(h5sol):
         """ single-thread processing
         """
         if debug:
-            print("start processing: load_1d()")
+            print("start processing: load_data_sp()")
             t1 = time.time()
         
         fh5,sn = self.process_sample_name(sn)
         images = {}
         for det in self.detectors:
-            ti = fh5["%s/primary/data/%s" % (sn, det_name[det.extension])].value
+            ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
             if len(ti.shape)==4:
                 ti = ti[0]      # quirk of suitcase
             images[det.extension] = ti
@@ -364,7 +375,7 @@ class h5sol_HPLC(h5sol):
             if update_only is true, only create 1d data for new frames (empty self.d1s)
         """
         if debug:
-            print("start processing: load_1d()")
+            print("start processing: load_data_mp()")
             t1 = time.time()
         
         fh5,sn = self.process_sample_name(sn)
@@ -381,7 +392,7 @@ class h5sol_HPLC(h5sol):
         # only need to do this for new frames
         images = {}
         for det in self.detectors:
-            ti = fh5["%s/primary/data/%s" % (sn, det_name[det.extension])].value
+            ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
             if len(ti.shape)==4:
                 ti = ti[0]      # quirk of suitcase
             images[det.extension] = ti
@@ -712,13 +723,17 @@ class h5sol_HT(h5sol):
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, save_1d=False, save_merged=False, 
-                filter_data=False, debug=False):
+                filter_data=False, debug=False, mp = True):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         if detectors is not None:
             self.detectors = detectors
-        self.load_data_mp(update_only=update_only, reft=reft, 
-                          save_1d=save_1d, save_merged=save_merged, debug=debug)
+        if mp:
+            self.load_data_mp(update_only=update_only, reft=reft, 
+                              save_1d=save_1d, save_merged=save_merged, debug=debug)
+        else:
+            self.load_data_sp(update_only=update_only, reft=reft, 
+                              save_1d=save_1d, save_merged=save_merged, debug=debug)
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, debug=debug)
         
@@ -748,7 +763,7 @@ class h5sol_HT(h5sol):
                 
             images = {}
             for det in self.detectors:
-                ti = fh5["%s/primary/data/%s" % (sn, det_name[det.extension])].value
+                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
                 if len(ti.shape)==4:
                     ti = ti[0]      # quirk of suitcase
                 images[det.extension] = ti
@@ -768,13 +783,57 @@ class h5sol_HT(h5sol):
             [sn, fr1, data] = que.get() 
             print("data received: ", sn)
             self.d1s[sn] = data
-            self.save_d1s(sn, debug=debug)
+        
+        self.save_d1s(debug=debug)
         
         #fh5.close()        
         if debug:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
-            
+
+    def load_data_sp(self, update_only=False,
+                   reft=-1, save_1d=False, save_merged=False, debug=False):
+        """ assume multiple samples, parallel-process by sample
+            if update_only is true, only create 1d data for new frames (empty self.d1s)
+        """
+        if debug:
+            print("start processing: load_data_sp()")
+            t1 = time.time()
+        
+        #fh5 = h5py.File(self.fn, "r+")
+        fh5 = self.fh5
+        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
+        
+        dns = [det.extension for det in self.detectors]+["merged"]
+        for sn in self.samples:
+            if sn not in list(self.attrs.keys()):
+                self.attrs[sn] = {}
+            if 'buffer' in list(fh5[sn].attrs):
+                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
+            if update_only and sn in list(self.d1s.keys()):
+                self.load_d1s(sn)   # load processed data saved in the file
+                continue
+                
+            images = {}
+            for det in self.detectors:
+                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
+                if len(ti.shape)==4:
+                    ti = ti[0]      # quirk of suitcase
+                images[det.extension] = ti            
+        
+            self.d1s[sn] = []
+            n_total_frames = len(images[self.detectors[0].extension])
+            [sn, fr1, data] = proc_sample(None, images, sn, n_total_frames,
+                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
+            self.d1s[sn] = data
+        
+        self.save_d1s(debug=debug)
+        
+        #fh5.close()        
+        if debug:
+            t2 = time.time()
+            print("done, time lapsed: %.2f sec" % (t2-t1))
+
     def average_samples(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data
             selection: if None, retrieve from dataset attribute
@@ -807,6 +866,8 @@ class h5sol_HT(h5sol):
                 self.d1s[sn]['averaged'] = d1keep[0].avg(d1keep[1:], debug=debug)
             else:
                 self.d1s[sn]['averaged'] = d1keep[0]
+                
+        self.save_d1s(debug=debug)
 
         if debug:
             t2 = time.time()
@@ -875,7 +936,7 @@ class h5sol_HT(h5sol):
                              self.d1s[sn]['averaged'].data*sc, 
                              color="gray", lw=2, ls="--")
                     if show_overlap:
-                        for det1,det2 in combinations(list(det_name.keys()), 2):
+                        for det1,det2 in combinations(list(self.det_name.keys()), 2):
                             idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
                             if len(idx_ov)>0:
                                 plt.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 

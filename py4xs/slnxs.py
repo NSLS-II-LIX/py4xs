@@ -32,11 +32,20 @@ TRANS_EXTERNAL = 0
 TRANS_FROM_BEAM_CENTER = 1
 TRANS_FROM_WAXS = 2
 
+from enum import Enum
+# removed from_beam_center since it is really external
+# also it is difficult to keep track when merging multiple detectors
+class trans_mode(Enum):
+    external = 0
+    from_waxs = 2
+
 # trans_mode=TRANS_FROM_BEAM_CENTER
+# this works if there is a semi-transparent beam stop
 BEAM_SIZE_hW = 5
 BEAM_SIZE_hH = 4
 
-trans_mode = TRANS_FROM_WAXS
+# this is the global setting
+TRANS_MODE = trans_mode.from_waxs
 # this is the minimum intensity to be used for trans calculations
 WAXS_THRESH = 100
 
@@ -46,12 +55,13 @@ VOFFSET = 1.5
 
 
 class Data1d:
-    def __init__(self):
+    def __init__(self, trandMode=None):
         self.comments = ""
         self.label = "data"
         self.overlaps = []
         self.raw_data = {}
         self.timestamp = None
+        self.trans = 0
         
     def load_from_2D(self, image, exp_para, qgrid, pre_process, 
                      mask=None, save_ave=False, debug=False, label=None):
@@ -85,12 +95,12 @@ class Data1d:
         # deal with things like dark current, flat field, and dezinger corrections on the 2D data
         pre_process(d2.data)
         
-        if trans_mode == TRANS_FROM_BEAM_CENTER:
-            # get trans from beam center
-            self.roi = d2.data.val(exp_para.bm_ctr_x-BEAM_SIZE_hW, 
-                                   exp_para.bm_ctr_x+BEAM_SIZE_hW,
-                                   exp_para.bm_ctr_y-BEAM_SIZE_hH,
-                                   exp_para.bm_ctr_y+BEAM_SIZE_hH, mask)
+        #if self.transMode == trans_mode.from_beam_center:
+        #    # get trans from beam center
+        #    self.roi = d2.data.val(exp_para.bm_ctr_x-BEAM_SIZE_hW, 
+        #                           exp_para.bm_ctr_x+BEAM_SIZE_hW,
+        #                           exp_para.bm_ctr_y-BEAM_SIZE_hH,
+        #                           exp_para.bm_ctr_y+BEAM_SIZE_hH, mask)
 
         self.data,self.err = d2.conv_Iq(qgrid, mask,
                                         cor_factor = exp_para.FPol)  # exp_para.FSA*exp_para.FPol)
@@ -101,7 +111,7 @@ class Data1d:
             self.save(image + ".ave", debug=debug)     
         
 
-    def set_trans(self, trans=-1, ref_trans=-1, debug=False):
+    def set_trans(self, trans=-1, ref_trans=-1, transMode=None, debug=False):
         """
         normalize intensity, from trans to ref_trans
         trans can be either from the beam center or water scattering
@@ -109,11 +119,9 @@ class Data1d:
         1. SAXS and WAXS should have the same trans
         2. if trans_mode is TRNAS_FROM_WAXS, the trans value needs to be calculated from WAXS data
         """
-        if trans_mode == TRANS_FROM_BEAM_CENTER:
-            # get trans from beam center
-            self.trans = self.roi
-            self.comments += "# transmitted beam intensity from beam center, "
-        elif trans_mode == TRANS_FROM_WAXS:
+        if transMode is not None:
+            self.transMode = transMode
+        if self.transMode == trans_mode.from_waxs:
             # get trans for the near the maximum in the WAXS data
             # for solution scattering, hopefully this reflect the intensity of water scattering
             idx = (self.qgrid > 1.85) & (self.qgrid < 2.15)  # & (self.data>0.5*np.max(self.data))
@@ -132,14 +140,14 @@ class Data1d:
             if debug==True:
                 print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg
-        elif trans_mode == TRANS_EXTERNAL:
+        elif self.transMode == trans_mode.external:
             if trans <= 0:
-                print("trans_mode is TRANS_EXTERNAL but trans value is not provided")
-                exit()
+                print("trans_mode is TRANS_EXTERNAL but a valid trans value is not provided")
+                raise Exception()
             self.comments += "# transmitted beam intensity is defined externally"
             self.trans = trans
         else:
-            print("invalid transmode: ", trans_mode)
+            raise Exception("invalid transmode: ", self.tMode)
 
         self.comments += ": %f \n" % self.trans
         if debug==True:
@@ -194,8 +202,8 @@ class Data1d:
             d0.trans += d1.trans
             d0.data += d1.data
             d0.err += d1.err
-            if trans_mode == TRANS_FROM_BEAM_CENTER:
-                d0.roi += d1.roi
+            #if self.transMode == trans_mode.from_beam_center:
+            #    d0.roi += d1.roi
             d0.comments += "# averaged with \n%s" % d1.comments.replace("# ", "## ")
             if plot_data:
                 idx = (d1.data > 0)  # Remove Zeros on plot
@@ -212,8 +220,8 @@ class Data1d:
         d0.trans /= n
         d0.data /= n
         d0.err /= np.sqrt(n)
-        if trans_mode == TRANS_FROM_BEAM_CENTER:
-            d0.roi /= n
+        #if self.transMode == trans_mode.from_beam_center:
+        #    d0.roi /= n
         for ov in d0.overlaps:
             ov['raw_data1'] /= n
             ov['raw_data2'] /= n
@@ -239,7 +247,8 @@ class Data1d:
         return d0
 
 
-    def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, inplace=False, debug=False):
+    def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, 
+                inplace=False, check_overlap=False, debug=False):
         """
         background subtraction
         """
@@ -277,7 +286,8 @@ class Data1d:
             ax.plot(dbak.qgrid[idx], dbak.data[idx] * sc * sc_factor, label=dbak.label + ", scaled")
 
         if len(dset.overlaps) != len(dbak.overlaps):
-            raise Exception("Background subtraction failed: overlaps mismatch.")
+            if check_overlap:
+                raise Exception("Background subtraction failed: overlaps mismatch.")
         else:
             for i in range(len(dset.overlaps)):
                 dset.overlaps[i]['raw_data1'] -= dbak.overlaps[i]['raw_data1'] * sc_factor * sc
@@ -571,7 +581,7 @@ def filter_by_similarity(datasets, similarity_threshold=0.5):
     return valid_entries, invalid_entries
 
 
-def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=False, save_merged=False, ax=None, qmax=-1, qmin=-1, fix_scale=1, debug=False):
+def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=False, save_merged=False, ax=None, qmax=-1, qmin=-1, fix_scale=1, debug=False, transMode=trans_mode.from_waxs, trans=-1):
     """
     fns: filename, without the _SAXS/_WAXS suffix
     fix_scale is now default to 1
@@ -638,7 +648,8 @@ def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=Fa
                              'raw_data2': d_min[idx]})
         s0.data[idx] /= c_tot[idx]
         s0.err[idx] /= c_tot[idx]
-        s0.set_trans(ref_trans=reft, debug=debug)
+        s0.transMode = transMode
+        s0.set_trans(trans=trans, ref_trans=reft, transMode=transMode, debug=debug)
         s0.label = label
         s0.comments = comments # .replace("# ", "## ")
 

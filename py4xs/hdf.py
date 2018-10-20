@@ -8,7 +8,7 @@ import copy
 import json
 import multiprocessing as mp
 
-from py4xs.slnxs import Data1d, average, filter_by_similarity
+from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
 from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names    # e.g. "_SAXS": "pil1M_image"
@@ -54,8 +54,9 @@ def unpack_d1(data, qgrid, label, set_trans=False):
         ret.data = data[0]
         ret.err = data[1]
         ret.label = label
-        if set_trans:
-            ret.set_trans()    # this won't work before SAXS/WAXS merge
+        # set_trans is only necessary when performing further processing?
+        #if set_trans:
+        #    ret.set_trans()    # this won't work before SAXS/WAXS merge
         return ret
 
 def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
@@ -98,7 +99,8 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
                         'raw_data2': d_min[idx]})
     s0.data[idx] /= c_tot[idx]
     s0.err[idx] /= np.sqrt(c_tot[idx])
-    s0.set_trans(ref_trans=reft, debug=debug)
+    # this should be done outside of merge, in case an external trans value is needed
+    #s0.set_trans(ref_trans=reft, debug=debug)
     s0.label = label
     s0.comments = comments # .replace("# ", "## ")
     if save_merged:
@@ -107,8 +109,8 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
     return s0
 
 def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, save_merged, debug,
-               starting_frame_no=0):
-    """ utility function to process solution scattering data using functions defined in slnxs
+               starting_frame_no=0, transMode=None, monitor_counts=None):
+    """ utility function to perfrom azimuthal average and merge detectors
     """
     ret = {'merged': []}
     sc = {}
@@ -130,24 +132,35 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
             dt.scale(sc[det.extension])
             ret[det.extension].append(dt)
     
-        ret['merged'].append(merge_d1s([ret[det.extension][i] for det in detectors],
-                                       detectors, reft, save_merged, debug))
-
+        dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, reft, save_merged, debug)
+        #if transMode == trans_mode.external:
+        #    dm.set_trans(trans=monitor_counts[i+starting_frame_no], transMode=trans_mode.external)
+        #else: 
+        #    dm.set_trans(transMode=trans_mode.from_waxs)
+        ret['merged'].append(dm)
+            
     if debug:
         print("processing completed: ", sn, starting_frame_no)
     if queue is None: # single-thread
         return ([sn,starting_frame_no,ret])
     else: # multi-processing    
         queue.put([sn,starting_frame_no,ret])
-
         
-class h5sol():
+        
+class h5xs():
+    """ Scattering data in transmission geometry
+        Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
+        Data processing can be done either in series, or in parallel. Serial processing can be forced.
+        
+    """
     d1s = {}
     detectors = None
     samples = []
     attrs = {}
+    # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
+    transField = None  
     
-    def __init__(self, fn, exp_setup=None):
+    def __init__(self, fn, exp_setup=None, transMode=trans_mode.from_waxs):
         self.fn = fn
         self.fh5 = h5py.File(self.fn, "a")
         if exp_setup==None:     # assume the h5 file will provide the detector config
@@ -167,7 +180,8 @@ class h5sol():
         if self.det_name is None:
             print('fields in the h5 file: ', data_fields)
             raise Exception("COuld not find the data corresponding to the detectors.")
-        
+        self.transMode = transMode
+            
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
         self.fh5.attrs['detectors'] = json.dumps(dets_attr)
@@ -184,7 +198,35 @@ class h5sol():
         self.samples = lsh5(self.fh5, top_only=True, silent=True)
         if not quiet:
             print(self.samples)
-            
+    
+    def set_trans(self, sn=None, transMode=None):
+        """ set the transmission values for the merged data
+        """
+        if transMode is not None:
+            self.transMode = transMode
+        if self.transMode==None:
+            raise Exception("a valid transmited intensity mode must be specified.")
+        
+        if sn is None:
+            samples = self.samples
+        else:
+            samples = [sn]
+        for s in samples:
+            # these are the datasets that needs updated trans values
+            if 'merged' not in self.d1s[s].keys():
+                continue
+            t_values = []
+            for i in range(len(self.d1s[s]['merged'])):
+                if self.transMode==trans_mode.external:
+                    self.d1s[s]['merged'][i].set_trans(self.fh5[s+'/primary/data/'+self.transField][i], 
+                                                        transMode=self.transMode)
+                else:
+                    self.d1s[s]['merged'][i].set_trans(transMode=self.transMode)
+                t_values.append(self.d1s[s]['merged'][i].trans)
+            if 'averaged' not in self.d1s[s].keys():
+                continue
+            self.d1s[s]['averaged'].trans = np.average(t_values)
+    
     def load_d1s(self, sn=None):
         """ load the processed 1d data saved in the hdf5 file into memory 
             for each sample
@@ -194,9 +236,7 @@ class h5sol():
             averaged data: averaged from multiple frames
             corrected data: subtracted for buffer scattering
             buffer data will be recreated based on buffer assignment 
-        """
-        #fh5 = h5py.File(self.fn, "r+")
-        
+        """        
         if sn==None:
             self.list_samples(quiet=True)
             for sn in self.samples:
@@ -204,7 +244,6 @@ class h5sol():
         
         fh5 = self.fh5
         if "processed" not in lsh5(fh5[sn], top_only=True, silent=True): 
-            #fh5.close()
             return
         
         if sn not in list(self.attrs.keys()):
@@ -213,16 +252,14 @@ class h5sol():
         grp = fh5[sn+'/processed']
         for k in list(grp.attrs.keys()):
             self.attrs[sn][k] = grp.attrs[k]   
-        #qgrid = grp['qgrid'].value
-        #self.d1s[sn]['buf average'] = grp['buf average'].value
         for k in lsh5(grp, top_only=True, silent=True):
             if k=='buf average':
                 self.d1s[sn][k] = grp[k].value   # just a 2d array
             else: # usually a collection of 2d arrays    
-                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, 
-                                            set_trans=(k in ['merged', 'averaged']))      
-        #fh5.close()
-        
+                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k)   
+        self.set_trans(sn)
+                
+            
     def save_d1s(self, sn=None, debug=False):
         """
         save the 1d data in memory to the hdf5 file 
@@ -265,57 +302,105 @@ class h5sol():
                 grp[k][...] = data   
                 
         fh5.flush()
-        #fh5.close()
-        #self.fh5 = h5py.File(self.fn, "r+")
-        
-    def make_1d(self, reft=-1, save_1d=False, save_merged=False, debug=False):
-        """ produce merged 1D data from 2D images
+
+    def load_data_mp(self, *args, **kwargs):
+        print('load_data_mp() will be deprecated. use load_data() instead.')
+        self.load_data(*args, **kwargs)
+            
+    def load_data(self, update_only=False,
+                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
+        """ assume multiple samples, parallel-process by sample
+            if update_only is true, only create 1d data for new frames (empty self.d1s)
         """
         if debug:
-            print("start processing: make_1d()")
+            print("start processing: load_data()")
             t1 = time.time()
         
-        #fh5 = h5py.File(self.fn, "r+")
         fh5 = self.fh5
         self.samples = lsh5(fh5, top_only=True, silent=(not debug))
+        
+        processes = []
+        queue_list = []
+        results = {}
         for sn in self.samples:
-            if debug:
-                print("reading data for ", sn)
-            self.d1s[sn] = []
+            if sn not in list(self.attrs.keys()):
+                self.attrs[sn] = {}
+            if 'buffer' in list(fh5[sn].attrs):
+                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
+            if update_only and sn in list(self.d1s.keys()):
+                self.load_d1s(sn)   # load processed data saved in the file
+                continue
+                                    
+            self.d1s[sn] = {}
+            results[sn] = {}
             images = {}
             for det in self.detectors:
-                data = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value 
-                if len(data.shape)==4:
-                    # quirk of suitcase
-                    data = data[0]
-                images[det.extension] = data  
-            qsize = len(images[self.detectors[0].extension])
-            for i in range(qsize):
-                ret = {}
-                for det in self.detectors:
-                    dt = Data1d()
-                    label = "%s_f%05d_%s" % (sn, i, det.extension)
-                    dt.load_from_2D(images[det.extension][i], det.exp_para, 
-                                    #det.qgrid, det.pre_process, det.mask,
-                                    self.qgrid, det.pre_process, det.mask,
-                                    save_ave=False, debug=debug, label=label)
-                    ret[det.extension] = dt
-                dt = Data1d()
-                dt = merge_d1s(list(ret.values()), self.detectors, reft, save_merged, debug)
-                self.d1s[sn].append(dt) 
-                
-        #fh5.close()
+                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
+                if len(ti.shape)==4:
+                    ti = ti[0]      # quirk of suitcase
+                images[det.extension] = ti
+            
+            n_total_frames = len(images[self.detectors[0].extension])
+            if N>1: # multi-processing
+                if n_total_frames<N*N/2:
+                    Np = 1
+                    c_size = N
+                else:
+                    Np = N
+                    c_size = int(n_total_frames/N)
+                for i in range(Np):
+                    if i==Np-1:
+                        nframes = n_total_frames - c_size*(Np-1)
+                    else:
+                        nframes = c_size
+                    que = mp.Queue()
+                    queue_list.append(que)
+                    th = mp.Process(target=proc_sample, 
+                                    args=(que, images, sn, nframes,
+                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug, i*c_size) )
+                    th.start()
+                    processes.append(th)
+            else: # serial processing
+                [sn, fr1, data] = proc_sample(None, images, sn, n_total_frames,
+                                              self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
+                self.d1s[sn] = data                
+
+        if N>1:             
+            # join() first? or get from que first??
+            for que in queue_list:
+                [sn, fr1, data] = que.get()
+                results[sn][fr1] = data
+                print("data received: sn=%s, fr1=%d" % (sn,fr1) )
+            for th in processes:
+                th.join()
+
+            for sn in self.samples:
+                if sn not in results.keys():
+                    continue
+                data = {}
+                frns = list(results[sn].keys())
+                frns.sort()
+                for k in results[sn][frns[0]].keys():
+                    data[k] = []
+                    for frn in frns:
+                        data[k].extend(results[sn][frn][k])
+                self.d1s[sn] = data
+        
+        self.save_d1s(debug=debug)
         if debug:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
+        
 
-
-class h5sol_HPLC(h5sol):
-    """ single sample (not required, but may behave unexpectedly for multiple samples), many frames
-        frames can be added gradually
+class h5sol_HPLC(h5xs):
+    """ single sample (not required, but may behave unexpectedly when there are multiple samples), 
+        many frames; frames can be added gradually (not tested)
     """ 
     dbuf = None
     updating = False   # this is set to True when add_data() is active
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, transMode = trans_mode.from_waxs)
         
     def add_data(self, ):
         """ watch the given path
@@ -335,109 +420,20 @@ class h5sol_HPLC(h5sol):
         
         return fh5,sn 
         
-    def load_data_sp(self, update_only=False, sn=None,
-                   reft=-1, save_1d=False, save_merged=False, debug=False):
-        """ single-thread processing
+    def load_d1s(self):
+        super().load_d1s(self.samples[0])
+        # might need to update meta data??
+        
+    def process(self, detectors=None, update_only=False,
+                reft=-1, save_1d=False, save_merged=False, 
+                filter_data=False, debug=False, N=8):
+        """ load data from 2D images, merge, then set transmitted beam intensity
         """
-        if debug:
-            print("start processing: load_data_sp()")
-            t1 = time.time()
-        
-        fh5,sn = self.process_sample_name(sn)
-        images = {}
-        for det in self.detectors:
-            ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
-            if len(ti.shape)==4:
-                ti = ti[0]      # quirk of suitcase
-            images[det.extension] = ti
-        
-        result = {}
-        n_total_frames = len(images[self.detectors[0].extension])
-        for i in range(n_total_frames):
-            [sn, fr1, data] = proc_sample(None, images, sn, i,
-                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
-            result[fr1] = data
-        
-        dns = [det.extension for det in self.detectors]+["merged"]
-        frns = list(result.keys())
-        frns.sort()
-        for dn in dns:
-            self.d1s[sn][dn] = []
-            for frn in frns:
-                self.d1s[sn][dn] += result[frn][dn]
-        
-        self.save_d1s(sn, debug=debug)
-            
-    
-    def load_data_mp(self, update_only=False, sn=None, 
-                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
-        """ assume single sample, parallel-process by grouping frames into chunks
-            if update_only is true, only create 1d data for new frames (empty self.d1s)
-        """
-        if debug:
-            print("start processing: load_data_mp()")
-            t1 = time.time()
-        
-        fh5,sn = self.process_sample_name(sn)
-        # this should depend on update_only, for now reload everything ??
-        # but load_d1s() fills the class as well
-        #self.load_d1s(sn)   # only one sample for HPLC
-        if sn not in list(self.attrs.keys()):
-            self.d1s[sn] = {}
-            self.attrs[sn] = {}
-            
-        processes = []
-        queue_list = []
-
-        # only need to do this for new frames
-        images = {}
-        for det in self.detectors:
-            ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
-            if len(ti.shape)==4:
-                ti = ti[0]      # quirk of suitcase
-            images[det.extension] = ti
-            
-        n_total_frames = len(images[self.detectors[0].extension])
-        if n_total_frames<N:
-            raise Exception("strange n_total_frame: %s" % n_total_frame)
-        c_size = int(n_total_frames/N)
-        for i in range(N):
-            if i==N-1:
-                nframes = n_total_frames - c_size*(N-1)
-            else:
-                nframes = c_size
-            que = mp.Queue()
-            queue_list.append(que)
-            th = mp.Process(target=proc_sample, 
-                            args=(que, images, sn, nframes,
-                                  self.detectors, self.qgrid, reft, save_1d, save_merged, debug, i*c_size) )
-            th.start()
-            processes.append(th)
-                
-        result = {}
-        for que in queue_list:
-            [sn, fr1, data] = que.get() 
-            result[fr1] = data
-
-        for th in processes:
-            th.join()
-        if debug:
-            print("all processes completed.")
-        
-        dns = [det.extension for det in self.detectors]+["merged"]
-        frns = list(result.keys())
-        frns.sort()
-        for dn in dns:
-            self.d1s[sn][dn] = []  
-            for frn in frns:
-                self.d1s[sn][dn] += result[frn][dn]
-        
-        self.save_d1s(sn, debug=debug)
-        #fh5.close()
-
-        if debug:
-            t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
+        if detectors is not None:
+            self.detectors = detectors
+        self.load_data(update_only=update_only, reft=reft, 
+                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+        self.set_trans(transMode=trans_mode.from_waxs)
 
 
     def subtract_buffer(self, buffer_frame_range, sample_frame_range=None, first_frame=0,
@@ -472,13 +468,13 @@ class h5sol_HPLC(h5sol):
             self.d1s[sn]['subtracted'] = []
             for d1 in self.d1s[sn]['merged']:
                 if normalize_int:
-                    d1.set_trans(ref_trans=self.d1s[sn]['merged'][0].trans)
+                    d1.set_trans(ref_trans=self.d1s[sn]['merged'][0].trans, transMode=trans_mode.from_waxs)
                 d1t = d1.bkg_cor(d1b, plot_data=False, debug="quiet", sc_factor=sc_factor)
                 self.d1s[sn]['subtracted'].append(d1t) 
             if first_frame>0:
                 for i in range(first_frame):
                     self.d1s[sn]['subtracted'][i].data = self.d1s[sn]['subtracted'][first_frame].data
-            self.save_d1s(sn, debug=debug)
+            self.save_d1s(sn, debug=debug)   # save only subtracted data???
         else:
             lists  = [self.d1s[sn]['merged'][i] for i in sample_frame_range]
             if len(listb)>1:
@@ -659,12 +655,15 @@ class h5sol_HPLC(h5sol):
                 d1s[i].save("%s_%d%c.dat"%(sn,i+first_frame,dkey[0]), debug=debug)                    
 
         
-class h5sol_HT(h5sol):
+class h5sol_HT(h5xs):
     """ multiple samples, not many frames per sample
     """    
     d1b = {}   # buffer data used, could be averaged from multiple samples
     buffer_list = {}    
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs, transMode = trans_mode.from_waxs)
+        
     def add_sample(self, db, uid):
         """ add another group to the HDF5 file
             only works at the beamline
@@ -723,117 +722,17 @@ class h5sol_HT(h5sol):
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, save_1d=False, save_merged=False, 
-                filter_data=False, debug=False, mp = True):
+                filter_data=False, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         if detectors is not None:
             self.detectors = detectors
-        if mp:
-            self.load_data_mp(update_only=update_only, reft=reft, 
-                              save_1d=save_1d, save_merged=save_merged, debug=debug)
-        else:
-            self.load_data_sp(update_only=update_only, reft=reft, 
-                              save_1d=save_1d, save_merged=save_merged, debug=debug)
+        self.load_data(update_only=update_only, reft=reft, 
+                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+        self.set_trans(transMode=trans_mode.from_waxs)
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, debug=debug)
         
-    def load_data_mp(self, update_only=False,
-                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
-        """ assume multiple samples, parallel-process by sample
-            if update_only is true, only create 1d data for new frames (empty self.d1s)
-        """
-        if debug:
-            print("start processing: load_data_mp()")
-            t1 = time.time()
-        
-        #fh5 = h5py.File(self.fn, "r+")
-        fh5 = self.fh5
-        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
-        
-        processes = []
-        queue_list = []
-        for sn in self.samples:
-            if sn not in list(self.attrs.keys()):
-                self.attrs[sn] = {}
-            if 'buffer' in list(fh5[sn].attrs):
-                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
-            if update_only and sn in list(self.d1s.keys()):
-                self.load_d1s(sn)   # load processed data saved in the file
-                continue
-                
-            images = {}
-            for det in self.detectors:
-                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
-                if len(ti.shape)==4:
-                    ti = ti[0]      # quirk of suitcase
-                images[det.extension] = ti
-            
-            nframes = len(images[self.detectors[0].extension])
-            que = mp.Queue()
-            queue_list.append(que)
-            th = mp.Process(target=proc_sample,
-                            args=(que, images, sn, nframes, 
-                                  self.detectors, self.qgrid, reft, save_1d, save_merged, debug) )
-            th.start()
-            processes.append(th)
-
-        for th in processes:
-            th.join()
-        for que in queue_list:
-            [sn, fr1, data] = que.get() 
-            print("data received: ", sn)
-            self.d1s[sn] = data
-        
-        self.save_d1s(debug=debug)
-        
-        #fh5.close()        
-        if debug:
-            t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
-
-    def load_data_sp(self, update_only=False,
-                   reft=-1, save_1d=False, save_merged=False, debug=False):
-        """ assume multiple samples, parallel-process by sample
-            if update_only is true, only create 1d data for new frames (empty self.d1s)
-        """
-        if debug:
-            print("start processing: load_data_sp()")
-            t1 = time.time()
-        
-        #fh5 = h5py.File(self.fn, "r+")
-        fh5 = self.fh5
-        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
-        
-        dns = [det.extension for det in self.detectors]+["merged"]
-        for sn in self.samples:
-            if sn not in list(self.attrs.keys()):
-                self.attrs[sn] = {}
-            if 'buffer' in list(fh5[sn].attrs):
-                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
-            if update_only and sn in list(self.d1s.keys()):
-                self.load_d1s(sn)   # load processed data saved in the file
-                continue
-                
-            images = {}
-            for det in self.detectors:
-                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
-                if len(ti.shape)==4:
-                    ti = ti[0]      # quirk of suitcase
-                images[det.extension] = ti            
-        
-            self.d1s[sn] = []
-            n_total_frames = len(images[self.detectors[0].extension])
-            [sn, fr1, data] = proc_sample(None, images, sn, n_total_frames,
-                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
-            self.d1s[sn] = data
-        
-        self.save_d1s(debug=debug)
-        
-        #fh5.close()        
-        if debug:
-            t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
-
     def average_samples(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data
             selection: if None, retrieve from dataset attribute

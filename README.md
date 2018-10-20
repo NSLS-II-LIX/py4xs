@@ -46,4 +46,6 @@ attach exp_para to hdf;
 removing qgrid from DetectorConfig (this affects the syntax of process/average/merge in slnxs); 
 
 2018-10:
-bugfixes, slnxs and hdf 
+bugfixes, slnxs and hdf; 
+handling of transmitted beam intensity;
+first attempt to support scanning data 

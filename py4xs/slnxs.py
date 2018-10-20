@@ -141,11 +141,12 @@ class Data1d:
                 print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg
         elif self.transMode == trans_mode.external:
-            if trans <= 0:
+            if trans > 0:
+                self.comments += "# transmitted beam intensity is defined externally: %f"%trans
+                self.trans = trans
+            elif self.trans<=0:
                 print("trans_mode is TRANS_EXTERNAL but a valid trans value is not provided")
                 raise Exception()
-            self.comments += "# transmitted beam intensity is defined externally"
-            self.trans = trans
         else:
             raise Exception("invalid transmode: ", self.tMode)
 

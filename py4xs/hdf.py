@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 import time, datetime
 import copy
-import json
+import json,pickle
 import multiprocessing as mp
 
 from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
@@ -133,10 +133,6 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
             ret[det.extension].append(dt)
     
         dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, reft, save_merged, debug)
-        #if transMode == trans_mode.external:
-        #    dm.set_trans(trans=monitor_counts[i+starting_frame_no], transMode=trans_mode.external)
-        #else: 
-        #    dm.set_trans(transMode=trans_mode.from_waxs)
         ret['merged'].append(dm)
             
     if debug:
@@ -160,9 +156,9 @@ class h5xs():
     # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
     transField = None  
     
-    def __init__(self, fn, exp_setup=None, transMode=trans_mode.from_waxs):
+    def __init__(self, fn, exp_setup=None, transField=''):
         self.fn = fn
-        self.fh5 = h5py.File(self.fn, "a")
+        self.fh5 = h5py.File(self.fn, "r+")   # file must exist
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -173,14 +169,33 @@ class h5xs():
         # at LiX there are two possibilities
         data_fields = list(self.fh5[self.samples[0]+'/primary/data'])
         self.det_name = None
+        # these are the detectors that are present in the data
+        d_dn = [d.extension for d in self.detectors]
         for det_name in det_names:
+            for k in set(det_name.keys()).difference(d_dn):
+                del det_name[k]
             if set(det_name.values()).issubset(data_fields):
                 self.det_name = det_name
                 break
         if self.det_name is None:
             print('fields in the h5 file: ', data_fields)
-            raise Exception("COuld not find the data corresponding to the detectors.")
-        self.transMode = transMode
+            raise Exception("Could not find the data corresponding to the detectors.")
+        if transField=='':
+            if 'trans' in self.fh5.attrs:
+                [v, self.transField] = self.fh5.attrs['trans'].split(',')
+                self.transMode = trans_mode(int(v))
+                return
+            else:
+                self.transMode = trans_mode.from_waxs
+                self.transField = ''
+        elif transField not in data_fields:
+            print("invalid filed for transmitted intensity: ", transField)
+            raise Exception()
+        else:
+            self.transField = transField
+            self.transMode = trans_mode.external
+        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])
+        self.fh5.flush()
             
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -336,8 +351,8 @@ class h5xs():
             images = {}
             for det in self.detectors:
                 ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
-                if len(ti.shape)==4:
-                    ti = ti[0]      # quirk of suitcase
+                if len(ti.shape)>3:
+                    ti = ti.reshape(ti.shape[-3:])      # quirk of suitcase
                 images[det.extension] = ti
             
             n_total_frames = len(images[self.detectors[0].extension])
@@ -400,7 +415,7 @@ class h5sol_HPLC(h5xs):
     updating = False   # this is set to True when add_data() is active
     
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, transMode = trans_mode.from_waxs)
+        super().__init__(*args, **kwargs)
         
     def add_data(self, ):
         """ watch the given path
@@ -662,7 +677,7 @@ class h5sol_HT(h5xs):
     buffer_list = {}    
     
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, transMode = trans_mode.from_waxs)
+        super().__init__(*args, **kwargs)
         
     def add_sample(self, db, uid):
         """ add another group to the HDF5 file

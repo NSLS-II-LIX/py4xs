@@ -103,7 +103,8 @@ class Data1d:
         #                           exp_para.bm_ctr_y+BEAM_SIZE_hH, mask)
 
         self.data,self.err = d2.conv_Iq(qgrid, mask,
-                                        cor_factor = exp_para.FPol)  # exp_para.FSA*exp_para.FPol)
+                                        #cor_factor = exp_para.FSA*exp_para.FPol)
+                                        cor_factor = exp_para.FPol)  
         if isinstance(image, np.ndarray):
             del d2      # d2 is only used temporarily
         
@@ -144,7 +145,7 @@ class Data1d:
             if trans > 0:
                 self.comments += "# transmitted beam intensity is defined externally: %f"%trans
                 self.trans = trans
-            elif self.trans<=0:
+            elif self.trans<0:
                 print("trans_mode is TRANS_EXTERNAL but a valid trans value is not provided")
                 raise Exception()
         else:
@@ -271,7 +272,6 @@ class Data1d:
             sc = dset.trans / dbak.trans
 
         # need to include raw data
-
         if plot_data:
             if ax is None:
                 plt.figure()

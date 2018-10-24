@@ -313,8 +313,8 @@ class Data2d:
     
 class Axes2dPlot:
     """
-    display MatrixWithCoordinates, image origin at the upper left corner
-    option to provide coordinates translation
+        display MatrixWithCoordinates, image origin at the upper left corner
+        option to provide coordinates translation
     """    
     def __init__(self, ax, data, exp=None, datatype=DataType.det):
         """
@@ -459,9 +459,9 @@ class Axes2dPlot:
     def mark_standard(self, std, sym="k:"):
         """ std should be one of these: 
             AgBH: mutiples of 0.1076, then 1.37
-            sucrose: 
-            CeO2:
-            LaB6: 
+            sucrose: 0.5933, 0.8289, 0.9054, 0.9336, 1.1000
+            CeO2: 2.0116, 1.8985, 3.2838, 3.8504
+            LaB6: 1.5115, 2.1376, 2.6180, 3.0230, 3.3799, 3.7025
         """
         if std=="AgBH":
             q_std = np.hstack((0.1076*np.arange(1,10), [1.37]))

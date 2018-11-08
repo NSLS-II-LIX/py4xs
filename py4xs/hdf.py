@@ -137,7 +137,7 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
             dt.scale(sc[det.extension])
             ret[det.extension].append(dt)
     
-        dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, reft, save_merged, debug)
+        dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, save_merged, debug)
         ret['merged'].append(dm)
             
     if debug:

@@ -33,33 +33,40 @@ def lsh5(hd, prefix='', top_only=False, silent=False):
             print(list(hd[k].attrs.items()))
             lsh5(hd[k], prefix+"=")
 
-def pack_d1(data):
+def pack_d1(data, ret_trans=True):
     """ utility function to creat a list of [intensity, error] from a Data1d object 
         or from a list of Data1s objects
     """
     if isinstance(data, Data1d):
-        return np.asarray([data.data,data.err])
+        if ret_trans:
+            return np.asarray([data.data,data.err]), data.trans
+        else:
+            return np.asarray([data.data,data.err])
     elif isinstance(data, list):
-        return np.asarray([pack_d1(d) for d in data])
+        tvs = [d.trans for d in data]
+        return np.asarray([pack_d1(d, False) for d in data]),tvs
     
-def unpack_d1(data, qgrid, label, set_trans=False):
-    """ utility function to creat a Data1d object from sepatately given data[intensity and error], qgrid, and label 
-        works for a list as well, in which case data should be a list of 
+def unpack_d1(data, qgrid, label, trans_value):
+    """ utility function to creat a Data1d object from hdf dataset
+        sepatately given data[intensity and error], qgrid, label, and trans  
+        works for a dataset that include a list of 1d data as well
+        transMode is set to trans_mode.external
     """
     if len(data.shape)>2:
-        return [unpack_d1(d, qgrid, label+("f%05d" % i), set_trans=set_trans) for i,d in enumerate(data)]
+        if np.isscalar(trans_value): # this should only happen when intentionally setting trans to 0
+            trans_value = np.zeros(len(data))
+        return [unpack_d1(d, qgrid, label+("f%05d" % i), t) for i,(d,t) in enumerate(zip(data,trans_value))]
     else:
         ret = Data1d()
         ret.qgrid = qgrid
         ret.data = data[0]
         ret.err = data[1]
         ret.label = label
-        # set_trans is only necessary when performing further processing?
-        #if set_trans:
-        #    ret.set_trans()    # this won't work before SAXS/WAXS merge
+        ret.trans = trans_value
+        ret.transMode = trans_mode.external
         return ret
 
-def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
+def merge_d1s(d1s, detectors, save_merged=False, debug=False):
     """ utility function to merge 1D data sets, using functions under slnxs 
         d1s should contain data corresponding to detectors
     """
@@ -99,8 +106,6 @@ def merge_d1s(d1s, detectors, reft=-1, save_merged=False, debug=False):
                         'raw_data2': d_min[idx]})
     s0.data[idx] /= c_tot[idx]
     s0.err[idx] /= np.sqrt(c_tot[idx])
-    # this should be done outside of merge, in case an external trans value is needed
-    #s0.set_trans(ref_trans=reft, debug=debug)
     s0.label = label
     s0.comments = comments # .replace("# ", "## ")
     if save_merged:
@@ -156,8 +161,13 @@ class h5xs():
     # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
     transField = None  
     
-    def __init__(self, fn, exp_setup=None, transField=''):
+    def __init__(self, fn, exp_setup=None, transField='', save_d1=True):
+        """ exp_setup: [detectors, qgrid]
+            transField: the intensity monitor field packed by suitcase from databroker
+            save_d1: save newly processed 1d data back to the h5 file
+        """
         self.fn = fn
+        self.save_d1 = save_d1
         self.fh5 = h5py.File(self.fn, "r+")   # file must exist
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
@@ -214,8 +224,14 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
+    def show_data(self, sn=None, det='_SAXS', frn=0):
+        pass
+    
     def set_trans(self, sn=None, transMode=None):
         """ set the transmission values for the merged data
+            the trans values directly from the raw data (water peak intensity or monitor counts)
+            but this value is changed if the data is scaled
+            the trans value for all processed 1d data are saved as attrubutes of the dataset
         """
         if transMode is not None:
             self.transMode = transMode
@@ -268,11 +284,14 @@ class h5xs():
         for k in list(grp.attrs.keys()):
             self.attrs[sn][k] = grp.attrs[k]   
         for k in lsh5(grp, top_only=True, silent=True):
-            if k=='buf average':
-                self.d1s[sn][k] = grp[k].value   # just a 2d array
-            else: # usually a collection of 2d arrays    
-                self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k)   
-        self.set_trans(sn)
+            if 'trans' in grp[k].attrs.keys():
+                tvs = grp[k].attrs['trans']
+            else:
+                tvs = 0
+            self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, tvs)   
+
+        # this shouldn't be necessary since trans values should always be saved
+        #self.set_trans(sn)
                 
             
     def save_d1s(self, sn=None, debug=False):
@@ -281,9 +300,10 @@ class h5xs():
         processed data go under the group sample_name/processed
         assume that the shape of the data is unchanged
         """
-        #self.fh5.close()
-        #fh5 = h5py.File(self.fn, "a")
-
+        
+        if self.save_d1 is False:
+            print("requested to save_d1s() but h5xs.save_d1 is False.")
+            return
         if sn==None:
             self.list_samples(quiet=True)
             for sn in self.samples:
@@ -303,18 +323,20 @@ class h5xs():
                     print("writting attribute to %s: %s" % (sn, k))
 
         ds_names = lsh5(grp, top_only=True, silent=True)
-        #if 'qgrid' not in ds_names:
-        #    grp.create_dataset('qgrid', data=self.d1s[sn]['merged'][0].qgrid)
-        #else:
-        #    grp['qgrid'][...] = self.d1s[sn]['merged'][0].qgrid
         for k in list(self.d1s[sn].keys()):
-            data = pack_d1(self.d1s[sn][k])
+            data,tvs = pack_d1(self.d1s[sn][k])
             if debug:
                 print("writting attribute to %s: %s" % (sn, k))
             if k not in ds_names:
                 grp.create_dataset(k, data=data)
             else:
                 grp[k][...] = data   
+
+            # save trans values for processed data
+            # before 1d data merge, the trans value should be 0              
+            # on the other hand there could be data collected with the beam off, therefore trans=0
+            if (np.asarray(tvs)>0).any(): 
+                grp[k].attrs['trans'] = tvs
                 
         fh5.flush()
 
@@ -381,7 +403,6 @@ class h5xs():
                 self.d1s[sn] = data                
 
         if N>1:             
-            # join() first? or get from que first??
             for que in queue_list:
                 [sn, fr1, data] = que.get()
                 results[sn][fr1] = data
@@ -451,13 +472,15 @@ class h5sol_HPLC(h5xs):
         self.set_trans(transMode=trans_mode.from_waxs)
 
 
-    def subtract_buffer(self, buffer_frame_range, sample_frame_range=None, first_frame=0,
-                        sn=None, update_only=False, sc_factor=1., normalize_int=True, debug=False):
+    def subtract_buffer(self, buffer_frame_range, sample_frame_range=None, first_frame=0, 
+                        sn=None, update_only=False, 
+                        sc_factor=1., normalize_int=True, show_eb=False, debug=False):
         """ buffer_frame_range should be a list of frame numbers, could be range(frame_s, frame_e)
             if sample_frame_range is None: subtract all dataset; otherwise subtract and test-plot
             update_only is not used currently
             first_frame:    duplicate data in the first few frames subtracted data from first_frame
                             this is useful when the beam is not on for the first few frames
+            normalize_int: this works only when sample_frame_range is None
         """
 
         fh5,sn = self.process_sample_name(sn, debug=debug)
@@ -467,11 +490,11 @@ class h5sol_HPLC(h5xs):
             t1 = time.time()
 
         listb  = [self.d1s[sn]['merged'][i] for i in buffer_frame_range]
-        listbfn = [i for i in buffer_frame_range]
+        listbfn = buffer_frame_range
         if len(listb)>1:
             d1b = listb[0].avg(listb[1:], debug=debug)
         else:
-            d1b = listb[0]           
+            d1b = copy.deepcopy(listb[0])           
             
         if sample_frame_range==None:
             # perform subtraction on all data and save listbfn, d1b
@@ -484,7 +507,7 @@ class h5sol_HPLC(h5xs):
             for d1 in self.d1s[sn]['merged']:
                 if normalize_int:
                     d1.set_trans(ref_trans=self.d1s[sn]['merged'][0].trans, transMode=trans_mode.from_waxs)
-                d1t = d1.bkg_cor(d1b, plot_data=False, debug="quiet", sc_factor=sc_factor)
+                d1t = d1.bkg_cor(d1b, plot_data=False, debug=debug, sc_factor=sc_factor)
                 self.d1s[sn]['subtracted'].append(d1t) 
             if first_frame>0:
                 for i in range(first_frame):
@@ -495,9 +518,8 @@ class h5sol_HPLC(h5xs):
             if len(listb)>1:
                 d1s = lists[0].avg(lists[1:], debug=debug)
             else:
-                d1s = lists[0]
-            sample_sub = d1s.bkg_cor(d1b, plot_data=True, debug=debug, sc_factor=sc_factor)
-        #fh5.close()
+                d1s = copy.deepcopy(lists[0])
+            sample_sub = d1s.bkg_cor(d1b, plot_data=True, debug=debug, sc_factor=sc_factor, show_eb=show_eb)
         
         #if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue
         #if sn not in list(self.buffer_list.keys()): continue
@@ -530,6 +552,8 @@ class h5sol_HPLC(h5xs):
         if 'subtracted' in self.d1s[sn].keys() and plot_merged==False:
             dkey = 'subtracted'
         elif 'merged' in self.d1s[sn].keys():
+            if plot_merged==False:
+                print("subtracted data not available. plotting merged data instead ...")
             dkey = 'merged'
         else:
             raise Exception("processed data not present.")

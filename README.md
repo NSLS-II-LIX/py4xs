@@ -49,3 +49,6 @@ removing qgrid from DetectorConfig (this affects the syntax of process/average/m
 bugfixes, slnxs and hdf; 
 handling of transmitted beam intensity;
 first attempt to support scanning data 
+
+2018-11:
+slnxs bug fix

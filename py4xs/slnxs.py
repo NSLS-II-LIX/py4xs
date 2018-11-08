@@ -112,7 +112,8 @@ class Data1d:
             self.save(image + ".ave", debug=debug)     
         
 
-    def set_trans(self, trans=-1, ref_trans=-1, transMode=None, debug=False):
+    def set_trans(self, trans=-1, ref_trans=-1, transMode=None, 
+                  q_start=1.85, q_end=2.15, debug=False):
         """
         normalize intensity, from trans to ref_trans
         trans can be either from the beam center or water scattering
@@ -125,16 +126,20 @@ class Data1d:
         if self.transMode == trans_mode.from_waxs:
             # get trans for the near the maximum in the WAXS data
             # for solution scattering, hopefully this reflect the intensity of water scattering
-            idx = (self.qgrid > 1.85) & (self.qgrid < 2.15)  # & (self.data>0.5*np.max(self.data))
+            idx = (self.qgrid > q_start) & (self.qgrid < q_end)  # & (self.data>0.5*np.max(self.data))
             if len(self.qgrid[idx]) < 5:
                 print("not enough data points under the water peak, consider using a different trans_mode.")
                 #raise Exception()
-            idx1 = idx & (self.data >= 0.95*np.max(self.data[idx]))
-            if (self.data[idx1]<WAXS_THRESH).all() and debug!='quiet':
+            
+            # trying to narrow down the peak range turns out to be a bad idea
+            # the width then could vary between datasets, creating artificial fluctuation in trans 
+            #idx1 = idx & (self.data >= 0.95*np.max(self.data[idx]))
+
+            if (self.data[idx]<WAXS_THRESH).all() and debug!='quiet':
                 print("the data points for trans calculation are below WAXS_THRESH: ", 
-                      np.max(self.data[idx1]), WAXS_THRESH)                
-            self.trans = np.sum(self.data[idx1])
-            qavg = np.average(self.qgrid[idx1])
+                      np.max(self.data[idx]), WAXS_THRESH)                
+            self.trans = np.sum(self.data[idx])
+            qavg = np.average(self.qgrid[idx])
             if self.trans<1.0:
                 print('caluclated trans is %f, setting it artifically to WAXS_THRESH.' % self.trans)
                 self.trans = WAXS_THRESH
@@ -250,7 +255,7 @@ class Data1d:
 
 
     def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, 
-                inplace=False, check_overlap=False, debug=False):
+                inplace=False, check_overlap=False, show_eb=True, debug=False):
         """
         background subtraction
         """
@@ -306,8 +311,11 @@ class Data1d:
         dset.data -= dbak.data * sc * sc_factor
         dset.err += dbak.err * sc * sc_factor
         if plot_data:
-            ax.errorbar(dset.qgrid, dset.data, dset.err)
-
+            if show_eb:
+                ax.errorbar(dset.qgrid, dset.data, dset.err)
+            else:
+                ax.plot(dset.qgrid, dset.data)
+                
         dset.comments += "# background subtraction using the following set, scaled by %f (trans):\n" % sc
         if not sc_factor == 1.:
             dset.comments += "# with addtional scaling factor of: %f\n" % sc_factor

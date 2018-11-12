@@ -1,13 +1,14 @@
-from py4xs.data2d import Data2d,ExpParaLiX,Axes2dPlot,DataType
+from py4xs.data2d import Data2d,Axes2dPlot,DataType
 from py4xs.detector_config import DetectorConfig
 from py4xs.slnxs import Data1d, average
+from py4xs.local import ExpPara
 import numpy as np
 import pylab as plt
 import matplotlib as mpl
 
-es = ExpParaLiX(1043, 981) 
-ew1 = ExpParaLiX(619, 487) 
-ew2 = ExpParaLiX(487, 619)
+es = ExpPara(1043, 981) 
+ew1 = ExpPara(619, 487) 
+ew2 = ExpPara(487, 619)
 
 ene = 10790.6
 wl = 2.*np.pi*1973/ene
@@ -67,9 +68,9 @@ qgrid = np.hstack((np.arange(0.005, 0.0499, 0.001),
                    np.arange(0.5, 0.9999, 0.01),
                    np.arange(1.0, 2.6,0.03)))
 
-det_saxs = DetectorConfig(extension="_SAXS.cbf", fix_scale = 1, exp_para=es, qgrid = qgrid)
-det_waxs2 = DetectorConfig(extension="_WAXS2.cbf", fix_scale = (es.Dd/ew2.Dd)**2, exp_para=ew2, qgrid = qgrid)
-det_waxs1 = DetectorConfig(extension="_WAXS1.cbf", fix_scale = (es.Dd/ew1.Dd)**2, exp_para=ew1, qgrid = qgrid)
+det_saxs = DetectorConfig(extension="_SAXS.cbf", fix_scale = 1, exp_para=es)
+det_waxs2 = DetectorConfig(extension="_WAXS2.cbf", fix_scale = (es.Dd/ew2.Dd)**2, exp_para=ew2)
+det_waxs1 = DetectorConfig(extension="_WAXS1.cbf", fix_scale = (es.Dd/ew1.Dd)**2, exp_para=ew1)
 
 detectors = [det_saxs, det_waxs2, det_waxs1]
 

@@ -2,7 +2,7 @@ import numpy as np
 import fabio
 import datetime
 from py4xs.mask import Mask
-from py4xs.exp_para import ExpPara
+from py4xs.local import ExpPara
 import pylab as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm

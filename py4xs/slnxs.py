@@ -47,7 +47,7 @@ BEAM_SIZE_hH = 4
 # this is the global setting
 TRANS_MODE = trans_mode.from_waxs
 # this is the minimum intensity to be used for trans calculations
-WAXS_THRESH = 100
+WAXS_THRESH = 10
 
 # this is the scaling factor for indivudual curves that belong to the same sample
 # they are offset for clarity in the plots

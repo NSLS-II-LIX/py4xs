@@ -51,4 +51,4 @@ handling of transmitted beam intensity;
 first attempt to support scanning data 
 
 2018-11:
-slnxs bug fix
+slnxs bug fix; moved some functions from h5sol_HT to h5xs

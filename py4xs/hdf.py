@@ -12,6 +12,7 @@ from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
 from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names    # e.g. "_SAXS": "pil1M_image"
+from py4xs.data2d import Data2d, Axes2dPlot
 from itertools import combinations
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
@@ -113,6 +114,54 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
         
     return s0
 
+def proc_2d(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
+    """ convert 2D data to q-phi map
+        may want to do this separately for SAXS and WAXS; how to specify?
+    """
+    pass
+
+def proc_make_thumnails(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
+    """ make thumbnails, specify the detector, output dataset name, color scale, etc.
+    """
+    pass
+
+def proc_line_profile(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
+    """ put the results in a dataset, with attributes describing where the results come from?
+    """
+    pass
+
+def proc_d1merge(args):
+    """ utility function to perfrom azimuthal average and merge detectors
+    """
+    images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_1d,save_merged = args
+    ret = {'merged': []}
+    sc = {}
+    
+    for det in detectors:
+        ret[det.extension] = []
+        if det.fix_scale is not None:
+            sc[det.extension] = 1./det.fix_scale
+
+    if debug:
+        print("processing started: sample = %s, starting frame = #%d" % (sn, starting_frame_no))
+    for i in range(nframes):
+        for det in detectors:
+            dt = Data1d()
+            label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
+            dt.load_from_2D(images[det.extension][i], 
+                            det.exp_para, qgrid, det.pre_process, det.exp_para.mask,
+                            save_ave=False, debug=debug, label=label)
+            dt.scale(sc[det.extension])
+            ret[det.extension].append(dt)
+    
+        dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, save_merged, debug)
+        ret['merged'].append(dm)
+            
+    if debug:
+        print("processing completed: ", sn, starting_frame_no)
+
+    return [sn, starting_frame_no, ret]
+        
 def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, save_merged, debug,
                starting_frame_no=0, transMode=None, monitor_counts=None):
     """ utility function to perfrom azimuthal average and merge detectors
@@ -146,7 +195,7 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
         return ([sn,starting_frame_no,ret])
     else: # multi-processing    
         queue.put([sn,starting_frame_no,ret])
-        
+
         
 class h5xs():
     """ Scattering data in transmission geometry
@@ -224,8 +273,31 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
-    def show_data(self, sn=None, det='_SAXS', frn=0):
-        pass
+    def show_data(self, sn=None, det='_SAXS', frn=0, 
+                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+        """ display frame #frn of the data under det for sample sn
+        """
+        if sn is None:
+            sn = self.samples[0]
+        dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det])]
+        di = np.arange(len(self.detectors))[np.asarray([d.extension for d in self.detectors])==det][0]
+        exp = self.detectors[di].exp_para
+        d2 = Data2d(filename=None, im=dset[frn], exp=exp)
+        
+        plt.figure()
+        ax = plt.gca()
+        pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
+        pax.plot(log=logScale)
+        if cmap is not None:
+            pax.set_color_scale(plt.get_cmap(cmap)) 
+        if showMask:
+            pax.plot(log=logScale, mask=d2.exp.mask)
+        pax.img.set_clim(*clim)
+        pax.coordinate_translation="xy2qphi"
+        if showRef:
+            pax.mark_standard("AgBH", "r:")
+        pax.capture_mouse()
+        #plt.show() 
     
     def set_trans(self, sn=None, transMode=None):
         """ set the transmission values for the merged data
@@ -290,10 +362,6 @@ class h5xs():
                 tvs = 0
             self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, tvs)   
 
-        # this shouldn't be necessary since trans values should always be saved
-        #self.set_trans(sn)
-                
-            
     def save_d1s(self, sn=None, debug=False):
         """
         save the 1d data in memory to the hdf5 file 
@@ -340,11 +408,210 @@ class h5xs():
                 
         fh5.flush()
 
+    def average_d1s(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
+        """ if update_only is true: only work on samples that do not have "merged' data
+            selection: if None, retrieve from dataset attribute
+        """
+        if debug:
+            print("start processing: average_samples()")
+            t1 = time.time()
+
+        if samples is None:
+            samples = self.samples
+        elif isinstance(samples, str):
+            samples = [samples]
+        for sn in samples:
+            if update_only and 'merged' in list(self.d1s[sn].keys()): continue
+                
+            if filter_data:
+                d1keep,d1disc = filter_by_similarity(self.d1s[sn]['merged'])
+                self.attrs[sn]['selected'] = []
+                for d1 in self.d1s[sn]['merged']:
+                    self.attrs[sn]['selected'].append(d1 in d1keep)
+            else:
+                if  selection==None:
+                    # if there is an error, run with filter_data=True
+                    selection = self.attrs[sn]['selected']
+                else:
+                    self.attrs[sn]['selected'] = selection
+                d1keep = [self.d1s[sn]['merged'][i] for i in range(len(selection)) if selection[i]]
+            
+            if len(d1keep)>1:
+                self.d1s[sn]['averaged'] = d1keep[0].avg(d1keep[1:], debug=debug)
+            else:
+                self.d1s[sn]['averaged'] = d1keep[0]
+                
+        self.save_d1s(debug=debug)
+
+        if debug:
+            t2 = time.time()
+            print("done, time lapsed: %.2f sec" % (t2-t1))
+            
+    def plot_d1s(self, sn, ax=None, offset=1.5, 
+                    show_overlap=False, show_subtracted=False, show_subtraction=True):
+        """ show_subtracted:
+                work only if sample is background-subtracted, show the subtracted result
+            show_subtraction: 
+                if True, show sample and boffer when show_subtracted
+            show_overlap: 
+                also show data in the overlapping range from individual detectors
+                only allow if show_subtracted is False
+        """
+
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+        if show_subtracted:
+            if 'subtracted' not in list(self.d1s[sn].keys()):
+                raise Exception("bkg-subtracted data not found: ", sn)
+            self.d1s[sn]['subtracted'].plot(ax=ax)
+            if show_subtraction:
+                self.d1s[sn]['averaged'].plot(ax=ax)
+                self.d1b[sn].plot(ax=ax)
+        else:
+            sc = 1
+            for i,d1 in enumerate(self.d1s[sn]['merged']):
+                if self.attrs[sn]['selected'][i]:
+                    d1.plot(ax=ax, scale=sc)
+                    plt.plot(self.d1s[sn]['averaged'].qgrid, 
+                             self.d1s[sn]['averaged'].data*sc, 
+                             color="gray", lw=2, ls="--")
+                    if show_overlap:
+                        for det1,det2 in combinations(list(self.det_name.keys()), 2):
+                            idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
+                            if len(idx_ov)>0:
+                                plt.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
+                                         self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
+                                plt.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
+                                         self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
+                else:
+                    plt.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
+                             color="gray", lw=2, ls=":")
+                sc *= offset
+
+    def export_d1s(self, samples=None, save_subtracted=True, debug=False):
+        if samples is None:
+            samples = list(self.buffer_list.keys())
+        elif isinstance(samples, str):
+            samples = [samples]
+
+        if debug:
+            print("start processing: export_txt()")
+        for sn in samples:
+            if save_subtracted:
+                if 'subtracted' not in self.d1s[sn].keys():
+                    print("subtracted data not available.")
+                    return
+                self.d1s[sn]['subtracted'].save("%s_%c.dat"%(sn,'s'), debug=debug)
+            else:
+                if 'merged' not in self.d1s[sn].keys():
+                    print("1d data not available.")
+                    return
+                for i in range(len(self.d1s[sn]['merged'])):
+                    self.d1s[sn]['merged'][i].save("%s_%d%c.dat"%(sn,i,'m'), debug=debug)                    
+                
     def load_data_mp(self, *args, **kwargs):
         print('load_data_mp() will be deprecated. use load_data() instead.')
         self.load_data(*args, **kwargs)
             
-    def load_data(self, update_only=False,
+    def load_data(self, update_only=False, 
+                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0):
+        """ assume multiple samples, parallel-process by sample
+            if update_only is true, only create 1d data for new frames (empty self.d1s)
+            
+            use Pool to limit the number of processes
+            access data directly in the worker process, coordinated using a lock
+            
+        """
+        if debug:
+            print("start processing: load_data()")
+            t1 = time.time()
+        
+        fh5 = self.fh5
+        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
+        
+        results = {}
+        pool = mp.Pool(N)
+        jobs = []
+        
+        for sn in self.samples:
+            if sn not in list(self.attrs.keys()):
+                self.attrs[sn] = {}
+            if 'buffer' in list(fh5[sn].attrs):
+                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
+            if update_only and sn in list(self.d1s.keys()):
+                self.load_d1s(sn)   # load processed data saved in the file
+                continue
+                                    
+            self.d1s[sn] = {}
+            results[sn] = {}
+            dset = fh5["%s/primary/data" % sn]
+            
+            s = dset["%s" % self.det_name[self.detectors[0].extension]].shape
+            if len(s)==3:
+                n_total_frames = s[0]
+            elif len(s)==4:
+                n_total_frames = s[1]
+            else:
+                raise Exception("don't know how to handle shape:", )
+            if n_total_frames<N*N/2:
+                Np = 1
+                c_size = N
+            else:
+                Np = N
+                c_size = int(n_total_frames/N)
+                if max_c_size>0 and c_size>max_c_size:
+                    Np = int(n_total_frames/max_c_size)+1
+                    c_size = int(n_total_frames/Np)
+                    
+            # process data in group in hope to limit memory use
+            for i in range(Np):
+                if i==Np-1:
+                    nframes = n_total_frames - c_size*(Np-1)
+                else:
+                    nframes = c_size
+                    
+                images = {}
+                for det in self.detectors:
+                    if len(s)==3:
+                        images[det.extension] = dset['%s' % self.det_name[det.extension]][i*c_size:i*c_size+nframes]
+                    else:
+                        images[det.extension] = dset['%s' % self.det_name[det.extension]][0][i*c_size:i*c_size+nframes]
+                if N>1: # multi-processing, need to keep track of total number of active processes                    
+                    job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
+                                                        self.detectors, self.qgrid, reft, save_1d, save_merged)])
+                    jobs.append(job)
+                else: # serial processing
+                    [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug,
+                                                   self.detectors, self.qgrid, reft, save_1d, save_merged)) 
+                    results[sn][fr1] = data                
+
+        if N>1:             
+            for job in jobs:
+                [sn, fr1, data] = job.get()[0]
+                results[sn][fr1] = data
+                print("data received: sn=%s, fr1=%d" % (sn,fr1) )
+            pool.close()
+            pool.join()
+
+        for sn in self.samples:
+            if sn not in results.keys():
+                continue
+            data = {}
+            frns = list(results[sn].keys())
+            frns.sort()
+            for k in results[sn][frns[0]].keys():
+                data[k] = []
+                for frn in frns:
+                    data[k].extend(results[sn][frn][k])
+            self.d1s[sn] = data
+        
+        self.save_d1s(debug=debug)
+        if debug:
+            t2 = time.time()
+            print("done, time lapsed: %.2f sec" % (t2-t1))
+
+    def load_data0(self, update_only=False,
                    reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
         """ assume multiple samples, parallel-process by sample
             if update_only is true, only create 1d data for new frames (empty self.d1s)
@@ -426,7 +693,7 @@ class h5xs():
         if debug:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
-        
+            
 
 class h5sol_HPLC(h5xs):
     """ single sample (not required, but may behave unexpectedly when there are multiple samples), 
@@ -462,13 +729,13 @@ class h5sol_HPLC(h5xs):
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, save_1d=False, save_merged=False, 
-                filter_data=False, debug=False, N=8):
+                filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
         """
         if detectors is not None:
             self.detectors = detectors
         self.load_data(update_only=update_only, reft=reft, 
-                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
+                       save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
         self.set_trans(transMode=trans_mode.from_waxs)
 
 
@@ -772,44 +1039,11 @@ class h5sol_HT(h5xs):
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
         self.subtract_buffer(update_only=update_only, debug=debug)
         
-    def average_samples(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
+    def average_samples(self, **kwargs):
         """ if update_only is true: only work on samples that do not have "merged' data
             selection: if None, retrieve from dataset attribute
         """
-        if debug:
-            print("start processing: average_samples()")
-            t1 = time.time()
-
-        if samples is None:
-            samples = self.samples
-        elif isinstance(samples, str):
-            samples = [samples]
-        for sn in samples:
-            if update_only and 'merged' in list(self.d1s[sn].keys()): continue
-                
-            if filter_data:
-                d1keep,d1disc = filter_by_similarity(self.d1s[sn]['merged'])
-                self.attrs[sn]['selected'] = []
-                for d1 in self.d1s[sn]['merged']:
-                    self.attrs[sn]['selected'].append(d1 in d1keep)
-            else:
-                if  selection==None:
-                    # if there is an error, run with filter_data=True
-                    selection = self.attrs[sn]['selected']
-                else:
-                    self.attrs[sn]['selected'] = selection
-                d1keep = [self.d1s[sn]['merged'][i] for i in range(len(selection)) if selection[i]]
-            
-            if len(d1keep)>1:
-                self.d1s[sn]['averaged'] = d1keep[0].avg(d1keep[1:], debug=debug)
-            else:
-                self.d1s[sn]['averaged'] = d1keep[0]
-                
-        self.save_d1s(debug=debug)
-
-        if debug:
-            t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
+        super().average_d1s(**kwargs)
             
     def subtract_buffer(self, samples=None, update_only=False, sc_factor=1., debug=False):
         """ if update_only is true: only work on samples that do not have "subtracted' data
@@ -844,8 +1078,7 @@ class h5sol_HT(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
                 
-    def plot_sample(self, sn, ax=None, offset=1.5, 
-                    show_overlap=False, show_subtracted=False, show_subtraction=True):
+    def plot_sample(self, *args, **kwargs):
         """ show_subtracted:
                 work only if sample is background-subtracted, show the subtracted result
             show_subtraction: 
@@ -854,56 +1087,8 @@ class h5sol_HT(h5xs):
                 also show data in the overlapping range from individual detectors
                 only allow if show_subtracted is False
         """
-
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-        if show_subtracted:
-            if 'subtracted' not in list(self.d1s[sn].keys()):
-                raise Exception("bkg-subtracted data not found: ", sn)
-            self.d1s[sn]['subtracted'].plot(ax=ax)
-            if show_subtraction:
-                self.d1s[sn]['averaged'].plot(ax=ax)
-                self.d1b[sn].plot(ax=ax)
-        else:
-            sc = 1
-            for i,d1 in enumerate(self.d1s[sn]['merged']):
-                if self.attrs[sn]['selected'][i]:
-                    d1.plot(ax=ax, scale=sc)
-                    plt.plot(self.d1s[sn]['averaged'].qgrid, 
-                             self.d1s[sn]['averaged'].data*sc, 
-                             color="gray", lw=2, ls="--")
-                    if show_overlap:
-                        for det1,det2 in combinations(list(self.det_name.keys()), 2):
-                            idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
-                            if len(idx_ov)>0:
-                                plt.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
-                                         self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
-                                plt.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
-                                         self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
-                else:
-                    plt.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
-                             color="gray", lw=2, ls=":")
-                sc *= offset
+        super().plot_d1s(*args, **kwargs)
      
-    def export_txt(self, samples=None, save_subtracted=True, debug=False):
-        if samples is None:
-            samples = list(self.buffer_list.keys())
-        elif isinstance(samples, str):
-            samples = [samples]
-
-        if debug:
-            print("start processing: export_txt()")
-        for sn in samples:
-            if save_subtracted:
-                if 'subtracted' not in self.d1s[sn].keys():
-                    print("subtracted data not available.")
-                    return
-                self.d1s[sn]['subtracted'].save("%s_%c.dat"%(sn,'s'), debug=debug)
-            else:
-                if 'merged' not in self.d1s[sn].keys():
-                    print("1d data not available.")
-                    return
-                for i in range(len(self.d1s[sn]['merged'])):
-                    self.d1s[sn]['merged'][i].save("%s_%d%c.dat"%(sn,i,'m'), debug=debug)                    
-
+    def export_txt(self, *args, **kwargs):
+        super().export_d1s(*args, **kwargs)
+        

@@ -142,7 +142,7 @@ def proc_d1merge(args):
         if det.fix_scale is not None:
             sc[det.extension] = 1./det.fix_scale
 
-    if debug:
+    if debug is True:
         print("processing started: sample = %s, starting frame = #%d" % (sn, starting_frame_no))
     for i in range(nframes):
         for det in detectors:
@@ -157,7 +157,7 @@ def proc_d1merge(args):
         dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, save_merged, debug)
         ret['merged'].append(dm)
             
-    if debug:
+    if debug is True:
         print("processing completed: ", sn, starting_frame_no)
 
     return [sn, starting_frame_no, ret]
@@ -174,7 +174,7 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
         if det.fix_scale is not None:
             sc[det.extension] = 1./det.fix_scale
 
-    if debug:
+    if debug is True:
         print("processing started: sample = %s, starting frame = #%d" % (sn, starting_frame_no))
     for i in range(nframes):
         for det in detectors:
@@ -189,13 +189,38 @@ def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, sav
         dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, save_merged, debug)
         ret['merged'].append(dm)
             
-    if debug:
+    if debug is True:
         print("processing completed: ", sn, starting_frame_no)
     if queue is None: # single-thread
         return ([sn,starting_frame_no,ret])
     else: # multi-processing    
         queue.put([sn,starting_frame_no,ret])
 
+class h5exp():
+    """ empty h5 file for exchanging exp_setup/qgrid
+    """
+    def __init__(self, fn, exp_setup=None):
+        self.fn = fn
+        if exp_setup==None:     # assume the h5 file will provide the detector config
+            self.fh5 = h5py.File(self.fn, "r+")   # file must exist
+            self.qgrid = self.read_detectors()
+        else:
+            self.fh5 = h5py.File(self.fn, "w+")   # new file
+            self.detectors, self.qgrid = exp_setup
+            self.save_detectors()
+        
+    def save_detectors(self):
+        dets_attr = [det.pack_dict() for det in self.detectors]
+        self.fh5.attrs['detectors'] = json.dumps(dets_attr)
+        self.fh5.attrs['qgrid'] = list(self.qgrid)
+        self.fh5.flush()
+    
+    def read_detectors(self):
+        dets_attr = self.fh5.attrs['detectors']
+        qgrid = self.fh5.attrs['qgrid']
+        self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+        return np.asarray(qgrid)
+        
         
 class h5xs():
     """ Scattering data in transmission geometry
@@ -387,13 +412,13 @@ class h5xs():
         if sn in list(self.attrs.keys()):
             for k in list(self.attrs[sn].keys()):
                 grp.attrs[k] = self.attrs[sn][k]
-                if debug:
+                if debug is True:
                     print("writting attribute to %s: %s" % (sn, k))
 
         ds_names = lsh5(grp, top_only=True, silent=True)
         for k in list(self.d1s[sn].keys()):
             data,tvs = pack_d1(self.d1s[sn][k])
-            if debug:
+            if debug is True:
                 print("writting attribute to %s: %s" % (sn, k))
             if k not in ds_names:
                 grp.create_dataset(k, data=data)
@@ -412,7 +437,7 @@ class h5xs():
         """ if update_only is true: only work on samples that do not have "merged' data
             selection: if None, retrieve from dataset attribute
         """
-        if debug:
+        if debug is True:
             print("start processing: average_samples()")
             t1 = time.time()
 
@@ -443,7 +468,7 @@ class h5xs():
                 
         self.save_d1s(debug=debug)
 
-        if debug:
+        if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
@@ -473,20 +498,20 @@ class h5xs():
             for i,d1 in enumerate(self.d1s[sn]['merged']):
                 if self.attrs[sn]['selected'][i]:
                     d1.plot(ax=ax, scale=sc)
-                    plt.plot(self.d1s[sn]['averaged'].qgrid, 
-                             self.d1s[sn]['averaged'].data*sc, 
-                             color="gray", lw=2, ls="--")
+                    ax.plot(self.d1s[sn]['averaged'].qgrid, 
+                            self.d1s[sn]['averaged'].data*sc, 
+                            color="gray", lw=2, ls="--")
                     if show_overlap:
                         for det1,det2 in combinations(list(self.det_name.keys()), 2):
                             idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
                             if len(idx_ov)>0:
-                                plt.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
-                                         self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
-                                plt.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
-                                         self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
+                                ax.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
+                                        self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
+                                ax.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
+                                        self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
                 else:
-                    plt.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
-                             color="gray", lw=2, ls=":")
+                    ax.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
+                            color="gray", lw=2, ls=":")
                 sc *= offset
 
     def export_d1s(self, samples=None, save_subtracted=True, debug=False):
@@ -495,7 +520,7 @@ class h5xs():
         elif isinstance(samples, str):
             samples = [samples]
 
-        if debug:
+        if debug is True:
             print("start processing: export_txt()")
         for sn in samples:
             if save_subtracted:
@@ -515,15 +540,24 @@ class h5xs():
         self.load_data(*args, **kwargs)
             
     def load_data(self, update_only=False, 
-                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0):
-        """ assume multiple samples, parallel-process by sample
+                  d1ops={'dets': {'merged': ['_SAXS', '_WAXS1', '_WAXS2']}, 
+                         'reft': -1, 'save_1d': False, 'save_merged': False}, 
+                  d2ops={'dets': {'SAXS': '_SAXS'},
+                         'fill_detector_gap': False},  
+                  debug=False, N=8, max_c_size=0):
+        """ d1ops:
+                perform azimithal average on specified detector data then merge
+                    '
+            d2ops:
+                convert data to qphi map
+                    'dets' can be something like this: ['SAXS': '_SAXS', 'WAXS': ['_WAXS1', '_WAXS2']] 
+
+            assume multiple samples, parallel-process by sample
             if update_only is true, only create 1d data for new frames (empty self.d1s)
             
-            use Pool to limit the number of processes
-            access data directly in the worker process, coordinated using a lock
-            
+            use Pool to limit the number of processes; access h5 group directly in the worker process
         """
-        if debug:
+        if debug is True:
             print("start processing: load_data()")
             t1 = time.time()
         
@@ -533,6 +567,10 @@ class h5xs():
         results = {}
         pool = mp.Pool(N)
         jobs = []
+        
+        if d1ops['dets'] is None:
+            d1ops['dets'] = self.detectors
+        self.attr['d1merge_dets'] = [det.extension for det in d1ops['dets']] 
         
         for sn in self.samples:
             if sn not in list(self.attrs.keys()):
@@ -572,18 +610,18 @@ class h5xs():
                     nframes = c_size
                     
                 images = {}
-                for det in self.detectors:
+                for det in detectors:
                     if len(s)==3:
                         images[det.extension] = dset['%s' % self.det_name[det.extension]][i*c_size:i*c_size+nframes]
                     else:
                         images[det.extension] = dset['%s' % self.det_name[det.extension]][0][i*c_size:i*c_size+nframes]
                 if N>1: # multi-processing, need to keep track of total number of active processes                    
                     job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
-                                                        self.detectors, self.qgrid, reft, save_1d, save_merged)])
+                                                         detectors, self.qgrid, reft, save_1d, save_merged)])
                     jobs.append(job)
                 else: # serial processing
-                    [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug,
-                                                   self.detectors, self.qgrid, reft, save_1d, save_merged)) 
+                    [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug, 
+                                                    detectors, self.qgrid, reft, save_1d, save_merged)) 
                     results[sn][fr1] = data                
 
         if N>1:             
@@ -607,16 +645,16 @@ class h5xs():
             self.d1s[sn] = data
         
         self.save_d1s(debug=debug)
-        if debug:
+        if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
 
-    def load_data0(self, update_only=False,
+    def load_data0(self, update_only=False, 
                    reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
         """ assume multiple samples, parallel-process by sample
             if update_only is true, only create 1d data for new frames (empty self.d1s)
         """
-        if debug:
+        if debug is True:
             print("start processing: load_data()")
             t1 = time.time()
         
@@ -690,7 +728,7 @@ class h5xs():
                 self.d1s[sn] = data
         
         self.save_d1s(debug=debug)
-        if debug:
+        if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
@@ -732,9 +770,8 @@ class h5sol_HPLC(h5xs):
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
         """
-        if detectors is not None:
-            self.detectors = detectors
-        self.load_data(update_only=update_only, reft=reft, 
+
+        self.load_data(update_only=update_only, detectors=detecors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
         self.set_trans(transMode=trans_mode.from_waxs)
 
@@ -752,7 +789,7 @@ class h5sol_HPLC(h5xs):
 
         fh5,sn = self.process_sample_name(sn, debug=debug)
         
-        if debug:
+        if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
 
@@ -787,11 +824,12 @@ class h5sol_HPLC(h5xs):
             else:
                 d1s = copy.deepcopy(lists[0])
             sample_sub = d1s.bkg_cor(d1b, plot_data=True, debug=debug, sc_factor=sc_factor, show_eb=show_eb)
+            return sample_sub
         
         #if update_only and 'subtracted' in list(self.d1s[sn].keys()): continue
         #if sn not in list(self.buffer_list.keys()): continue
 
-        if debug:
+        if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
@@ -799,9 +837,9 @@ class h5sol_HPLC(h5xs):
                   ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
-                  debug=False):
+                  export_txt=False, debug=False):
         """ plot "merged" if no "subtracted" present
-            
+            export_txt: export the scattering-intensity-based chromatogram
         """
         
         if plot2d:
@@ -861,6 +899,10 @@ class h5sol_HPLC(h5xs):
         if ymax ==-1:
             ymax = np.max(data_i)
 
+        if export_txt:
+            # export the scattering-intensity-based chromatogram
+            np.savetxt(sn+'.chrome', np.vstack((data_t, data_i)).T, "%12.3f")
+            
         ax1.plot(data_i, 'b-')
         ax1.set_xlabel("frame #")
         ax1.set_xlim((0,len(data_i)))
@@ -1004,7 +1046,7 @@ class h5sol_HT(h5xs):
                 self.buffer_list[sn] = buf_list[sn]
             #self.attrs[sn]['buffer'] = self.buffer_list[sn] 
         
-        if debug:
+        if debug is True:
             print('updating buffer assignments')
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):
@@ -1017,7 +1059,7 @@ class h5sol_HT(h5xs):
             save processed data
         """
         #fh5 = h5py.File(self.fn, "r+")
-        if debug:
+        if debug is True:
             print("updating 1d data and buffer info") 
         fh5 = self.fh5
         for sn in self.samples:
@@ -1031,9 +1073,7 @@ class h5sol_HT(h5xs):
                 filter_data=False, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
-        if detectors is not None:
-            self.detectors = detectors
-        self.load_data(update_only=update_only, reft=reft, 
+        self.load_data(update_only=update_only, detectors=detecors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
@@ -1054,7 +1094,7 @@ class h5sol_HT(h5xs):
         elif isinstance(samples, str):
             samples = [samples]
 
-        if debug:
+        if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
         for sn in samples:
@@ -1074,7 +1114,7 @@ class h5sol_HT(h5xs):
                                                                           sc_factor=sf, debug=debug)
 
         self.fh5.flush()
-        if debug:
+        if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
                 

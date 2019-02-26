@@ -76,21 +76,17 @@ class Data1d:
 
         if debug==True:
             print("loading data from 2D image: ", label)
-        if isinstance(image, str):
-            d2 = Data2d(image, exp=exp_para)
-            self.comments += "# loaded from %s\n" % image
-            self.label = image.split("/")[-1]
-            self.timestamp = d2.timestamp
-        elif isinstance(image, np.ndarray):
-            d2 = Data2d(None, im=image, exp=exp_para)
-            if label is not None:
-                self.label = label
-        elif isinstance(image, Data2d):
+    
+        if isinstance(image, Data2d):
             d2 = image
-            if label is not None:
-                self.label = label
         else:
-            raise Exception("unable to create load data from image:", image)
+            d2 = Data2d(image, exp=exp_para)
+            self.timestamp = d2.timestamp
+            self.label = d2.label
+            self.timestamp = d2.timestamp
+            
+        if label is not None:
+            self.label = label
             
         # deal with things like dark current, flat field, and dezinger corrections on the 2D data
         pre_process(d2.data)
@@ -336,6 +332,8 @@ class Data1d:
             for ov in self.overlaps:
                 ov['raw_data1'] *= sc
                 ov['raw_data2'] *= sc
+                
+        return self
 
     def merge(self, d1, qmax=-1, qmin=-1, fix_scale=-1, debug=False):
         """
@@ -527,8 +525,8 @@ class Data1d:
             plt.figure()
             plt.subplots_adjust(bottom=0.15)
             ax = plt.gca()
-        ax.set_xlabel("$q (\AA^{-1})$", fontsize='x-large')
-        ax.set_ylabel("$I$", fontsize='x-large')
+        ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
+        ax.set_ylabel("$I$", fontsize='large')
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.errorbar(self.qgrid, self.data*scale, self.err*scale, label=self.label)

@@ -1,13 +1,12 @@
 import numpy as np
 import fabio
-import datetime
+import datetime,os,copy
 from py4xs.mask import Mask
 from py4xs.local import ExpPara
 import pylab as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
 from enum import Enum 
-import copy
 
 
 class DataType(Enum):
@@ -194,9 +193,9 @@ class Data2d:
         stores the scattering pattern itself, 
     """
 
-    def __init__(self, filename, im=None, timestamp=None, uid='', exp=None):
+    def __init__(self, img, timestamp=None, uid='', exp=None, label=''):
         """ read 2D scattering pattern
-        will rely on Fabio to recognize the file format 
+            img can be either a filename (rely on Fabio to deal with the file format) or a numpy array 
         """
         self.exp = None
         self.timestamp = None
@@ -204,10 +203,12 @@ class Data2d:
         self.data = MatrixWithCoords()
         self.qrqz_data = MatrixWithCoords()
         self.qphi_data = MatrixWithCoords()
+        self.label = label
         
-        if im is None:
-            f = fabio.open(filename)
+        if isinstance(img, str):
+            f = fabio.open(img)
             self.im = f.data
+            self.label = os.path.base_name(img)
             # get other useful information from the header
             # cbf header 
             if '_array_data.header_contents' in f.header.keys():
@@ -218,10 +219,13 @@ class Data2d:
                         self.uid = f.header['_array_data.header_contents'].split("# ")[16].split("uid=")[1].rstrip("\r\n")
                     except:
                         self.uid = ''
-        else:
-            self.im = im
+            f.close()
+        elif isinstance(img, np.ndarray):
+            self.im = img
             self.timestamp = timestamp
             self.uid = uid
+        else:
+            raise Exception('Not sure how to create Data2d from img ...')
 
         # self.im always stores the original image
         # self.data store the array data after the flip operation

@@ -52,3 +52,8 @@ first attempt to support scanning data
 
 2018-11:
 slnxs bug fix; moved some functions from h5sol_HT to h5xs
+
+2019-02:
+h5exp for storing experimental configuration (no data)
+export x-ray scattering chromatogram
+

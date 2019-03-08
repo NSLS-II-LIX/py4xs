@@ -208,7 +208,7 @@ class Data2d:
         if isinstance(img, str):
             f = fabio.open(img)
             self.im = f.data
-            self.label = os.path.base_name(img)
+            self.label = os.path.basename(img)
             # get other useful information from the header
             # cbf header 
             if '_array_data.header_contents' in f.header.keys():
@@ -219,7 +219,7 @@ class Data2d:
                         self.uid = f.header['_array_data.header_contents'].split("# ")[16].split("uid=")[1].rstrip("\r\n")
                     except:
                         self.uid = ''
-            f.close()
+            #f.close()
         elif isinstance(img, np.ndarray):
             self.im = img
             self.timestamp = timestamp

@@ -15,6 +15,9 @@ from py4xs.local import det_names    # e.g. "_SAXS": "pil1M_image"
 from py4xs.data2d import Data2d, Axes2dPlot
 from itertools import combinations
 
+from scipy.linalg import svd
+from scipy.ndimage.filters import gaussian_filter
+
 def lsh5(hd, prefix='', top_only=False, silent=False):
     """ list the content of a HDF5 file
         
@@ -113,6 +116,7 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
         s0.save(s0.label+".dd", debug=debug)
         
     return s0
+
 
 def proc_2d(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
     """ convert 2D data to q-phi map
@@ -540,22 +544,10 @@ class h5xs():
         self.load_data(*args, **kwargs)
             
     def load_data(self, update_only=False, 
-                  d1ops={'dets': {'merged': ['_SAXS', '_WAXS1', '_WAXS2']}, 
-                         'reft': -1, 'save_1d': False, 'save_merged': False}, 
-                  d2ops={'dets': {'SAXS': '_SAXS'},
-                         'fill_detector_gap': False},  
-                  debug=False, N=8, max_c_size=0):
-        """ d1ops:
-                perform azimithal average on specified detector data then merge
-                    '
-            d2ops:
-                convert data to qphi map
-                    'dets' can be something like this: ['SAXS': '_SAXS', 'WAXS': ['_WAXS1', '_WAXS2']] 
-
-            assume multiple samples, parallel-process by sample
-            if update_only is true, only create 1d data for new frames (empty self.d1s)
-            
-            use Pool to limit the number of processes; access h5 group directly in the worker process
+           reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0):
+        """ assume multiple samples, parallel-process by sample
+            use Pool to limit the number of processes; 
+            access h5 group directly in the worker process
         """
         if debug is True:
             print("start processing: load_data()")
@@ -765,30 +757,106 @@ class h5sol_HPLC(h5xs):
         super().load_d1s(self.samples[0])
         # might need to update meta data??
         
+    def normalize_int(self, ref_trans=-1):
+        sn = self.samples[0]        
+        if 'merged' not in self.d1s[sn].keys():
+            raise Exception(f"{sn}: merged data must exist before normalizing intensity.")
+
+        max_trans = np.max([d1.trans for d1 in self.d1s[sn]['merged']])
+        if max_trans<=0:
+            raise Exception(f"{sn}: run set_trans() first, or the beam may be off during data collection.")
+        if ref_trans<0:
+            ref_trans=max_trans
+            
+        for d1 in self.d1s[sn]['merged']:
+            d1.scale(ref_trans/d1.trans)
+        
     def process(self, detectors=None, update_only=False,
                 reft=-1, save_1d=False, save_merged=False, 
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
         """
 
-        self.load_data(update_only=update_only, detectors=detecors, reft=reft, 
+        self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
         self.set_trans(transMode=trans_mode.from_waxs)
+        self.normalize_int()
 
+    def subtract_buffer_SVD(self, excluded_frames_list, sn=None, sc_factor=0.995,
+                            gaussian_filter_width=None,
+                            Nc=5, poly_order=8,
+                            plot_fit=False, ax=None, debug=False):
+        """ perform SVD background subtraction, use Nc eigenvalues 
+            poly_order: order of polynomial fit to each eigenvalue
+            gaussian_filter width: sigma value for the filter, e.g. 1, or (0.5, 3)
+        """
+        fh5,sn = self.process_sample_name(sn, debug=debug)
+        if debug is True:
+            print("start processing: subtract_buffer()")
+            t1 = time.time()
+            
+        nf = len(self.d1s[sn]['merged'])
+        all_frns = list(range(nf))
+        ex_frns = []
+        for r in excluded_frames_list.split(','):
+            if r=="":
+                break
+            r1,r2 = np.fromstring(r, dtype=int, sep='-')
+            ex_frns += list(range(r1,r2))
+        bkg_frns = list(set(all_frns)-set(ex_frns))
+        
+        dd2s = np.vstack([d1.data for d1 in self.d1s[sn]['merged']]).T
+        if gaussian_filter_width is not None:
+            dd2s = gaussian_filter(dd2s, sigma=gaussian_filter_width)
+        dd2b = np.vstack([dd2s[:,i] for i in bkg_frns]).T
+        
+        U, s, Vh = svd(dd2b.T, full_matrices=False)
+        s[Nc:] = 0
+
+        Uf = []
+        for i in range(Nc):
+            Uf.append(np.poly1d(np.polyfit(bkg_frns, U[:,i], poly_order)))
+        Ub = np.vstack([f(all_frns) for f in Uf]).T
+        dd2c = np.dot(np.dot(Ub, np.diag(s[:Nc])), Vh[:Nc,:]).T
+
+        if plot_fit:
+            if ax is None:
+                plt.figure()
+                ax = plt.gca()
+            for i in reversed(range(Nc)):
+                ax.plot(bkg_frns, np.sqrt(s[i])*U[:,i], '.') #s[i]*U[:,i])
+            for i in reversed(range(Nc)):
+                ax.plot(all_frns, np.sqrt(s[i])*Uf[i](all_frns)) #s[i]*U[:,i])    
+
+        self.attrs[sn]['sc_factor'] = sc_factor
+        self.attrs[sn]['svd excluded frames'] = excluded_frames_list
+        self.attrs[sn]['svd parameters'] = [Nc, poly_order]
+        if 'subtracted' in self.d1s[sn].keys():
+            del self.d1s[sn]['subtracted']
+        self.d1s[sn]['subtracted'] = []
+        dd2s -= dd2c*sc_factor
+        for i in range(nf):
+            d1c = copy.deepcopy(self.d1s[sn]['merged'][i])
+            d1c.data = dd2s[:,i]
+            self.d1s[sn]['subtracted'].append(d1c)
+            
+        self.save_d1s(sn, debug=debug)
+
+        if debug is True:
+            t2 = time.time()
+            print("done, time lapsed: %.2f sec" % (t2-t1))
 
     def subtract_buffer(self, buffer_frame_range, sample_frame_range=None, first_frame=0, 
                         sn=None, update_only=False, 
-                        sc_factor=1., normalize_int=True, show_eb=False, debug=False):
+                        sc_factor=1., show_eb=False, debug=False):
         """ buffer_frame_range should be a list of frame numbers, could be range(frame_s, frame_e)
             if sample_frame_range is None: subtract all dataset; otherwise subtract and test-plot
             update_only is not used currently
             first_frame:    duplicate data in the first few frames subtracted data from first_frame
                             this is useful when the beam is not on for the first few frames
-            normalize_int: this works only when sample_frame_range is None
         """
 
         fh5,sn = self.process_sample_name(sn, debug=debug)
-        
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
@@ -809,8 +877,6 @@ class h5sol_HPLC(h5xs):
                 del self.d1s[sn]['subtracted']
             self.d1s[sn]['subtracted'] = []
             for d1 in self.d1s[sn]['merged']:
-                if normalize_int:
-                    d1.set_trans(ref_trans=self.d1s[sn]['merged'][0].trans, transMode=trans_mode.from_waxs)
                 d1t = d1.bkg_cor(d1b, plot_data=False, debug=debug, sc_factor=sc_factor)
                 self.d1s[sn]['subtracted'].append(d1t) 
             if first_frame>0:
@@ -837,16 +903,16 @@ class h5sol_HPLC(h5xs):
                   ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
-                  export_txt=False, debug=False):
+                  export_txt=False, debug=False, fig_w=8, fig_h1=2, fig_h2=3.5):
         """ plot "merged" if no "subtracted" present
             export_txt: export the scattering-intensity-based chromatogram
         """
         
         if plot2d:
-            plt.figure(figsize=(8, 10))
+            plt.figure(figsize=(fig_w, fig_h1+fig_h2))
             plt.subplot(211)
         else:
-            plt.figure(figsize=(8, 6))
+            plt.figure(figsize=(fig_w, fig_h2))
 
         fh5,sn = self.process_sample_name(sn, debug=debug)
 
@@ -878,8 +944,6 @@ class h5sol_HPLC(h5xs):
             if flowrate>0:
                 ti*=flowrate
 
-            #if normalize_int:
-            #    data[i].set_trans(ref_trans=data[0].trans)
             ii = data[i].data[idx].sum()
             ds.append(data[i].data)
 
@@ -959,10 +1023,8 @@ class h5sol_HPLC(h5xs):
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             #ax3 = ax1.twinx()
             d2 = np.vstack(ds).T + clim[0]/2
-            #ext = [0, len(data), qgrid[-1], qgrid[0]]
-            #asp = len(data)/qgrid[-1]/2
             ext = [0, len(data), self.qgrid[-1], self.qgrid[0]]
-            asp = len(data)/self.qgrid[-1]/2
+            asp = len(data)/self.qgrid[-1]/(fig_w/fig_h1)
             if logScale:
                 plt.imshow(np.log(d2), extent=ext, aspect=asp) 
                 plt.clim(np.log(clim))
@@ -974,10 +1036,38 @@ class h5sol_HPLC(h5xs):
             #ax3.set_xlabel('frame #')
             plt.tight_layout()
 
+        plt.tight_layout()
         plt.show()
         
-    def export_txt(self, sn=None, first_frame=0, last_frame=-1, 
-                   averaging=False, save_subtracted=True, debug=False):
+    def bin_subtracted_frames(self, sn=None, first_frame=0, last_frame=-1, 
+                              plot_data=True, fig=None, qmax=0.5, qs=0.01,
+                              save_data=False, debug=False): 
+        """ this is typically used after running subtract_buffer_SVD()
+        """
+        fh5,sn = self.process_sample_name(sn, debug=debug)
+        if last_frame<first_frame:
+            last_frame=len(self.d1s[sn]['subtracted'])
+        d1s0 = copy.deepcopy(self.d1s[sn]['subtracted'][first_frame])
+        if last_frame>first_frame+1:
+            d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], debug=debug)
+        if save_data:
+            d1s0.save("%s_%d-%d%c.dat"%(sn,first_frame,last_frame-1,'s'), debug=debug)
+        if plot_data:
+            if fig is None:
+                fig = plt.figure()            
+            ax1 = fig.add_subplot(121)
+            plt.semilogy(d1s0.qgrid, d1s0.data)
+            plt.errorbar(d1s0.qgrid, d1s0.data, d1s0.err)
+            plt.xlim(0,qmax)
+            ax2 = fig.add_subplot(122)
+            i0,rg = d1s0.plot_Guinier(qs=qs, ax=ax2)
+            print(f"I0={i0:.2g}, Rg={rg:.2f}")
+            plt.tight_layout()            
+    
+        
+    def export_txt(self, sn=None, first_frame=0, last_frame=-1, save_subtracted=True,
+                   averaging=False, plot_averaged=False, ax=None,
+                   debug=False):
         fh5,sn = self.process_sample_name(sn, debug=debug)
         if save_subtracted:
             if 'subtracted' not in self.d1s[sn].keys():
@@ -996,10 +1086,10 @@ class h5sol_HPLC(h5xs):
         if averaging:
             d1s0 = copy.deepcopy(d1s[0])
             if len(d1s)>1:
-                d1s0.avg(d1s[1:], debug=debug)
+                d1s0.avg(d1s[1:], plot_data=plot_averaged, ax=ax, debug=debug)
             d1s0.save("%s_%d-%d%c.dat"%(sn,first_frame,last_frame-1,dkey[0]), debug=debug)
         else:
-            for i in len(d1s):
+            for i in range(len(d1s)):
                 d1s[i].save("%s_%d%c.dat"%(sn,i+first_frame,dkey[0]), debug=debug)                    
 
         
@@ -1073,7 +1163,7 @@ class h5sol_HT(h5xs):
                 filter_data=False, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
-        self.load_data(update_only=update_only, detectors=detecors, reft=reft, 
+        self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)

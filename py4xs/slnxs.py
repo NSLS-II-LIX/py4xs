@@ -63,7 +63,7 @@ class Data1d:
         self.timestamp = None
         self.trans = 0
         
-    def load_from_2D(self, image, exp_para, qgrid, pre_process, 
+    def load_from_2D(self, image, exp_para, qgrid, pre_process=None, 
                      mask=None, save_ave=False, debug=False, label=None):
         """
         image: a filename, or a Data2d instance, or a numpy array
@@ -89,7 +89,8 @@ class Data1d:
             self.label = label
             
         # deal with things like dark current, flat field, and dezinger corrections on the 2D data
-        pre_process(d2.data)
+        if pre_process is not None:
+            pre_process(d2.data)
         
         #if self.transMode == trans_mode.from_beam_center:
         #    # get trans from beam center
@@ -184,8 +185,8 @@ class Data1d:
                 plt.figure()
                 plt.subplots_adjust(bottom=0.15)
                 ax = plt.gca()
-            ax.set_xlabel("$q (\AA^{-1})$", fontsize='x-large')
-            ax.set_ylabel("$I$", fontsize='x-large')
+            ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
+            ax.set_ylabel("$I$", fontsize='large')
             ax.set_xscale('log')
             ax.set_yscale('log')
             idx = (self.data > 0)
@@ -278,8 +279,8 @@ class Data1d:
                 plt.figure()
                 plt.subplots_adjust(bottom=0.15)
                 ax = plt.gca()
-            ax.set_xlabel("$q (\AA^{-1})$", fontsize='x-large')
-            ax.set_ylabel("$I$", fontsize='x-large')
+            ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
+            ax.set_ylabel("$I$", fontsize='large')
             ax.set_xscale('log')
             ax.set_yscale('log')
             idx = (dset.data > 0) & (dbak.data > 0)
@@ -327,6 +328,7 @@ class Data1d:
             print("scaling factor is non-positive: %f" % sc)
         self.data *= sc
         self.err *= sc
+        self.trans *= sc
         self.comments += "# data is scaled by %f.\n" % sc
         if len(self.overlaps) != 0:
             for ov in self.overlaps:
@@ -458,15 +460,15 @@ class Data1d:
         td[1, :] = i0 * np.exp(-td[0, :]*rg*rg/3.)
 
         if no_plot==False:
+            ax.tick_params(axis='y', labelleft=False)    
             ax.plot([td[0, 0], td[0, -1]], [td[1, 0], td[1, -1]], "ro")
-            ax.plot(self.qgrid ** 2, i0 * np.exp(-self.qgrid ** 2 * rg * rg / 3.))
-            ax.set_ylabel("$I$", fontsize='x-large')
-            ax.set_xlabel("$q^2 (\AA^{-2})$", fontsize='x-large')
+            ax.plot(self.qgrid**2, i0*np.exp(-(self.qgrid*rg)**2/3))
+            ax.set_ylabel("$I$", fontsize='large')
+            ax.set_xlabel("$q^2 (\AA^{-2})$", fontsize='large')
             # plt.subplots_adjust(bottom=0.15)
-            ax.set_xlim(0, qe * qe * 2.)
-            ax.autoscale_view(tight=True, scalex=False, scaley=True)
-            ax.set_ylim(ymin=i0 * np.exp(-qe * qe * 2. * rg * rg / 3.))
-
+            ax.set_xlim(0, qe**2*1.2)
+            #ax.autoscale_view(tight=True, scalex=False, scaley=True)
+            ax.set_ylim(ymax=i0*2, ymin=i0*np.exp(-(qe*rg)**2/3)/2)
         # print "I0=%f, Rg=%f" % (i0,rg)
         return (i0, rg)
 
@@ -500,8 +502,8 @@ class Data1d:
         # tpr = np.fft.rfft(tint)
         # tx = range(len(tpr))
         ax.plot(trgrid, tpr, "g-")
-        ax.set_xlabel("$r (\AA)$", fontsize='x-large')
-        ax.set_ylabel("$P(r)$", fontsize='x-large')
+        ax.set_xlabel("$r (\AA)$", fontsize='large')
+        ax.set_ylabel("$P(r)$", fontsize='large')
         # plt.subplots_adjust(bottom=0.15)
 
     def save(self, fn, nz=True, save_comments=False, debug=False):
@@ -537,7 +539,6 @@ class Data1d:
 
         for t in leg.get_texts():
             t.set_fontsize('small')
-
 
 def normalize(ds):
     return np.divide(ds.data, np.max(ds.data))

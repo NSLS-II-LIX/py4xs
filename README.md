@@ -54,6 +54,9 @@ first attempt to support scanning data
 slnxs bug fix; moved some functions from h5sol_HT to h5xs
 
 2019-02:
-h5exp for storing experimental configuration (no data)
+uniform creation of data2d from either a filename or a numpy array;
+h5exp for storing experimental configuration (no data);
 export x-ray scattering chromatogram
 
+2019-03:
+add SVD background subtraction to h5sol_HPLC

@@ -518,7 +518,9 @@ class h5xs():
                             color="gray", lw=2, ls=":")
                 sc *= offset
 
-    def export_d1s(self, samples=None, save_subtracted=True, debug=False):
+    def export_d1s(self, samples=None, path="", save_subtracted=True, debug=False):
+        """ if path is used, be sure that it ends with '/'
+        """
         if samples is None:
             samples = list(self.buffer_list.keys())
         elif isinstance(samples, str):
@@ -531,13 +533,13 @@ class h5xs():
                 if 'subtracted' not in self.d1s[sn].keys():
                     print("subtracted data not available.")
                     return
-                self.d1s[sn]['subtracted'].save("%s_%c.dat"%(sn,'s'), debug=debug)
+                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug)
             else:
                 if 'merged' not in self.d1s[sn].keys():
                     print("1d data not available.")
                     return
                 for i in range(len(self.d1s[sn]['merged'])):
-                    self.d1s[sn]['merged'][i].save("%s_%d%c.dat"%(sn,i,'m'), debug=debug)                    
+                    self.d1s[sn]['merged'][i].save("%s%s_%d%c.dat"%(path,sn,i,'m'), debug=debug)                    
                 
     def load_data_mp(self, *args, **kwargs):
         print('load_data_mp() will be deprecated. use load_data() instead.')
@@ -1041,8 +1043,9 @@ class h5sol_HPLC(h5xs):
         
     def bin_subtracted_frames(self, sn=None, first_frame=0, last_frame=-1, 
                               plot_data=True, fig=None, qmax=0.5, qs=0.01,
-                              save_data=False, debug=False): 
+                              save_data=False, path="", debug=False): 
         """ this is typically used after running subtract_buffer_SVD()
+            if path is used, be sure that it ends with '/'
         """
         fh5,sn = self.process_sample_name(sn, debug=debug)
         if last_frame<first_frame:
@@ -1051,7 +1054,7 @@ class h5sol_HPLC(h5xs):
         if last_frame>first_frame+1:
             d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], debug=debug)
         if save_data:
-            d1s0.save("%s_%d-%d%c.dat"%(sn,first_frame,last_frame-1,'s'), debug=debug)
+            d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,'s'), debug=debug)
         if plot_data:
             if fig is None:
                 fig = plt.figure()            
@@ -1066,8 +1069,10 @@ class h5sol_HPLC(h5xs):
     
         
     def export_txt(self, sn=None, first_frame=0, last_frame=-1, save_subtracted=True,
-                   averaging=False, plot_averaged=False, ax=None,
+                   averaging=False, plot_averaged=False, ax=None, path="",
                    debug=False):
+        """ if path is used, be sure that it ends with '/'
+        """
         fh5,sn = self.process_sample_name(sn, debug=debug)
         if save_subtracted:
             if 'subtracted' not in self.d1s[sn].keys():
@@ -1087,10 +1092,10 @@ class h5sol_HPLC(h5xs):
             d1s0 = copy.deepcopy(d1s[0])
             if len(d1s)>1:
                 d1s0.avg(d1s[1:], plot_data=plot_averaged, ax=ax, debug=debug)
-            d1s0.save("%s_%d-%d%c.dat"%(sn,first_frame,last_frame-1,dkey[0]), debug=debug)
+            d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,dkey[0]), debug=debug)
         else:
             for i in range(len(d1s)):
-                d1s[i].save("%s_%d%c.dat"%(sn,i+first_frame,dkey[0]), debug=debug)                    
+                d1s[i].save("%s%s_%d%c.dat"%(path,sn,i+first_frame,dkey[0]), debug=debug)                    
 
         
 class h5sol_HT(h5xs):
@@ -1159,7 +1164,7 @@ class h5sol_HT(h5xs):
         #fh5.flush()                           
         
     def process(self, detectors=None, update_only=False,
-                reft=-1, save_1d=False, save_merged=False, 
+                reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
                 filter_data=False, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
@@ -1167,7 +1172,7 @@ class h5sol_HT(h5xs):
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N)
         self.set_trans(transMode=trans_mode.from_waxs)
         self.average_samples(update_only=update_only, filter_data=filter_data, debug=debug)
-        self.subtract_buffer(update_only=update_only, debug=debug)
+        self.subtract_buffer(update_only=update_only, sc_factor=sc_factor, debug=debug)
         
     def average_samples(self, **kwargs):
         """ if update_only is true: only work on samples that do not have "merged' data

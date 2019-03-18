@@ -454,7 +454,12 @@ class Data1d:
             td[1, :] = np.log(td[1, :])
             rg, i0 = np.polyfit(td[0, :], td[1, :], 1)
             i0 = np.exp(i0)
-            rg = np.sqrt(-rg * 3.)
+            if rg<0:
+                rg = np.sqrt(-rg * 3.)
+            else:
+                rg = 1e-6   # 
+                print("likely strong inter-particle interaction ...")
+                break
             cnt += 1
             # print i0, rg
         td[1, :] = i0 * np.exp(-td[0, :]*rg*rg/3.)
@@ -468,7 +473,8 @@ class Data1d:
             # plt.subplots_adjust(bottom=0.15)
             ax.set_xlim(0, qe**2*1.2)
             #ax.autoscale_view(tight=True, scalex=False, scaley=True)
-            ax.set_ylim(ymax=i0*2, ymin=i0*np.exp(-(qe*rg)**2/3)/2)
+            if i0>0:
+                ax.set_ylim(ymax=i0*2, ymin=i0*np.exp(-(qe*rg)**2/3)/2)
         # print "I0=%f, Rg=%f" % (i0,rg)
         return (i0, rg)
 

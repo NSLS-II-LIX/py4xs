@@ -206,12 +206,13 @@ class h5exp():
     def __init__(self, fn, exp_setup=None):
         self.fn = fn
         if exp_setup==None:     # assume the h5 file will provide the detector config
-            self.fh5 = h5py.File(self.fn, "r+")   # file must exist
+            self.fh5 = h5py.File(self.fn, "r")   # file must exist
             self.qgrid = self.read_detectors()
         else:
-            self.fh5 = h5py.File(self.fn, "w+")   # new file
+            self.fh5 = h5py.File(self.fn, "w")   # new file
             self.detectors, self.qgrid = exp_setup
             self.save_detectors()
+        self.fh5.close()
         
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -545,7 +546,7 @@ class h5xs():
         print('load_data_mp() will be deprecated. use load_data() instead.')
         self.load_data(*args, **kwargs)
             
-    def load_data(self, update_only=False, 
+    def load_data(self, update_only=False, detectors=None,
            reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0):
         """ assume multiple samples, parallel-process by sample
             use Pool to limit the number of processes; 
@@ -561,10 +562,6 @@ class h5xs():
         results = {}
         pool = mp.Pool(N)
         jobs = []
-        
-        if d1ops['dets'] is None:
-            d1ops['dets'] = self.detectors
-        self.attr['d1merge_dets'] = [det.extension for det in d1ops['dets']] 
         
         for sn in self.samples:
             if sn not in list(self.attrs.keys()):
@@ -604,6 +601,8 @@ class h5xs():
                     nframes = c_size
                     
                 images = {}
+                if detectors is None:
+                    detectors = self.detectors
                 for det in detectors:
                     if len(s)==3:
                         images[det.extension] = dset['%s' % self.det_name[det.extension]][i*c_size:i*c_size+nframes]
@@ -773,13 +772,13 @@ class h5sol_HPLC(h5xs):
         for d1 in self.d1s[sn]['merged']:
             d1.scale(ref_trans/d1.trans)
         
-    def process(self, detectors=None, update_only=False,
+    def process(self, update_only=False,
                 reft=-1, save_1d=False, save_merged=False, 
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
         """
 
-        self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
+        self.load_data(update_only=update_only, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
         self.set_trans(transMode=trans_mode.from_waxs)
         self.normalize_int()
@@ -1208,7 +1207,7 @@ class h5sol_HT(h5xs):
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
                                                                           sc_factor=sf, debug=debug)
 
-        self.fh5.flush()
+        self.update_h5()  #self.fh5.flush()
         if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))

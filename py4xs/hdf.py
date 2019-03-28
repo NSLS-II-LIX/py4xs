@@ -477,7 +477,7 @@ class h5xs():
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
-    def plot_d1s(self, sn, ax=None, offset=1.5, 
+    def plot_d1s(self, sn, ax=None, offset=1.5, fontsize="large",
                     show_overlap=False, show_subtracted=False, show_subtraction=True):
         """ show_subtracted:
                 work only if sample is background-subtracted, show the subtracted result
@@ -494,15 +494,15 @@ class h5xs():
         if show_subtracted:
             if 'subtracted' not in list(self.d1s[sn].keys()):
                 raise Exception("bkg-subtracted data not found: ", sn)
-            self.d1s[sn]['subtracted'].plot(ax=ax)
+            self.d1s[sn]['subtracted'].plot(ax=ax, fontsize=fontsize)
             if show_subtraction:
-                self.d1s[sn]['averaged'].plot(ax=ax)
-                self.d1b[sn].plot(ax=ax)
+                self.d1s[sn]['averaged'].plot(ax=ax, fontsize=fontsize)
+                self.d1b[sn].plot(ax=ax, fontsize=fontsize)
         else:
             sc = 1
             for i,d1 in enumerate(self.d1s[sn]['merged']):
                 if self.attrs[sn]['selected'][i]:
-                    d1.plot(ax=ax, scale=sc)
+                    d1.plot(ax=ax, scale=sc, fontsize=fontsize)
                     ax.plot(self.d1s[sn]['averaged'].qgrid, 
                             self.d1s[sn]['averaged'].data*sc, 
                             color="gray", lw=2, ls="--")
@@ -900,10 +900,63 @@ class h5sol_HPLC(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
+    def get_chromatogram(self, sn, i_minq=0.02, i_maxq=0.05, flowrate=0, plot_merged=False,
+                 calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True):
+        """ returns data to be plotted in the chromatogram
+        """
+        if 'subtracted' in self.d1s[sn].keys() and plot_merged==False:
+            dkey = 'subtracted'
+        elif 'merged' in self.d1s[sn].keys():
+            if plot_merged==False:
+                print("subtracted data not available. plotting merged data instead ...")
+            dkey = 'merged'
+        else:
+            raise Exception("processed data not present.")
+            
+        data = self.d1s[sn][dkey]
+        #qgrid = data[0].qgrid
+        ts = self.fh5[sn+'/primary/time'].value
+        #idx = (qgrid>i_minq) & (qgrid<i_maxq) 
+        idx = (self.qgrid>i_minq) & (self.qgrid<i_maxq) 
+        d_t = []
+        d_i = []
+        d_rg = []
+        d_s = []
+        frame_n = 0
+        for i in range(len(data)):
+            ti = (ts[i]-ts[0])/60
+            if flowrate>0:
+                ti*=flowrate
+
+            ii = data[i].data[idx].sum()
+            d_s.append(data[i].data)
+
+            if ii>thresh and calc_Rg and dkey=='subtracted':
+                i0,rg = dt.plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
+                #print("frame # %d: i0=%.2g, rg=%.2f" % (frame_n,i0,rg))
+            else:
+                rg = 0
+
+            d_t.append(ti)
+            d_i.append(ii)
+            d_rg.append(rg)
+            frame_n += 1
+    
+        # read HPLC data directly from HDF5
+        hplc_grp = self.fh5[sn+"/hplc/data"]
+        fields = lsh5(self.fh5[sn+'/hplc/data'], top_only=True, silent=True)
+        d_hplc = {}
+        for fd in fields:
+            d_hplc[fd] = self.fh5[sn+'/hplc/data/'+fd].value.T
+    
+        return dkey,d_t,d_i,d_hplc,d_rg,np.vstack(d_s).T
+    
+            
     def plot_data(self, sn=None, i_minq=0.02, i_maxq=0.05, flowrate=0, plot_merged=False,
                   ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
+                  show_hplc_data=[True, False],
                   export_txt=False, debug=False, fig_w=8, fig_h1=2, fig_h2=3.5):
         """ plot "merged" if no "subtracted" present
             export_txt: export the scattering-intensity-based chromatogram
@@ -921,79 +974,45 @@ class h5sol_HPLC(h5xs):
         ax2 = ax1.twiny()
         ax3 = ax1.twinx()
         
-        if 'subtracted' in self.d1s[sn].keys() and plot_merged==False:
-            dkey = 'subtracted'
-        elif 'merged' in self.d1s[sn].keys():
-            if plot_merged==False:
-                print("subtracted data not available. plotting merged data instead ...")
-            dkey = 'merged'
-        else:
-            raise Exception("processed data not present.")
-            
+        dkey,d_t,d_i,d_hplc,d_rg,d_s = self.get_chromatogram(sn, i_minq=i_minq, i_maxq=i_maxq, 
+                                                             flowrate=flowrate, plot_merged=plot_merged, 
+                                                             calc_Rg=calc_Rg, thresh=thresh, 
+                                                             qs=qs, qe=qe, fix_qe=fix_qe)
         data = self.d1s[sn][dkey]
-        #qgrid = data[0].qgrid
-        ts = fh5[sn+'/primary/time'].value
-        #idx = (qgrid>i_minq) & (qgrid<i_maxq) 
-        idx = (self.qgrid>i_minq) & (self.qgrid<i_maxq) 
-        data_t = []
-        data_i = []
-        data_rg = []
-        ds = []
-        frame_n = 0
-        for i in range(len(data)):
-            ti = (ts[i]-ts[0])/60
-            if flowrate>0:
-                ti*=flowrate
-
-            ii = data[i].data[idx].sum()
-            ds.append(data[i].data)
-
-            if ii>thresh and calc_Rg and dkey=='subtracted':
-                i0,rg = dt.plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
-                #print("frame # %d: i0=%.2g, rg=%.2f" % (frame_n,i0,rg))
-            else:
-                rg = 0
-
-            data_t.append(ti)
-            data_i.append(ii)
-            data_rg.append(rg)
-            frame_n += 1
-
+        
         if ymin == -1:
-            ymin = np.min(data_i)
+            ymin = np.min(d_i)
         if ymax ==-1:
-            ymax = np.max(data_i)
+            ymax = np.max(d_i)
 
         if export_txt:
             # export the scattering-intensity-based chromatogram
-            np.savetxt(sn+'.chrome', np.vstack((data_t, data_i)).T, "%12.3f")
+            np.savetxt(sn+'.chrome', np.vstack((d_t, d_i)).T, "%12.3f")
             
-        ax1.plot(data_i, 'b-')
+        ax1.plot(d_i, 'b-')
         ax1.set_xlabel("frame #")
-        ax1.set_xlim((0,len(data_i)))
+        ax1.set_xlim((0,len(d_i)))
         ax1.set_ylim(ymin-0.05*(ymax-ymin), ymax+0.05*(ymax-ymin))
         ax1.set_ylabel("intensity")
 
-        # read HPLC data directly from HDF5
-        hplc_grp = fh5[sn+"/hplc/data"]
-        fields = lsh5(fh5[sn+'/hplc/data'], top_only=True, silent=True)
-        dc = []
-        for fd in fields:
-            dc = fh5[sn+'/hplc/data/'+fd].value.T
-            ax2.plot(np.asarray(dc[0])+offset,
-                     ymin+dc[1]/np.max(dc[1])*(ymax-ymin)*uv_scale, label=fd)
+        i = 0 
+        for k,dc in d_hplc.items():
+            if show_hplc_data[i]:
+                ax2.plot(np.asarray(dc[0])+offset,
+                         ymin+dc[1]/np.max(dc[1])*(ymax-ymin)*uv_scale, label=k)
+            i += 1
             #ax2.set_ylim(0, np.max(dc[0][2]))
 
         if flowrate>0:
             ax2.set_xlabel("volume (mL)")
         else:
             ax2.set_xlabel("time (minutes)")
-        ax2.plot(data_t, data_i, 'bo', label='x-ray ROI')
-        ax2.set_xlim((data_t[0],data_t[-1]))
+        ax2.plot(d_t, d_i, 'bo', label='x-ray ROI')
+        ax2.set_xlim((d_t[0],d_t[-1]))
 
         if showFWHM:
-            half_max=(np.amax(data_i)-np.amin(data_i))/2 + np.amin(data_i)
-            s = splrep(data_t, data_i - half_max)
+            half_max=(np.amax(d_i)-np.amin(d_i))/2 + np.amin(d_i)
+            s = splrep(d_t, d_i - half_max)
             roots = sproot(s)
             fwhm = abs(roots[1]-roots[0])
             print(roots[1],roots[0],half_max)
@@ -1004,11 +1023,11 @@ class h5sol_HPLC(h5xs):
             ax2.plot([roots[0], roots[1]],[half_max, half_max],"k-|")
 
         if calc_Rg and dkey=='subtracted':
-            data_rg = np.asarray(data_rg)
-            max_rg = np.max(data_rg)
-            data_rg[data_rg==0] = np.nan
-            ax3.plot(data_rg, 'r.', label='rg')
-            ax3.set_xlim((0,len(data_rg)))
+            d_rg = np.asarray(d_rg)
+            max_rg = np.max(d_rg)
+            d_rg[d_rg==0] = np.nan
+            ax3.plot(d_rg, 'r.', label='rg')
+            ax3.set_xlim((0,len(d_rg)))
             ax3.set_ylim((0, max_rg*1.05))
             ax3.set_ylabel("Rg")
 
@@ -1023,7 +1042,7 @@ class h5sol_HPLC(h5xs):
             ax.tick_params(axis='x', top=True)
             ax.xaxis.set_major_formatter(plt.NullFormatter())
             #ax3 = ax1.twinx()
-            d2 = np.vstack(ds).T + clim[0]/2
+            d2 = d_s + clim[0]/2
             ext = [0, len(data), self.qgrid[-1], self.qgrid[0]]
             asp = len(data)/self.qgrid[-1]/(fig_w/fig_h1)
             if logScale:

@@ -472,7 +472,7 @@ class Axes2dPlot:
         elif std=="sucrose":
             q_std = [0.5933, 0.8289, 0.9054, 0.9336, 1.1000]
         elif std=="CeO2": # http://nvlpubs.nist.gov/nistpubs/Legacy/MONO/nbsmonograph25-20.pdf
-            q_std = [ 2.0116, 1.8985, 3.2838, 3.8504 ]
+            q_std = [ 2.0116, 2.3219, 3.2838, 3.8504 ]
         elif std=="LaB6": # NIST SRM 660c
             q_std = [ 1.5115, 2.1376, 2.6180, 3.0230, 3.3799, 3.7025 ]
         else: # unknown standard

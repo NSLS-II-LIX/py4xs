@@ -53,7 +53,21 @@ WAXS_THRESH = 10
 # they are offset for clarity in the plots
 VOFFSET = 1.5
 
-
+font_size_list = ['xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large']
+def get_font_size(size_index):
+    """ "medium" has size_index of 0
+        the size_index is negative for smaller fonts and possitive for larger ones  
+    """
+    if size_index in font_size_list:
+        i = font_size_list.index(size_index)
+    else:
+        i = int(size_index)+3
+        if i<0:
+            i = 0
+        elif i>=len(font_size_list):
+            i = len(font_size_list)-1
+    return i-3,font_size_list[i]
+        
 class Data1d:
     def __init__(self, trandMode=None):
         self.comments = ""
@@ -169,7 +183,7 @@ class Data1d:
                 print("normalized to %f" % ref_trans)
 
 
-    def avg(self, dsets, plot_data=False, ax=None, debug=False):
+    def avg(self, dsets, plot_data=False, ax=None, debug=False, fontsize='large'):
         """
         dset is a collection of Data1d
         ax is the Axes to plot the data in
@@ -178,15 +192,16 @@ class Data1d:
         """
         if debug!='quiet':
             print("averaging data with %s: \n" % self.label, end=' ')
- 
+        i_fs = get_font_size(fontsize)[0]
+
         n = 1
         if plot_data:
             if ax is None:
                 plt.figure()
                 plt.subplots_adjust(bottom=0.15)
                 ax = plt.gca()
-            ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
-            ax.set_ylabel("$I$", fontsize='large')
+            ax.set_xlabel("$q (\AA^{-1})$", fontsize=get_font_size(i_fs)[1])
+            ax.set_ylabel("$I$", font_size=get_font_size(i_fs)[1])
             ax.set_xscale('log')
             ax.set_yscale('log')
             idx = (self.data > 0)
@@ -246,13 +261,13 @@ class Data1d:
             leg = ax.legend(loc='upper right', frameon=False)
 
             for t in leg.get_texts():
-                t.set_fontsize('small')
+                t.set_fontsize(get_font_size(i_fs-2)[1])
 
         return d0
 
 
     def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, 
-                inplace=False, check_overlap=False, show_eb=True, debug=False):
+                inplace=False, check_overlap=False, show_eb=True, debug=False, fontsize='large'):
         """
         background subtraction
         """
@@ -261,7 +276,8 @@ class Data1d:
             dset = self
         else:
             dset = copy.deepcopy(self)
-
+        i_fs = get_font_size(fontsize)[0]
+            
         if debug==True:
             print("background subtraction: %s - %s" % (dset.label, dbak.label))
         if not (dbak.qgrid == dset.qgrid).all():
@@ -279,10 +295,12 @@ class Data1d:
                 plt.figure()
                 plt.subplots_adjust(bottom=0.15)
                 ax = plt.gca()
-            ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
-            ax.set_ylabel("$I$", fontsize='large')
+            ax.set_xlabel("$q (\AA^{-1})$", fontsize=get_font_size(i_fs)[1])
+            ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
             ax.set_xscale('log')
             ax.set_yscale('log')
+            ax.xaxis.set_tick_params(labelsize=get_font_size(i_fs-1)[1])
+            ax.yaxis.set_tick_params(labelsize=get_font_size(i_fs-1)[1])
             idx = (dset.data > 0) & (dbak.data > 0)
             ax.plot(dset.qgrid[idx], dset.data[idx], label=self.label)
             ax.plot(dbak.qgrid[idx], dbak.data[idx], label=dbak.label)
@@ -301,7 +319,7 @@ class Data1d:
         if plot_data:
             leg = ax.legend(loc='upper right', frameon=False)
             for t in leg.get_texts():
-                t.set_fontsize('small')
+                t.set_fontsize(get_font_size(i_fs-2)[1])
 
         if debug==True:
             print("using scaling factor of %f" % (sc * sc_factor))
@@ -426,13 +444,14 @@ class Data1d:
         self.comments += " scaled by %f\n" % sc
         self.comments += d1.comments.replace("# ", "## ")
 
-    def plot_Guinier(self, qs=0, qe=10, rg=15, fix_qe=False, ax=None, no_plot=False):
+    def plot_Guinier(self, qs=0, qe=10, rg=15, fix_qe=False, ax=None, no_plot=False, fontsize="large"):
         """ do Gunier plot, estimate Rg automatically
         qs specify the lower end of the q-range to perform the fit in
         rg is the optinal initial estimate
         if fix_qe==1, qe defined the end of the region to perform the fit
         """
         idx = (self.data > 0)
+        i_fs = get_font_size(fontsize)[0]
         # print self.data
 
         if no_plot==False:
@@ -465,11 +484,13 @@ class Data1d:
         td[1, :] = i0 * np.exp(-td[0, :]*rg*rg/3.)
 
         if no_plot==False:
-            ax.tick_params(axis='y', labelleft=False)    
+            #ax.tick_params(axis='y', labelleft=False)    
             ax.plot([td[0, 0], td[0, -1]], [td[1, 0], td[1, -1]], "ro")
             ax.plot(self.qgrid**2, i0*np.exp(-(self.qgrid*rg)**2/3))
-            ax.set_ylabel("$I$", fontsize='large')
-            ax.set_xlabel("$q^2 (\AA^{-2})$", fontsize='large')
+            ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
+            ax.set_xlabel("$q^2 (\AA^{-2})$", fontsize=get_font_size(i_fs)[1])
+            ax.xaxis.set_tick_params(labelsize=get_font_size(i_fs-1)[1])
+            ax.yaxis.set_tick_params(labelsize=get_font_size(i_fs-1)[1])
             # plt.subplots_adjust(bottom=0.15)
             ax.set_xlim(0, qe**2*1.2)
             #ax.autoscale_view(tight=True, scalex=False, scaley=True)
@@ -478,11 +499,12 @@ class Data1d:
         # print "I0=%f, Rg=%f" % (i0,rg)
         return (i0, rg)
 
-    def plot_pr(self, i0, rg, qmax=5., dmax=200., ax=None):
+    def plot_pr(self, i0, rg, qmax=5., dmax=200., ax=None, fontsize='large'):
         """ calculate p(r) function
         use the given i0 and rg value to fill in the low q part of the gap in data
         truncate the high q end at qmax
         """
+        i_fs = get_font_size(fontsize)[0]
         if ax is None:
             ax = plt.gca()
         ax.set_xscale('linear')
@@ -508,8 +530,8 @@ class Data1d:
         # tpr = np.fft.rfft(tint)
         # tx = range(len(tpr))
         ax.plot(trgrid, tpr, "g-")
-        ax.set_xlabel("$r (\AA)$", fontsize='large')
-        ax.set_ylabel("$P(r)$", fontsize='large')
+        ax.set_xlabel("$r (\AA)$", fontsize=get_font_size(i_fs)[1])
+        ax.set_ylabel("$P(r)$", fontsize=get_font_size(i_fs)[1])
         # plt.subplots_adjust(bottom=0.15)
 
     def save(self, fn, nz=True, save_comments=False, debug=False):
@@ -528,13 +550,14 @@ class Data1d:
             ff.write(self.comments)
             ff.close()
 
-    def plot(self, ax=None, scale=1.):
+    def plot(self, ax=None, scale=1., fontsize='large'):
+        i_fs = get_font_size(fontsize)[0]
         if ax is None:
             plt.figure()
             plt.subplots_adjust(bottom=0.15)
             ax = plt.gca()
-        ax.set_xlabel("$q (\AA^{-1})$", fontsize='large')
-        ax.set_ylabel("$I$", fontsize='large')
+        ax.set_xlabel("$q (\AA^{-1})$", fontsize=get_font_size(i_fs)[1])
+        ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.errorbar(self.qgrid, self.data*scale, self.err*scale, label=self.label)
@@ -544,7 +567,7 @@ class Data1d:
         leg = ax.legend(loc='upper right', frameon=False)
 
         for t in leg.get_texts():
-            t.set_fontsize('small')
+            t.set_fontsize(get_font_size(i_fs-2)[1])
 
 def normalize(ds):
     return np.divide(ds.data, np.max(ds.data))

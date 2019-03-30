@@ -16,6 +16,7 @@ from py4xs.data2d import Data2d, Axes2dPlot
 from itertools import combinations
 
 from scipy.linalg import svd
+from scipy.interpolate import splrep,sproot
 from scipy.ndimage.filters import gaussian_filter
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
@@ -795,7 +796,14 @@ class h5sol_HPLC(h5xs):
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
-            
+        if isinstance(poly_order, int):
+            poly_order = poly_order*np.ones(Nc, dtype=np.int)
+        elif isinstance(poly_order, list):
+            if len(poly_order)!=Nc:
+                raise Exception(f"the length of poly_order ({poly_order}) must match Nc ({Nc}).")
+        else:
+            raise Exception(f"invalid poly_order: {poly_order}")
+        
         nf = len(self.d1s[sn]['merged'])
         all_frns = list(range(nf))
         ex_frns = []
@@ -816,7 +824,7 @@ class h5sol_HPLC(h5xs):
 
         Uf = []
         for i in range(Nc):
-            Uf.append(np.poly1d(np.polyfit(bkg_frns, U[:,i], poly_order)))
+            Uf.append(np.poly1d(np.polyfit(bkg_frns, U[:,i], poly_order[i])))
         Ub = np.vstack([f(all_frns) for f in Uf]).T
         dd2c = np.dot(np.dot(Ub, np.diag(s[:Nc])), Vh[:Nc,:]).T
 
@@ -831,7 +839,8 @@ class h5sol_HPLC(h5xs):
 
         self.attrs[sn]['sc_factor'] = sc_factor
         self.attrs[sn]['svd excluded frames'] = excluded_frames_list
-        self.attrs[sn]['svd parameters'] = [Nc, poly_order]
+        self.attrs[sn]['svd parameter Nc'] = Nc
+        self.attrs[sn]['svd parameter poly_order'] = poly_order
         if 'subtracted' in self.d1s[sn].keys():
             del self.d1s[sn]['subtracted']
         self.d1s[sn]['subtracted'] = []

@@ -183,9 +183,18 @@ class Data1d:
                 print("normalized to %f" % ref_trans)
 
 
-    def avg(self, dsets, plot_data=False, ax=None, debug=False, fontsize='large'):
+    def avg(self, dsets, weighted=False, qmax_for_weight=0.3, 
+            plot_data=False, ax=None, debug=False, fontsize='large'):
         """
-        dset is a collection of Data1d
+        dsets is a collection of Data1d
+        weighted:
+            if False 
+                the dsets are simply averaged together 
+                errorbar is increased if there are discrepencies between individual values?? 
+            otherwise 
+                weight should contain a list of weight factors, corresponding to each dset
+                each dset is first scaled by the 
+                a weighted average (smaller errorbar has higher weight) is then performed
         ax is the Axes to plot the data in
         TODO: should calculate something like the cross-correlation between sets
         to evaluate the consistency between them
@@ -193,7 +202,7 @@ class Data1d:
         if debug!='quiet':
             print("averaging data with %s: \n" % self.label, end=' ')
         i_fs = get_font_size(fontsize)[0]
-
+        
         n = 1
         if plot_data:
             if ax is None:
@@ -201,7 +210,7 @@ class Data1d:
                 plt.subplots_adjust(bottom=0.15)
                 ax = plt.gca()
             ax.set_xlabel("$q (\AA^{-1})$", fontsize=get_font_size(i_fs)[1])
-            ax.set_ylabel("$I$", font_size=get_font_size(i_fs)[1])
+            ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
             ax.set_xscale('log')
             ax.set_yscale('log')
             idx = (self.data > 0)
@@ -213,14 +222,36 @@ class Data1d:
         d0 = copy.deepcopy(self)
         if len(dsets)==0:
             return d0
-        for d1 in dsets:
+
+        if weighted:
+            wt = []
+            for d in dsets+[self]:
+                w0 = np.sum(d.data[d.qgrid<qmax_for_weight])
+                if w0<=0:
+                    raise Exception(f"weight for averaging <0: {w0}")
+                wt.append(w0)
+            wt = np.asarray(wt)
+            wt /= wt.max()
+            er2 = (self.err/wt[-1])**2
+            d0.err = 1./er2
+            d0.data = d0.data/er2 
+        
+        for i in range(len(dsets)):
+            d1 = dsets[i]
             if debug==True:
                 print("%s " % d1.label, end=' ')
             if not (d0.qgrid == d1.qgrid).all():
                 raise Exception("\n1D sets cannot be averaged: qgrid mismatch")
+
             d0.trans += d1.trans
-            d0.data += d1.data
-            d0.err += d1.err
+            if weighted:
+                er2 = (d1.err/wt[i])**2
+                d0.err += 1/er2
+                d0.data += d1.data/er2 
+            else:
+                d0.data += d1.data
+                d0.err += d1.err
+
             #if self.transMode == trans_mode.from_beam_center:
             #    d0.roi += d1.roi
             d0.comments += "# averaged with \n%s" % d1.comments.replace("# ", "## ")
@@ -237,8 +268,12 @@ class Data1d:
             d0.label = common_name(d0.label, d1.label)
 
         d0.trans /= n
-        d0.data /= n
-        d0.err /= np.sqrt(n)
+        if weighted:
+            d0.data /= d0.err
+            d0.err = 1./np.sqrt(d0.err)
+        else:    
+            d0.data /= n
+            d0.err /= (n*np.sqrt(n))   # should not be just sqrt(n), that would increase err after averaging
         #if self.transMode == trans_mode.from_beam_center:
         #    d0.roi /= n
         for ov in d0.overlaps:

@@ -1079,7 +1079,7 @@ class h5sol_HPLC(h5xs):
             last_frame=len(self.d1s[sn]['subtracted'])
         d1s0 = copy.deepcopy(self.d1s[sn]['subtracted'][first_frame])
         if last_frame>first_frame+1:
-            d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], debug=debug)
+            d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], weighted=True, debug=debug)
         if save_data:
             d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,'s'), debug=debug)
         if plot_data:
@@ -1118,7 +1118,7 @@ class h5sol_HPLC(h5xs):
         if averaging:
             d1s0 = copy.deepcopy(d1s[0])
             if len(d1s)>1:
-                d1s0.avg(d1s[1:], plot_data=plot_averaged, ax=ax, debug=debug)
+                d1s0.avg(d1s[1:], weighted=True, plot_data=plot_averaged, ax=ax, debug=debug)
             d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,dkey[0]), debug=debug)
         else:
             for i in range(len(d1s)):

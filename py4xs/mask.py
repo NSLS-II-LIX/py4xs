@@ -4,21 +4,25 @@ import numpy as np
 
 class Mask:
     """ a bit map to determine whehter a pixel should be included in
-    azimuthal average of a 2D scattering pattern
+        azimuthal average of a 2D scattering pattern
+    
+        note that the Image size is specified by shape = (width, height)
+        the shape of a numpy array is (height, width)
     """
 
     def __init__(self, width, height):
         self.width = width
         self.height = height
         self.maskfile = ""
-        self.map = None
-
+        mask_map = Image.new('1', (self.width, self.height))
+        self.map = np.asarray(mask_map.convert("I"), dtype=np.bool)
+        
     def reload(self):
         self.read_file(self.maskfile)
 
     def read_file(self, filename):
         self.maskfile = filename
-        mask_map = Image.new('1', (self.width, self.height))
+        self.clear()
         for line in open(filename):
             fields = line.strip().split()
             if len(fields) < 2:
@@ -26,9 +30,7 @@ class Mask:
             stype = fields[0]
             if stype in ['h', 'c', 'r', 'f', 'p']:
                 para = [float(t) for t in fields[1:]]
-                mask_map = self.add_item(mask_map, stype, para)
-        self.map = np.asarray(mask_map.convert("I"), dtype=np.bool)
-        del mask_map
+                self.add_item(stype, para)
 
     def fix_dead_pixels(self, d2, max_value=2097151):
         """ this is for dealing with dead pixels on Pilatus detectors
@@ -45,9 +47,10 @@ class Mask:
         """
         self.map = 1 - self.map
 
-    @staticmethod
-    def add_item(mask_map, stype, para):
-        tmap = Image.new('1', mask_map.size)
+    #@staticmethod
+    def add_item(self, stype, para):
+        map_shape = [self.width, self.height]
+        tmap = Image.new('1', map_shape)
         draw = ImageDraw.Draw(tmap)
         if stype == 'c':
             # filled circle
@@ -63,18 +66,18 @@ class Mask:
         elif stype == 'r':
             # rectangle
             # r  x  y  w  h  rotation
-            margin = (np.asarray(mask_map.size) / 2).astype(np.int)
-            tmap = tmap.resize(np.asarray(mask_map.size) + 2 * margin)
+            wmargin,hmargin = (np.asarray(map_shape)/2).astype(np.int)
+            tmap = tmap.resize([self.width+2*wmargin, self.height+2*hmargin])
             draw = ImageDraw.Draw(tmap)
             (x, y, w, h, rot) = para
             draw.rectangle(
-                (tmap.size[0] / 2 - w / 2, tmap.size[1] / 2 - h / 2,
-                 tmap.size[0] / 2 + w / 2, tmap.size[1] / 2 + h / 2),
+                (tmap.width/2 - w/2, tmap.height/2 - h/2,
+                 tmap.width/2 + w/2, tmap.height/2 + h/2),
                 fill=1)
             tmap = tmap.rotate(rot)
-            tmap = ImageChops.offset(tmap, int(x + margin[0] - tmap.size[0] / 2 + 0.5),
-                                     int(y + margin[1] - tmap.size[1] / 2 + 0.5))
-            tmap = tmap.crop((margin[0], margin[1], mask_map.size[0] + margin[0], mask_map.size[1] + margin[1]))
+            tmap = ImageChops.offset(tmap, int(x + wmargin - tmap.width/2 + 0.5),
+                                     int(y + hmargin - tmap.height/2 + 0.5))
+            tmap = tmap.crop((wmargin, hmargin, self.width+wmargin, self.height+hmargin))
         elif stype == 'f':
             # fan
             # f  x  y  start  end  r1  r2  (r1<r2)
@@ -86,12 +89,14 @@ class Mask:
             # p  x1  y1  x2  y1  x3  y3  ...
             draw.polygon(para, fill=1)
 
-        mask_map = ImageChops.lighter(mask_map, tmap)
-        del draw
-        return mask_map
+        #mask_map = ImageChops.lighter(mask_map, tmap)
+        self.map |= np.asarray(tmap.convert("I"), dtype=np.bool)
+        del draw,tmap
+        #return mask_map
 
     def clear(self):
-        self.map = np.zeros(self.map.shape, dtype=np.bool)
+        self.map &= False 
+        #self.map = np.zeros(self.map.shape, dtype=np.bool)
 
     def val(self, x, y):
         return self.map[x, y]

@@ -60,3 +60,10 @@ export x-ray scattering chromatogram
 
 2019-03:
 add SVD background subtraction to h5sol_HPLC
+return calculated chromtogram as data
+
+2019-04:
+delete existing "processed" data group when the length of qgrid changes
+add mask items from code rather than from a file
+error bar calculation in Data1d.avg()
+

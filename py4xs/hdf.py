@@ -413,6 +413,11 @@ class h5xs():
             grp = fh5[sn].create_group("processed")
         else:
             grp = fh5[sn+'/processed']
+            g0 = lsh5(grp, top_only=True)[0]
+            if grp[g0].value[0].shape[1]!=len(self.qgrid):
+                # new size for the data
+                del fh5[sn+'/processed']
+                grp = fh5[sn].create_group("processed")
         
         # these attributes are not necessarily available when save_d1s() is called
         if sn in list(self.attrs.keys()):

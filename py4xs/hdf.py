@@ -313,7 +313,7 @@ class h5xs():
         dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det])]
         di = np.arange(len(self.detectors))[np.asarray([d.extension for d in self.detectors])==det][0]
         exp = self.detectors[di].exp_para
-        d2 = Data2d(filename=None, im=dset[frn], exp=exp)
+        d2 = Data2d(dset[frn], exp=exp)
         
         plt.figure()
         ax = plt.gca()
@@ -413,7 +413,7 @@ class h5xs():
             grp = fh5[sn].create_group("processed")
         else:
             grp = fh5[sn+'/processed']
-            g0 = lsh5(grp, top_only=True)[0]
+            g0 = lsh5(grp, top_only=True, silent=True)[0]
             if grp[g0].value[0].shape[1]!=len(self.qgrid):
                 # new size for the data
                 del fh5[sn+'/processed']
@@ -1187,7 +1187,7 @@ class h5sol_HT(h5xs):
         """
         #fh5 = h5py.File(self.fn, "r+")
         if debug is True:
-            print("updating 1d data and buffer info") 
+            print("updating 1d data and buffer info ...") 
         fh5 = self.fh5
         for sn in self.samples:
             if sn in list(self.buffer_list.keys()):

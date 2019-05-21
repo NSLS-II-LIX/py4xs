@@ -108,6 +108,8 @@ class ExpPara:
         self.Phi = Phi.reshape((h, w))
         self.FPol = FPol.reshape((h, w))
         self.FSA = FSA.reshape((h, w))
+        self.xQ = self.Q*np.cos(np.radians(self.Phi))
+        self.yQ = self.Q*np.sin(np.radians(self.Phi))
                 
     def calc_from_XY(self, X, Y, calc_cor_factors=False):
         """

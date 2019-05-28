@@ -14,7 +14,7 @@ class DataType(Enum):
     qrqz = 2
     qphi = 3
     q = 4
-
+    xyq = 5      # Cartesian version of qphi
     
 class MatrixWithCoords:
     # 2D data with coordinates
@@ -358,7 +358,7 @@ class Axes2dPlot:
             (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
             msg = "q=%.4f, phi=%.1f" % (q[0],phi[0])
         else:
-            msg = ""
+            msg = f"({x}, {y})"
         toolbar.set_message(msg)
         return True
 

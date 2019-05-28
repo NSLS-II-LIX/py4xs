@@ -304,7 +304,7 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
-    def show_data(self, sn=None, det='_SAXS', frn=0, 
+    def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,
                   logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
         """
@@ -315,8 +315,9 @@ class h5xs():
         exp = self.detectors[di].exp_para
         d2 = Data2d(dset[frn], exp=exp)
         
-        plt.figure()
-        ax = plt.gca()
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
         pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
         pax.plot(log=logScale)
         if cmap is not None:

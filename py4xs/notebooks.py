@@ -188,28 +188,19 @@ def run(cmd, path=""):
         raise Exception(err.decode())
     return out.decode()
 
-def extract_vals(txt, dtype=float, strip="", debug=False):
+def extract_vals(txt, dtype=float, strip=None, debug=False):
+    if strip is not None:
+        txt = txt.replace(strip, " ")
     sl = txt.split(" ")
     ret = []
     for ss in sl:
         try:
-            val = dtype(ss.strip(strip))
+            val = dtype(ss)
         except:
             pass
         else:
             ret.append(val)
     return ret
-
-def extract_vals1(txt, sep, dtype=float, debug=False):
-    """ return the two numbers in txt on either side of sep
-    """
-    if debug:
-        print(txt, sep)
-    s1,s2 = txt.split(sep)
-    if len(s2)>0:
-        return dtype(s1.rstrip().split(" ")[-1]),dtype(s2.lstrip().split(" ")[0])
-    else:
-        return dtype(s1.rstrip().split(" ")[-1])
     
 def atsas_create_temp_file(fn, d1s, skip=0, q_cutoff=0.6):
     idx = (d1s.qgrid<=q_cutoff)

@@ -7,7 +7,9 @@ import pylab as plt
 from io import StringIO
 import copy,subprocess
 
-def display_solHT_data(fn):
+def display_solHT_data(fn, atsas_path=""):
+    """ atsas_path for windows might be c:\atsas\bin
+    """
     dt = h5sol_HT(fn)
     dt.load_d1s()
     dt.subtract_buffer(sc_factor=-1, debug='quiet')
@@ -102,13 +104,13 @@ def display_solHT_data(fn):
         onUpdatePlot(None)
     
     def onReport(w):
-        try:
-            txt = gen_report_d1s(dt.d1s[ddSample.value]["subtracted"], ax=axr, 
-                                 skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
-                                 print_results=False)
-            outTxt.value = txt
-        except:
-            outTxt.value = "unable to run ATSAS ..."
+        #try:
+        txt = gen_report_d1s(dt.d1s[ddSample.value]["subtracted"], ax=axr, 
+                             skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
+                             print_results=False, path=atsas_path)
+        outTxt.value = txt
+        #except:
+        #    outTxt.value = "unable to run ATSAS ..."
     
     def onUpdatePlot(w):
         sn = ddSample.value
@@ -177,7 +179,8 @@ def display_solHT_data(fn):
     
     return dt
 
-def run(cmd):
+def run(cmd, path=""):
+    cmd = path+cmd
     p = subprocess.Popen(cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
     if len(err)>0:
@@ -212,8 +215,8 @@ def atsas_create_temp_file(fn, d1s, skip=0, q_cutoff=0.6):
     idx = (d1s.qgrid<=q_cutoff)
     np.savetxt(fn, np.vstack([d1s.qgrid[idx][skip:], d1s.data[idx][skip:], d1s.err[idx][skip:]]).T)
     
-def atsas_autorg(fn, debug=False):
-    ret = run(f"autorg {fn}").split('\n')
+def atsas_autorg(fn, debug=False, path=""):
+    ret = run(f"autorg {fn}", path).split('\n')
     #rg,drg = extract_vals(ret[0], "+/-", debug=debug)
     #i0,di0 = extract_vals(ret[1], "+/-", debug=debug)
     #n1,n2 = extract_vals(ret[2], " to ", debug=debug, dtype=int)
@@ -228,7 +231,7 @@ def atsas_autorg(fn, debug=False):
             "fit range": [n1,n2],
             "quality": qual}
 
-def atsas_datgnom(fn, rg, first, last, fn_out=None):
+def atsas_datgnom(fn, rg, first, last, fn_out=None, path=""):
     """ 
     """
     if fn_out is None:
@@ -236,7 +239,7 @@ def atsas_datgnom(fn, rg, first, last, fn_out=None):
     
     options = f"-r {rg} --first {first} --last {last} -o {fn_out}"
     # datgnom vs datgnom4, slightly different input parameters
-    ret = run(f"datgnom {options} {fn}").split("\n")
+    ret = run(f"datgnom {options} {fn}", path).split("\n")
     dmax,qual = extract_vals(ret[0])
     rgg,rgp = extract_vals(ret[1])
     
@@ -284,14 +287,14 @@ def read_gnom_out_file(fn, plot_pr=False, ax=None):
 #           extrapolates it to infinite dilution assuming moderate particle interactions.
 #
 
-def atsas_dat_tools(fn_out):
+def atsas_dat_tools(fn_out, path=""):
     # datporod: the used Rg, I0, the computed volume estimate and the input file name
     #
     # datvc: the first three numbers are the integrated intensities up to 0.2, 0.25 and 0.3, respectively. 
     #        the second three numbers the corresponding MW estimates
     #
     # datmow: Output: Q', V' (apparent Volume), V (Volume, A^3), MW (Da), file name
-    ret = run(f"datporod {fn_out}").split('\n')
+    ret = run(f"datporod {fn_out}", path).split('\n')
     t,t,Vv = extract_vals(ret[0])
     r_porod = {"vol": Vv}
     
@@ -299,7 +302,7 @@ def atsas_dat_tools(fn_out):
     #ii1,ii2,ii3,mw1,mw2,mw3 = extract_vals(ret[0])
     #r_vc = {"MW": [mw1, mw2, mw3]}
     
-    ret = run(f"datmow {fn_out}").split('\n')
+    ret = run(f"datmow {fn_out}", path).split('\n')
     Qp,Vp,Vv,mw = extract_vals(ret[0])
     r_mow = {"Q'": Qp, "app vol": Vp, "vol": Vv, "MW": mw}
 
@@ -307,7 +310,7 @@ def atsas_dat_tools(fn_out):
             #"datvc": r_vc,  # this won't work if q_max is below 0.3 
             "datmow": r_mow}
     
-def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True):
+def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
     if ax is None:
         ax = []
         fig = plt.figure(figsize=(9,3))

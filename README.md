@@ -67,3 +67,6 @@ delete existing "processed" data group when the length of qgrid changes
 add mask items from code rather than from a file
 error bar calculation in Data1d.avg()
 
+2019-05:
+added notebooks.py to define data processing notebook GUIs
+ 

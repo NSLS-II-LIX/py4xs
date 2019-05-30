@@ -415,7 +415,7 @@ class h5xs():
         else:
             grp = fh5[sn+'/processed']
             g0 = lsh5(grp, top_only=True, silent=True)[0]
-            if grp[g0].value[0].shape[1]!=len(self.qgrid):
+            if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
                 # new size for the data
                 del fh5[sn+'/processed']
                 grp = fh5[sn].create_group("processed")
@@ -677,7 +677,7 @@ class h5xs():
             results[sn] = {}
             images = {}
             for det in self.detectors:
-                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])].value
+                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])][...]  # ].value
                 if len(ti.shape)>3:
                     ti = ti.reshape(ti.shape[-3:])      # quirk of suitcase
                 images[det.extension] = ti
@@ -930,7 +930,7 @@ class h5sol_HPLC(h5xs):
             
         data = self.d1s[sn][dkey]
         #qgrid = data[0].qgrid
-        ts = self.fh5[sn+'/primary/time'].value
+        ts = self.fh5[sn+'/primary/time'][...]  # self.fh5[sn+'/primary/time'].value
         #idx = (qgrid>i_minq) & (qgrid<i_maxq) 
         idx = (self.qgrid>i_minq) & (self.qgrid<i_maxq) 
         d_t = []
@@ -962,7 +962,7 @@ class h5sol_HPLC(h5xs):
         fields = lsh5(self.fh5[sn+'/hplc/data'], top_only=True, silent=True)
         d_hplc = {}
         for fd in fields:
-            d_hplc[fd] = self.fh5[sn+'/hplc/data/'+fd].value.T
+            d_hplc[fd] = self.fh5[sn+'/hplc/data/'+fd][...].T   # self.fh5[sn+'/hplc/data/'+fd].value.T
     
         return dkey,d_t,d_i,d_hplc,d_rg,np.vstack(d_s).T
     

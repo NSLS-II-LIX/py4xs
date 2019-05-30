@@ -530,7 +530,7 @@ class Data1d:
             ax.set_xlim(0, qe**2*1.2)
             #ax.autoscale_view(tight=True, scalex=False, scaley=True)
             if i0>0:
-                ax.set_ylim(ymax=i0*2, ymin=i0*np.exp(-(qe*rg)**2/3)/2)
+                ax.set_ylim(top=i0*2, bottom=i0*np.exp(-(qe*rg)**2/3)/2)
         # print "I0=%f, Rg=%f" % (i0,rg)
         return (i0, rg)
 

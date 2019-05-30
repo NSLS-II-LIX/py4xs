@@ -317,9 +317,9 @@ def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=
     tfn_out = "t.out"
     atsas_create_temp_file(tfn, d1s, skip=skip, q_cutoff=q_cutoff)
 
-    re_autorg = atsas_autorg(tfn)
+    re_autorg = atsas_autorg(tfn, path=path)
     re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=skip+1,
-                            last=len(d1s.qgrid[d1s.qgrid<=q_cutoff]), fn_out=tfn_out)
+                            last=len(d1s.qgrid[d1s.qgrid<=q_cutoff]), fn_out=tfn_out, path=path)
     hdr,di,dq,dr,dpr,dpre = read_gnom_out_file(tfn_out)
     
     idx = (d1s.qgrid<q_cutoff)
@@ -347,7 +347,7 @@ def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=
     ax[2].set_title("P(r)")
     ax[2].set_xlabel("r")
 
-    ret = atsas_dat_tools(tfn_out)
+    ret = atsas_dat_tools(tfn_out, path=path)
     if print_results:
         print(f"Gunier fit: quality = {re_autorg['quality']} %,", end=" ")
         print(f"I0 = {re_autorg['I0']:.2f} +/- {re_autorg['I0 err']:.2f} , ", end="")

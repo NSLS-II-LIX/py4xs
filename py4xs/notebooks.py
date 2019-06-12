@@ -5,7 +5,7 @@ from py4xs.hdf import h5sol_HT,lsh5
 from py4xs.slnxs import get_font_size
 import pylab as plt
 from io import StringIO
-import copy,subprocess
+import copy,subprocess,os
 
 def display_solHT_data(fn, atsas_path=""):
     """ atsas_path for windows might be c:\atsas\bin
@@ -13,6 +13,8 @@ def display_solHT_data(fn, atsas_path=""):
     dt = h5sol_HT(fn)
     dt.load_d1s()
     dt.subtract_buffer(sc_factor=-1, debug='quiet')
+    if not os.path.exists("processed/"):
+        os.mkdir("processed")
     
     # widgets
     ddSample = ipywidgets.Dropdown(options=dt.samples, 
@@ -105,7 +107,7 @@ def display_solHT_data(fn, atsas_path=""):
     
     def onReport(w):
         #try:
-        txt = gen_report_d1s(dt.d1s[ddSample.value]["subtracted"], ax=axr, 
+        txt = gen_report_d1s(dt.d1s[ddSample.value]["subtracted"], ax=axr, sn=ddSample.value,
                              skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
                              print_results=False, path=atsas_path)
         outTxt.value = txt
@@ -139,7 +141,7 @@ def display_solHT_data(fn, atsas_path=""):
             ym = np.max(d1.data[d1.qgrid>0.5])
             qm = d1.qgrid[d1.data>0][-1]
             ax2.semilogy(d1.qgrid, d1.data)
-            ax2.errorbar(d1.qgrid, d1.data, d1.err)
+            #ax2.errorbar(d1.qgrid, d1.data, d1.err)
             ax2.set_xlim(left=0.5, right=qm)
             ax2.set_ylim(top=ym*1.1)
             ax2.yaxis.set_major_formatter(plt.NullFormatter())
@@ -166,7 +168,7 @@ def display_solHT_data(fn, atsas_path=""):
     
     def onExport(w):
         sn = ddSample.value
-        dt.export_d1s(sn, save_subtracted=exportSubtractedCB.value)
+        dt.export_d1s(sn, path="processed/", save_subtracted=exportSubtractedCB.value)
         dt.update_h5()
         
     onChangeSample(None)
@@ -301,7 +303,7 @@ def atsas_dat_tools(fn_out, path=""):
             #"datvc": r_vc,  # this won't work if q_max is below 0.3 
             "datmow": r_mow}
     
-def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
+def gen_report_d1s(d1s, ax=None, sn=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
     if ax is None:
         ax = []
         fig = plt.figure(figsize=(9,3))
@@ -313,8 +315,12 @@ def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=
         for a in ax:
             a.clear()
     
-    tfn = "t.dat"
-    tfn_out = "t.out"
+    if sn is None:
+        tfn = "processed/t.dat"
+        tfn_out = "processed/t.out"
+    else:
+        tfn = "processed/t.dat"
+        tfn_out = f"processed/{sn}.out"
     atsas_create_temp_file(tfn, d1s, skip=skip, q_cutoff=q_cutoff)
 
     re_autorg = atsas_autorg(tfn, path=path)
@@ -363,3 +369,169 @@ def gen_report_d1s(d1s, ax=None, skip=0, q_cutoff=0.6, print_results=True, path=
         txt += f"Volume estimate: {ret['datporod']['vol']:.1f} (datporod), {ret['datmow']['vol']:.1f} (MoW)\n"
         txt += f"MW estimate: {ret['datmow']['MW']/1000:.1f} kDa (MoW)"          
         return txt
+              
+              
+def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_mean_value'):
+
+    def onChangeSample(w):
+        sel1 = [sampleLabels[i] for i in range(len(sampleLabels)) 
+                if dt1.attrs[ddSample.value]['selected'][i]]
+        smAverageSM.value = sel1  
+        updateAvgPlot(None)
+        
+    def onChangeBlank(w):
+        print(dt2.attrs['posb1'])
+        sel2 = [blankLabels[i] for i in range(len(blankLabels)) 
+                if dt2.attrs[ddBlank.value]['selected'][i]]
+        #print(ddBlank.value, sel2, dt2.attrs[ddBlank.value]['selected'])
+        blAverageSM.value = sel2    
+        updateAvgPlot(None)
+        
+    def updateAvgPlot(w):
+        ax01.clear()
+        sn1 = ddSample.value
+        sel1 = [(sampleLabels[i] in smAverageSM.value) for i in range(len(sampleLabels))]
+        d1a1 = avg_d1(dt1.d1s[sn1][field], sel1, ax01)
+        if np.any(sel1 != dt1.attrs[sn1]['selected']):        
+            dt1.attrs[sn1]['selected'] = sel1
+            
+        ax02.clear()
+        sn2 = ddBlank.value
+        sel2 = [(blankLabels[i] in blAverageSM.value) for i in range(len(blankLabels))]
+        d1a2 = avg_d1(dt2.d1s[sn2][field], sel2, ax02)
+        if np.any(sel2 != dt1.attrs[sn2]['selected']):        
+            dt2.attrs[sn2]['selected'] = sel2
+            
+        ax03.clear()
+        if d1a1 is not None and d1a2 is not None:
+            d1fb = d1a1.bkg_cor(d1a2, plot_data=True, ax=ax03, 
+                                sc_factor=ftScale1.value, debug='quiet')
+        elif d1a1 is not None:
+            d1fb = d1a1
+            d1fb.plot(ax=ax03)
+        return d1fb
+            
+    def save_d1s(w):
+        """ should update the selection field in h5 file
+            add d1s to a list
+        """
+        d1fb = updataAvgPlot(None)
+        sn1 = ddSample.value
+        sn2 = ddBlank.value
+        dt1.fh5[f'{sn1}/processed'].attrs['selected'] = dt1.attrs[sn1]['selected']
+        dt1.fh5.flush()
+        dt2.fh5[f'{sn2}/processed'].attrs['selected'] = dt2.attrs[sn2]['selected']
+        dt2.fh5.flush()
+        if sn1 in d1list.keys():
+            del d1list[sn1]
+        d1list[sn1] = d1fb
+        
+        ddSampleS.index = None
+        ddSampleS.options = list(d1list.keys())
+        ddSolventS.index = None
+        ddSolventS.options = ['None'] + list(d1list.keys()) 
+        
+    def onUpdatePlot(w):
+        if ddSampleS.value is None:
+            return
+
+        ax.clear()
+        d1s = d1list[ddSampleS.value]
+        if ddSolventS.value in [None, 'None', d1list[ddSampleS.value]]:
+            d1f = d1s
+            d1f.plot(ax=ax)
+        else:
+            d1b = d1list[ddSolventS.value]
+            d1f = d1s.bkg_cor(d1b, plot_data=True, ax=ax, 
+                              sc_factor=ftScale1.value, debug='quiet')
+        return d1f
+        
+    def onExport(w):
+        sn = ddSampleS.value
+        fn = f"{sn}_{txFnSuffix.value}.dat"
+        d1f = onUpdatePlot(None)
+        d1f.save(fn)
+        
+    def set_trans(dh5, field, trans_field):
+        for sn in dh5.samples:
+            for i in range(len(dh5.d1s[sn][field])):
+                dh5.d1s[sn][field][i].set_trans(dh5.fh5[f'{sn}/primary/data/{trans_field}'][i], 
+                                            transMode=trans_mode.external)
+
+    def avg_d1(d1s, selection, ax):
+        d1sl = [d1s[i] for i in range(len(selection)) if selection[i]]
+        if len(d1sl)==0:
+            return None
+        else:
+            return d1sl[0].avg(d1sl[1:], plot_data=True, ax=ax, debug='quiet')
+    
+    dt1 = h5xs(fn1)
+    dt1.load_d1s()
+    set_trans(dt1, field, trans_field)
+    if fn2 is not None:
+        dt2 = h5xs(fn2)
+        dt2.load_d1s()    
+        set_trans(dt2, field, trans_field)
+    else:
+        dt2 = dt1
+        
+    d1list = {}
+
+    fields = list(set(dt1.d1s[dt1.samples[0]].keys())-set(['averaged']))
+    if field not in fields:
+        print(f"invalid field, options are {fields}.")
+    
+    # widgets
+    ddSample = ipywidgets.Dropdown(options=dt1.samples, value=dt1.samples[0], description='Sample:')
+    sampleLabels = [f"frame #{i}" for i in range(len(dt1.attrs[dt1.samples[0]]['selected']))]
+    smAverageSM = ipywidgets.SelectMultiple(options=sampleLabels, descripetion="selection for averaging")
+
+    vbox1 = ipywidgets.VBox([ddSample, smAverageSM])                
+    
+    ddBlank = ipywidgets.Dropdown(options=dt2.samples, value=dt2.samples[0], description='Blank:')
+    blankLabels = [f"frame #{i}" for i in range(len(dt2.attrs[dt2.samples[0]]['selected']))]
+    blAverageSM = ipywidgets.SelectMultiple(options=blankLabels, descripetion="selection for averaging")
+    vbox2 = ipywidgets.VBox([ddBlank, blAverageSM])        
+    
+    btnUpdate = ipywidgets.Button(description='Update plot')
+    btnSave1D = ipywidgets.Button(description='Save 1D')
+    ftScale1 = ipywidgets.FloatText(value=0.8, description='blank scale:', disabled=False)
+    vbox3 = ipywidgets.VBox([btnUpdate, btnSave1D, ftScale1])
+    
+    hbox1 = ipywidgets.HBox([vbox1, vbox2, vbox3])
+
+    fig = plt.figure(figsize=(12,4))
+    ax01 = fig.add_axes([0.1, 0.15, 0.23, 0.8])
+    ax02 = fig.add_axes([0.4, 0.15, 0.23, 0.8])
+    ax03 = fig.add_axes([0.7, 0.15, 0.23, 0.8])
+    
+    ddSampleS = ipywidgets.Dropdown(description='Sample:')
+    ddSolventS = ipywidgets.Dropdown(description='Solvent:')    
+    hbox2 = ipywidgets.HBox([ddSampleS, ddSolventS])  
+
+    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.2, max=5.0, step=0.001,
+                                           description='Scaling factor:', readout_format='.3f')
+    btnExport = ipywidgets.Button(description='Export')
+    txFnSuffix = ipywidgets.Text(value='s', description='filename suffix:', disabled=False, 
+                                 layout=ipywidgets.Layout(width='10%'))
+    hbox3 = ipywidgets.HBox([slideScFactor, btnExport, txFnSuffix])
+
+    box = ipywidgets.VBox([ipywidgets.Label(value="___ Blank subtraction: ___"), 
+                           hbox1, ipywidgets.Label(value="___ After blank subtraction: ___"), 
+                           hbox2, hbox3])  
+    display(box)
+    fig = plt.figure(figsize=(7,5))
+    ax = plt.gca()
+
+    print(dt2.attrs['posb1'])
+    onChangeSample(None)
+    print(dt2.attrs['posb1'])
+    onChangeBlank(None)
+    btnUpdate.on_click(updateAvgPlot)
+    slideScFactor.observe(onUpdatePlot)
+    ddSample.observe(onChangeSample)
+    ddBlank.observe(onChangeBlank)
+    btnExport.on_click(onExport)
+    btnSave1D.on_click(save_d1s)
+    
+    return dt1

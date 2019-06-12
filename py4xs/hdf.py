@@ -311,7 +311,9 @@ class h5xs():
         if sn is None:
             sn = self.samples[0]
         dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det])]
-        di = np.arange(len(self.detectors))[np.asarray([d.extension for d in self.detectors])==det][0]
+        if len(dset.shape)>3:
+            dset = dset[0]
+        di = np.argwhere([d.extension==det for d in self.detectors])[0][0]
         exp = self.detectors[di].exp_para
         d2 = Data2d(dset[frn], exp=exp)
         

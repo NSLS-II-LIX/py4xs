@@ -1,7 +1,9 @@
 import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
-from py4xs.hdf import h5sol_HT,lsh5
+import json,os
+from py4xs.hdf import h5xs,h5sol_HT,h5sol_HPLC,lsh5
+from py4xs.slnxs import trans_mode
 from py4xs.slnxs import get_font_size
 import pylab as plt
 from io import StringIO
@@ -380,10 +382,8 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
         updateAvgPlot(None)
         
     def onChangeBlank(w):
-        print(dt2.attrs['posb1'])
         sel2 = [blankLabels[i] for i in range(len(blankLabels)) 
                 if dt2.attrs[ddBlank.value]['selected'][i]]
-        #print(ddBlank.value, sel2, dt2.attrs[ddBlank.value]['selected'])
         blAverageSM.value = sel2    
         updateAvgPlot(None)
         
@@ -523,9 +523,7 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
     fig = plt.figure(figsize=(7,5))
     ax = plt.gca()
 
-    print(dt2.attrs['posb1'])
     onChangeSample(None)
-    print(dt2.attrs['posb1'])
     onChangeBlank(None)
     btnUpdate.on_click(updateAvgPlot)
     slideScFactor.observe(onUpdatePlot)
@@ -535,3 +533,213 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
     btnSave1D.on_click(save_d1s)
     
     return dt1
+              
+def display_HPLC_data(fn):
+    dt = h5sol_HPLC(fn)
+    dt.load_d1s()
+    dt.set_trans()
+    dt.normalize_int()
+    
+    # vbox1 1D chromotograms
+    vb1Lb = ipywidgets.Label(value="chromatograms:")
+    xROI1Tx = ipywidgets.Text(value='0.02, 0.03', description='x-ray ROI1:', 
+                              layout=ipywidgets.Layout(width='90%'),
+                              style = {'description_width': 'initial'})    
+    xROI2Tx = ipywidgets.Text(value='', description='x-ray ROI2:', 
+                              layout=ipywidgets.Layout(width='90%'),
+                              style = {'description_width': 'initial'})    
+    xROI3Tx = ipywidgets.Text(value='', description='x-ray ROI3:', 
+                              layout=ipywidgets.Layout(width='90%'),
+                              style = {'description_width': 'initial'})    
+    xROIlogCB = ipywidgets.Checkbox(value=True, description='log scale',
+                                    layout=ipywidgets.Layout(width='80%'),
+                                    style = {'description_width': 'initial'})
+    showLC1CB = ipywidgets.Checkbox(value=True, description='LC det 1',
+                                    layout=ipywidgets.Layout(width='80%'),
+                                    style = {'description_width': 'initial'})
+    showLC2CB = ipywidgets.Checkbox(value=True, description='LC det 2',
+                                    layout=ipywidgets.Layout(width='80%'),
+                                    style = {'description_width': 'initial'})
+    btnUpdate = ipywidgets.Button(description='Update plot', 
+                                  layout=ipywidgets.Layout(width='35%'))
+
+    vbox1a = ipywidgets.VBox([xROI1Tx, xROI2Tx, xROI3Tx], 
+                             layout=ipywidgets.Layout(width='60%'))
+    vbox1b = ipywidgets.VBox([xROIlogCB, showLC1CB, showLC2CB], 
+                             layout=ipywidgets.Layout(width='40%'))
+    vbox1 = ipywidgets.VBox([vb1Lb, ipywidgets.HBox([vbox1a,vbox1b]), btnUpdate],
+                            layout=ipywidgets.Layout(width='30%'))
+    
+    # vbox2, 2D plot parameters
+    vb2Lb = ipywidgets.Label(value="2D map:")
+    x2dMaplogCB = ipywidgets.Checkbox(value=True, description='log scale',
+                                      layout=ipywidgets.Layout(width='90%'),
+                                      style = {'description_width': 'initial'})
+    x2dMapSubtractedCB = ipywidgets.Checkbox(value=True, description='show subtracted',
+                                             layout=ipywidgets.Layout(width='95%'),
+                                             style = {'description_width': 'initial'})
+    cminTx = ipywidgets.Text(value='0.1', description='vmin:', 
+                              layout=ipywidgets.Layout(width='70%'),
+                              style = {'description_width': 'initial'})    
+    cmaxTx = ipywidgets.Text(value='200', description='vmax:', 
+                              layout=ipywidgets.Layout(width='70%'),
+                              style = {'description_width': 'initial'})    
+    vbox2 = ipywidgets.VBox([vb2Lb, x2dMapSubtractedCB, x2dMaplogCB, cminTx, cmaxTx], 
+                            layout=ipywidgets.Layout(width='15%'))
+    
+    # vbox3, backgorund subtraction, export
+    vb3Lb = ipywidgets.Label(value="subtraction:")
+    subModeDd = ipywidgets.Dropdown(options=['normal', 'SVD'], value='normal',
+                                    description='mode of subtraction:',
+                                    layout=ipywidgets.Layout(width='65%'),
+                                    style = {'description_width': 'initial'})
+    btnSubtract = ipywidgets.Button(description='subtract', 
+                                  layout=ipywidgets.Layout(width='25%'))
+    hbox31 = ipywidgets.HBox([subModeDd, btnSubtract])  
+    
+    frnsSubTx = ipywidgets.Text(value='0-40', description='buffer frames:', 
+                                layout=ipywidgets.Layout(width='40%'),
+                                style = {'description_width': 'initial'})
+    ncTx = ipywidgets.Text(value='3', description='Nc:', 
+                              layout=ipywidgets.Layout(width='15%'),
+                              disabled = True,
+                              style = {'description_width': 'initial'})
+    polyNTx = ipywidgets.Text(value='3', description='poly N:', 
+                              layout=ipywidgets.Layout(width='20%'),
+                              disabled = True,
+                              style = {'description_width': 'initial'})
+
+    slideScFactor = ipywidgets.FloatSlider(value=0.998, min=0.8, max=1.2, step=0.001,
+                                       style = {'description_width': 'initial'},
+                                       layout=ipywidgets.Layout(width='60%'),
+                                       description='Scaling factor:', readout_format='.3f')
+
+    filterWidthTx = ipywidgets.Text(value='1, 1.5', description='filter width:', 
+                                    layout=ipywidgets.Layout(width='30%'),
+                                    disabled = True,
+                                    style = {'description_width': 'initial'})
+
+    hbox32a = ipywidgets.HBox([frnsSubTx, ncTx, polyNTx]) 
+    hbox32b = ipywidgets.HBox([slideScFactor, filterWidthTx]) 
+    
+    
+    btnExport = ipywidgets.Button(description='Export', 
+                                  layout=ipywidgets.Layout(width='30%'))
+    frnsExportTx = ipywidgets.Text(value='0-40', description='export frames:', 
+                                   layout=ipywidgets.Layout(width='40%'),
+                                   style = {'description_width': 'initial'})
+    exportAllCB = ipywidgets.Checkbox(value=False, description='export all',
+                                    layout=ipywidgets.Layout(width='30%'),
+                                    style = {'description_width': 'initial'})
+    
+    hbox33 = ipywidgets.HBox([btnExport, frnsExportTx, exportAllCB])      
+
+    vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox33], 
+                            layout=ipywidgets.Layout(width='45%')) #, border="solid"))
+    
+    
+    box = ipywidgets.HBox([vbox1, vbox2, vbox3])
+    display(box)
+
+        
+    fig1 = plt.figure(figsize=(8,5))
+    fig2 = plt.figure(figsize=(8,3))
+    
+    def updatePlot(w):
+        fig1.clear()
+        ax1a = fig1.add_subplot(211)
+        ax1b = fig1.add_subplot(212)
+        
+        q_ranges = []
+        for roiTx in[xROI1Tx, xROI2Tx, xROI3Tx]:
+            try:
+                q_ranges.append(np.asarray(roiTx.value.split(","), dtype=np.float))
+            except:
+                pass
+            
+        dt.plot_data(plot_merged=(not x2dMapSubtractedCB.value), 
+                     q_ranges=q_ranges, logROI=xROIlogCB.value,
+                     clim=[1.e-1, .2e2], logScale=x2dMaplogCB.value,
+                     show_hplc_data=[showLC1CB.value, showLC2CB.value], 
+                     ax1=ax1a, ax2=ax1b)
+        plt.show(fig1)
+    
+    def changeSubtractionMode(w):
+        if subModeDd.value=="normal":
+            filterWidthTx.disabled = True
+            ncTx.disabled = True
+            polyNTx.disabled = True
+            frnsSubTx.description='buffer frames:'
+        else:
+            filterWidthTx.disabled = False
+            ncTx.disabled = False
+            polyNTx.disabled = False
+            frnsSubTx.description='excluded frames:'            
+    
+    def changeExportMode(w):
+        if exportAllCB.value == True:
+            frnsExportTx.disabled = True
+        else:
+            frnsExportTx.disabled = False
+        
+    def subtract_buffer(w):
+        if subModeDd.value=="normal":
+            fig2.clear()
+            dt.subtract_buffer(buffer_frame_range=frnsSubTx.value, 
+                               sc_factor=slideScFactor.value)
+        else: # SVD
+            fig2.clear()
+            ax2a = fig2.add_subplot(121)
+            ax2b = fig2.add_subplot(122)
+            filter_width = filterWidthTx.value # e.g. 1 or 0.5, 3 
+            try:
+                filter_width = float(filter_width)
+            except:
+                filter_width = json.loads(f"[{filter_width}]")
+
+            polyN = polyNTx.value
+            try:
+                polyN = int(polyN)
+            except:
+                polyN = json.loads(f"[{polyN}]")
+                nc = len(polyN)
+                ncTx.value = str(nc)
+            
+            dt.subtract_buffer_SVD(excluded_frames_list = frnsSubTx.value, 
+                                  sc_factor = slideScFactor.value,
+                                  gaussian_filter_width=filter_width,
+                                  Nc = int(ncTx.value), 
+                                  poly_order=polyN,
+                                  plot_fit=True, ax1=ax2a, ax2=ax2b)
+            plt.show(fig2)
+            plt.tight_layout()
+        
+        x2dMapSubtractedCB.value = True
+        updatePlot(None)
+            
+    def export(w):
+        fig2.clear()
+        if not os.path.isdir("processed/"):
+            os.mkdir("processed")
+        if exportAllCB.value:
+            dt.export_txt(path="processed/")
+        else:
+            dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
+                                     save_data=True, path="processed/",
+                                     fig=fig2, plot_data=True, debug='quiet')
+    
+    btnUpdate.on_click(updatePlot)
+    xROIlogCB.observe(updatePlot)
+    showLC1CB.observe(updatePlot)
+    showLC2CB.observe(updatePlot)
+    x2dMaplogCB.observe(updatePlot)
+    x2dMapSubtractedCB.observe(updatePlot)
+    
+    subModeDd.observe(changeSubtractionMode)
+    exportAllCB.observe(changeExportMode)
+    btnSubtract.on_click(subtract_buffer)
+    btnExport.on_click(export)
+    
+    updatePlot(None)
+    
+    return dt

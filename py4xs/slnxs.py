@@ -226,7 +226,7 @@ class Data1d:
         if weighted:
             wt = []
             for d in dsets+[self]:
-                w0 = np.sum(d.data[d.qgrid<qmax_for_weight])
+                w0 = np.sum(np.fabs(d.data[d.qgrid<qmax_for_weight]))
                 if w0<=0:
                     raise Exception(f"weight for averaging <0: {w0}")
                 wt.append(w0)
@@ -518,7 +518,7 @@ class Data1d:
             # print i0, rg
         td[1, :] = i0 * np.exp(-td[0, :]*rg*rg/3.)
 
-        if no_plot==False:
+        if no_plot==False and rg>0.1:
             #ax.tick_params(axis='y', labelleft=False)    
             ax.plot([td[0, 0], td[0, -1]], [td[1, 0], td[1, -1]], "ro")
             ax.plot(self.qgrid**2, i0*np.exp(-(self.qgrid*rg)**2/3))

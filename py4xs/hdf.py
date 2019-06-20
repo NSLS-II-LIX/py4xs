@@ -755,7 +755,7 @@ class h5sol_HPLC(h5xs):
     def process_sample_name(self, sn, debug=False):
         #fh5 = h5py.File(self.fn, "r+")
         fh5 = self.fh5
-        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
+        self.samples = lsh5(fh5, top_only=True, silent=(debug is not True))
         if sn==None:
             sn = self.samples[0]
         elif sn not in self.samples:
@@ -795,7 +795,7 @@ class h5sol_HPLC(h5xs):
     def subtract_buffer_SVD(self, excluded_frames_list, sn=None, sc_factor=0.995,
                             gaussian_filter_width=None,
                             Nc=5, poly_order=8,
-                            plot_fit=False, ax=None, debug=False):
+                            plot_fit=False, ax1=None, ax2=None, debug=False):
         """ perform SVD background subtraction, use Nc eigenvalues 
             poly_order: order of polynomial fit to each eigenvalue
             gaussian_filter width: sigma value for the filter, e.g. 1, or (0.5, 3)
@@ -837,13 +837,21 @@ class h5sol_HPLC(h5xs):
         dd2c = np.dot(np.dot(Ub, np.diag(s[:Nc])), Vh[:Nc,:]).T
 
         if plot_fit:
-            if ax is None:
-                plt.figure()
-                ax = plt.gca()
+            if ax1 is None:
+                fig = plt.figure()
+                ax1 = fig.add_subplot(121)
+                ax2 = fig.add_subplot(122)
             for i in reversed(range(Nc)):
-                ax.plot(bkg_frns, np.sqrt(s[i])*U[:,i], '.') #s[i]*U[:,i])
+                ax1.plot(bkg_frns, np.sqrt(s[i])*U[:,i], '.') #s[i]*U[:,i])
             for i in reversed(range(Nc)):
-                ax.plot(all_frns, np.sqrt(s[i])*Uf[i](all_frns)) #s[i]*U[:,i])    
+                ax1.plot(all_frns, np.sqrt(s[i])*Uf[i](all_frns)) #s[i]*U[:,i])  
+            ax1.set_xlim(0, nf)
+            ax1.set_xlabel("frame #")
+            if ax2 is not None:
+                for i in reversed(range(Nc)):
+                    ax2.plot(self.qgrid, np.sqrt(s[i])*Vh[i]) #s[i]*U[:,i])
+                ax2.set_xlabel("q")
+                
 
         self.attrs[sn]['sc_factor'] = sc_factor
         self.attrs[sn]['svd excluded frames'] = excluded_frames_list
@@ -879,6 +887,10 @@ class h5sol_HPLC(h5xs):
             print("start processing: subtract_buffer()")
             t1 = time.time()
 
+        if type(buffer_frame_range) is str:
+            f1,f2 = buffer_frame_range.split('-')
+            buffer_frame_range = range(int(f1), int(f2))
+            
         listb  = [self.d1s[sn]['merged'][i] for i in buffer_frame_range]
         listbfn = buffer_frame_range
         if len(listb)>1:
@@ -917,7 +929,7 @@ class h5sol_HPLC(h5xs):
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
             
-    def get_chromatogram(self, sn, i_minq=0.02, i_maxq=0.05, flowrate=0, plot_merged=False,
+    def get_chromatogram(self, sn, q_ranges=[[0.02,0.05]], flowrate=0, plot_merged=False,
                  calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True):
         """ returns data to be plotted in the chromatogram
         """
@@ -931,33 +943,38 @@ class h5sol_HPLC(h5xs):
             raise Exception("processed data not present.")
             
         data = self.d1s[sn][dkey]
+        nd = len(data)
         #qgrid = data[0].qgrid
+        
         ts = self.fh5[sn+'/primary/time'][...]  # self.fh5[sn+'/primary/time'].value
-        #idx = (qgrid>i_minq) & (qgrid<i_maxq) 
-        idx = (self.qgrid>i_minq) & (self.qgrid<i_maxq) 
-        d_t = []
-        d_i = []
-        d_rg = []
+        if len(ts)==1:
+            # there is only one time stamp for multi-frame data collection
+            cfg = json.loads(self.fh5[f'{sn}/primary'].attrs['configuration'])
+            k = list(cfg.keys())[0]
+            ts = np.arange(len(data)) * cfg[k]['data'][f"{k}_cam_acquire_period"]
+            
+        idx = [(self.qgrid>i_minq) & (self.qgrid<i_maxq) for [i_minq,i_maxq] in q_ranges]
+        nq = len(idx)
+        
+        d_t = np.zeros(nd)
+        d_i = np.zeros((nq, nd))
+        d_rg = np.zeros(nd)
         d_s = []
-        frame_n = 0
+        
         for i in range(len(data)):
             ti = (ts[i]-ts[0])/60
             if flowrate>0:
                 ti*=flowrate
-
-            ii = data[i].data[idx].sum()
+            d_t[i] = ti
+                
+            for j in range(nq): 
+                d_i[j][i] = data[i].data[idx[j]].sum()
+            ii = np.max([d_i[j][i] for j in range(nq)])
             d_s.append(data[i].data)
 
             if ii>thresh and calc_Rg and dkey=='subtracted':
                 i0,rg = dt.plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
-                #print("frame # %d: i0=%.2g, rg=%.2f" % (frame_n,i0,rg))
-            else:
-                rg = 0
-
-            d_t.append(ti)
-            d_i.append(ii)
-            d_rg.append(rg)
-            frame_n += 1
+                d_rg[i] = rg
     
         # read HPLC data directly from HDF5
         hplc_grp = self.fh5[sn+"/hplc/data"]
@@ -969,67 +986,85 @@ class h5sol_HPLC(h5xs):
         return dkey,d_t,d_i,d_hplc,d_rg,np.vstack(d_s).T
     
             
-    def plot_data(self, sn=None, i_minq=0.02, i_maxq=0.05, flowrate=0, plot_merged=False,
+    def plot_data(self, sn=None, 
+                  q_ranges=[[0.02,0.05]], logROI=False, markers=['bo', 'mo', 'co', 'yo'],
+                  flowrate=0, plot_merged=False,
                   ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
                   show_hplc_data=[True, False],
-                  export_txt=False, debug=False, fig_w=8, fig_h1=2, fig_h2=3.5):
+                  export_txt=False, debug=False, 
+                  fig_w=8, fig_h1=2, fig_h2=3.5, ax1=None, ax2=None):
         """ plot "merged" if no "subtracted" present
+            q_ranges: a list of [q_min, q_max], within which integrated intensity is calculated 
             export_txt: export the scattering-intensity-based chromatogram
+            
         """
         
-        if plot2d:
-            plt.figure(figsize=(fig_w, fig_h1+fig_h2))
-            plt.subplot(211)
-        else:
-            plt.figure(figsize=(fig_w, fig_h2))
-
-        fh5,sn = self.process_sample_name(sn, debug=debug)
-
-        ax1 = plt.gca()
-        ax2 = ax1.twiny()
-        ax3 = ax1.twinx()
+        if ax1 is None:
+            if plot2d:
+                plt.figure(figsize=(fig_w, fig_h1+fig_h2))
+                plt.subplot(211)
+            else:
+                plt.figure(figsize=(fig_w, fig_h2))
+            ax1 = plt.gca()
+        ax1a = ax1.twiny()
+        ax1b = ax1.twinx()
         
-        dkey,d_t,d_i,d_hplc,d_rg,d_s = self.get_chromatogram(sn, i_minq=i_minq, i_maxq=i_maxq, 
+        fh5,sn = self.process_sample_name(sn, debug=debug)
+        dkey,d_t,d_i,d_hplc,d_rg,d_s = self.get_chromatogram(sn, q_ranges=q_ranges, 
                                                              flowrate=flowrate, plot_merged=plot_merged, 
                                                              calc_Rg=calc_Rg, thresh=thresh, 
                                                              qs=qs, qe=qe, fix_qe=fix_qe)
         data = self.d1s[sn][dkey]
+        nq = len(q_ranges)
         
         if ymin == -1:
-            ymin = np.min(d_i)
+            ymin = np.min([np.min(d_i[j]) for j in range(nq)])
         if ymax ==-1:
-            ymax = np.max(d_i)
+            ymax = np.max([np.max(d_i[j]) for j in range(nq)])
+        if logROI:
+            pl_ymax = 1.5*ymax
+            pl_ymin = 0.8*np.max([ymin, 1e-2])
+        else:
+            pl_ymax = ymax+0.05*(ymax-ymin)
+            pl_ymin = ymin-0.05*(ymax-ymin)
+            
 
         if export_txt:
             # export the scattering-intensity-based chromatogram
-            np.savetxt(sn+'.chrome', np.vstack((d_t, d_i)).T, "%12.3f")
+            for j in range(nq):
+                np.savetxt(f'{sn}.chrome_{j}', np.vstack((d_t, d_i[j])).T, "%12.3f")
             
-        ax1.plot(d_i, 'b-')
+        for j in range(nq):
+            ax1.plot(d_i[j], 'w-')
         ax1.set_xlabel("frame #")
-        ax1.set_xlim((0,len(d_i)))
-        ax1.set_ylim(ymin-0.05*(ymax-ymin), ymax+0.05*(ymax-ymin))
+        ax1.set_xlim((0,len(d_i[0])))
+        ax1.set_ylim(pl_ymin, pl_ymax)
         ax1.set_ylabel("intensity")
+        if logROI:
+            ax1.set_yscale('log')
 
         i = 0 
         for k,dc in d_hplc.items():
             if show_hplc_data[i]:
-                ax2.plot(np.asarray(dc[0])+offset,
+                ax1a.plot(np.asarray(dc[0])+offset,
                          ymin+dc[1]/np.max(dc[1])*(ymax-ymin)*uv_scale, label=k)
             i += 1
-            #ax2.set_ylim(0, np.max(dc[0][2]))
+            #ax1a.set_ylim(0, np.max(dc[0][2]))
 
         if flowrate>0:
-            ax2.set_xlabel("volume (mL)")
+            ax1a.set_xlabel("volume (mL)")
         else:
-            ax2.set_xlabel("time (minutes)")
-        ax2.plot(d_t, d_i, 'bo', label='x-ray ROI')
-        ax2.set_xlim((d_t[0],d_t[-1]))
+            ax1a.set_xlabel("time (minutes)")
+        for j in range(nq):
+            ax1a.plot(d_t, d_i[j], markers[j], markersize=5, label=f'x-ray ROI #{j}')
+        ax1a.set_xlim((d_t[0],d_t[-1]))
+        leg = ax1a.legend(loc='upper left', fontsize=9, frameon=False)
 
-        if showFWHM:
-            half_max=(np.amax(d_i)-np.amin(d_i))/2 + np.amin(d_i)
-            s = splrep(d_t, d_i - half_max)
+        if showFWHM and nq==1:
+            half_max=(np.amax(d_i[0])-np.amin(d_i[0]))/2 + np.amin(d_i[0])
+            s = splrep(d_t, d_i[0] - half_max)
             roots = sproot(s)
             fwhm = abs(roots[1]-roots[0])
             print(roots[1],roots[0],half_max)
@@ -1037,69 +1072,84 @@ class h5sol_HPLC(h5xs):
                 print("X-ray cell FWHMH =", fwhm, "ml")
             else:
                 print("X-ray cell FWHMH =", fwhm, "min")
-            ax2.plot([roots[0], roots[1]],[half_max, half_max],"k-|")
+            ax1a.plot([roots[0], roots[1]],[half_max, half_max],"k-|")
 
         if calc_Rg and dkey=='subtracted':
             d_rg = np.asarray(d_rg)
             max_rg = np.max(d_rg)
             d_rg[d_rg==0] = np.nan
-            ax3.plot(d_rg, 'r.', label='rg')
-            ax3.set_xlim((0,len(d_rg)))
-            ax3.set_ylim((0, max_rg*1.05))
-            ax3.set_ylabel("Rg")
-
-        leg = ax2.legend(loc='upper left', fontsize=9, frameon=False)
-        leg = ax3.legend(loc='center left', fontsize=9, frameon=False)
+            ax1b.plot(d_rg, 'r.', label='rg')
+            ax1b.set_xlim((0,len(d_rg)))
+            ax1b.set_ylim((0, max_rg*1.05))
+            ax1b.set_ylabel("Rg")
+            leg = ax1b.legend(loc='center left', fontsize=9, frameon=False)
+        else:
+            ax1b.yaxis.set_major_formatter(plt.NullFormatter())
 
         if plot2d:
-            plt.subplots_adjust(bottom=0.)
-            plt.subplot(212)
-            plt.subplots_adjust(top=1.)
-            ax = plt.gca()
-            ax.tick_params(axis='x', top=True)
-            ax.xaxis.set_major_formatter(plt.NullFormatter())
+            if ax2 is None:
+                plt.subplots_adjust(bottom=0.)
+                plt.subplot(212)
+                plt.subplots_adjust(top=1.)
+                ax2 = plt.gca()
+            ax2.tick_params(axis='x', top=True)
+            ax2.xaxis.set_major_formatter(plt.NullFormatter())
             #ax3 = ax1.twinx()
             d2 = d_s + clim[0]/2
             ext = [0, len(data), self.qgrid[-1], self.qgrid[0]]
             asp = len(data)/self.qgrid[-1]/(fig_w/fig_h1)
             if logScale:
-                plt.imshow(np.log(d2), extent=ext, aspect=asp) 
-                plt.clim(np.log(clim))
+                im = ax2.imshow(np.log(d2), extent=ext, aspect=asp) 
+                im.set_clim(np.log(clim))
             else:
-                plt.imshow(d2, extent=ext, aspect=asp) 
-                plt.clim(clim)
+                im = ax2.imshow(d2, extent=ext, aspect=asp) 
+                im.set_clim(clim)
             #plt.xlabel('frame #')
-            plt.ylabel('q')
+            ax2.set_ylabel('q')
             #ax3.set_xlabel('frame #')
-            plt.tight_layout()
+            #plt.tight_layout()
 
-        plt.tight_layout()
-        plt.show()
+        #plt.tight_layout()
+        #plt.show()
         
-    def bin_subtracted_frames(self, sn=None, first_frame=0, last_frame=-1, 
+    def bin_subtracted_frames(self, sn=None, frame_range=None, first_frame=0, last_frame=-1, 
                               plot_data=True, fig=None, qmax=0.5, qs=0.01,
                               save_data=False, path="", debug=False): 
         """ this is typically used after running subtract_buffer_SVD()
+            the frames are specified by either first_frame and last_frame, or frame_range, e.g. "50-60"
             if path is used, be sure that it ends with '/'
         """
         fh5,sn = self.process_sample_name(sn, debug=debug)
-        if last_frame<first_frame:
-            last_frame=len(self.d1s[sn]['subtracted'])
-        d1s0 = copy.deepcopy(self.d1s[sn]['subtracted'][first_frame])
-        if last_frame>first_frame+1:
-            d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], weighted=True, debug=debug)
-        if save_data:
-            d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,'s'), debug=debug)
+        
         if plot_data:
             if fig is None:
                 fig = plt.figure()            
             ax1 = fig.add_subplot(121)
-            plt.semilogy(d1s0.qgrid, d1s0.data)
-            plt.errorbar(d1s0.qgrid, d1s0.data, d1s0.err)
-            plt.xlim(0,qmax)
             ax2 = fig.add_subplot(122)
-            i0,rg = d1s0.plot_Guinier(qs=qs, ax=ax2)
-            print(f"I0={i0:.2g}, Rg={rg:.2f}")
+
+        for fr in frame_range.strip(' ').split(','):    
+            if fr is None:
+                continue
+            f1,f2 = fr.split('-')
+            first_frame = int(f1)
+            last_frame = int(f2)
+            if last_frame<first_frame:
+                last_frame=len(self.d1s[sn]['subtracted'])
+            if debug is True:
+                print(f"binning frames {fr}: first_frame={first_frame}, last_frame={last_frame}")
+            d1s0 = copy.deepcopy(self.d1s[sn]['subtracted'][first_frame])
+            if last_frame>first_frame+1:
+                d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], weighted=True, debug=debug)
+            if save_data:
+                d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}s.dat", debug=debug)
+            if plot_data:
+                ax1.semilogy(d1s0.qgrid, d1s0.data)
+                ax1.errorbar(d1s0.qgrid, d1s0.data, d1s0.err)
+                ax1.set_xlim(0,qmax)
+                i0,rg = d1s0.plot_Guinier(qs=qs, ax=ax2)
+            #print(f"I0={i0:.2g}, Rg={rg:.2f}")
+
+        if plot_data:
             plt.tight_layout()            
     
         
@@ -1127,10 +1177,10 @@ class h5sol_HPLC(h5xs):
             d1s0 = copy.deepcopy(d1s[0])
             if len(d1s)>1:
                 d1s0.avg(d1s[1:], weighted=True, plot_data=plot_averaged, ax=ax, debug=debug)
-            d1s0.save("%s%s_%d-%d%c.dat"%(path,sn,first_frame,last_frame-1,dkey[0]), debug=debug)
+            d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}{dkey[0]}.dat", debug=debug)
         else:
             for i in range(len(d1s)):
-                d1s[i].save("%s%s_%d%c.dat"%(path,sn,i+first_frame,dkey[0]), debug=debug)                    
+                d1s[i].save(f"{path}{sn}_{i+first_frame:04d}{dkey[0]}.dat", debug=debug)                    
 
         
 class h5sol_HT(h5xs):

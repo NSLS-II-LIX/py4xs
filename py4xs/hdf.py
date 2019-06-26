@@ -333,7 +333,7 @@ class h5xs():
         pax.capture_mouse()
         #plt.show() 
     
-    def set_trans(self, sn=None, transMode=None):
+    def set_trans(self, sn=None, transMode=None, interpolate=False, gf_sigma=5):
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
@@ -349,14 +349,27 @@ class h5xs():
         else:
             samples = [sn]
         for s in samples:
+            if transMode==trans_mode.external:
+                if self.transField in self.fh5[f'{s}/primary/data/']:
+                    trans_data = self.fh5[f'{s}/primary/data/{self.transField}'][...]
+                    ts = self.fh5[f'{s}/primary/timestamps/{self.transField}'][...]
+                elif self.transField in self.fh5[f'{s}']:
+                    trans_data = dt.fh5[f'{s}/{self.transField}/data/{self.transField}'][...]
+                    ts = dt.fh5[f'{s}/{self.transField}/timestamps/{self.transField}'][...]
+                else:
+                    raise Exception(f"could not find transmission data from {self.transField}.")
+            if interpolate:  ## smoothing really
+                spl = splrep(ts, gaussian_filter(trans_data, gf_sigma))
+                ts0 = self.fh5[f'{s}/primary/timestamps/{list(dt.det_name.values())[0]}'][...]
+                trans_data = splev(ts0, spl)
+        
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():
                 continue
             t_values = []
             for i in range(len(self.d1s[s]['merged'])):
                 if self.transMode==trans_mode.external:
-                    self.d1s[s]['merged'][i].set_trans(self.fh5[s+'/primary/data/'+self.transField][i], 
-                                                        transMode=self.transMode)
+                    self.d1s[s]['merged'][i].set_trans(trans_data[i], transMode=self.transMode)
                 else:
                     self.d1s[s]['merged'][i].set_trans(transMode=self.transMode)
                 t_values.append(self.d1s[s]['merged'][i].trans)
@@ -768,6 +781,8 @@ class h5sol_HPLC(h5xs):
         # might need to update meta data??
         
     def normalize_int(self, ref_trans=-1):
+        """ 
+        """
         sn = self.samples[0]        
         if 'merged' not in self.d1s[sn].keys():
             raise Exception(f"{sn}: merged data must exist before normalizing intensity.")
@@ -781,7 +796,7 @@ class h5sol_HPLC(h5xs):
         for d1 in self.d1s[sn]['merged']:
             d1.scale(ref_trans/d1.trans)
         
-    def process(self, update_only=False,
+    def process(self, update_only=False, ext_trans=True,
                 reft=-1, save_1d=False, save_merged=False, 
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
@@ -789,7 +804,14 @@ class h5sol_HPLC(h5xs):
 
         self.load_data(update_only=update_only, reft=reft, 
                        save_1d=save_1d, save_merged=save_merged, debug=debug, N=N, max_c_size=max_c_size)
-        self.set_trans(transMode=trans_mode.from_waxs)
+        
+        # This should account for any beam intensity fluctuation during the HPLC run. While
+        # typically for solution scattering the water peak intensity is relied upon for normalization,
+        # it could be problematic if sample scattering has features at high q.  
+        if ext_trans:
+            self.set_trans(transMode=trans_mode.external)
+        else:
+            self.set_trans(transMode=trans_mode.from_waxs) 
         self.normalize_int()
 
     def subtract_buffer_SVD(self, excluded_frames_list, sn=None, sc_factor=0.995,

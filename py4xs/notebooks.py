@@ -533,8 +533,48 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
     btnSave1D.on_click(save_d1s)
     
     return dt1
+
+              
+HPLC_GUI_par = {
+    'xroi1': '0.02, 0.03',
+    'xroi2': '',
+    'xroi3': '',
+    'xroi_log': False,
+    'show_LC1': True,
+    'show_LC2': False,
+    'show_2d_log': True,
+    'show_2d_sub': False,
+    'cmin': '0.01',
+    'cmax': '200',
+    'sub_mode': 'normal',
+    'frns_sub': '0-40',
+    'SVD_Nc': '3',
+    'SVD_polyN': '5',
+    'sc_factor': 0.995,
+    'SVD_fw': '1, 1.5',
+    'frns_export': '100-110',
+    'export_all': False
+}              
+              
               
 def display_HPLC_data(fn):
+    """
+    This function provides a GUI to access commonly used for interacting with h5sol_HPLC
+    
+    Parameters
+    ----------
+    fn : str
+        name of the h5 file that contains the in-line HPLC data (scattering and HPLC 
+        detectors). The data is expected to be processed already (azimuthal averaging
+        and merging). The processed data is expected under the group sample_name/processed.
+        The HPLC detector data are expected under the group sample_name/hplc.
+
+    Returns
+    -------
+    dt : 
+        a h5sol_HPLC instance
+
+    """
     dt = h5sol_HPLC(fn)
     dt.load_d1s()
     dt.set_trans()
@@ -542,22 +582,28 @@ def display_HPLC_data(fn):
     
     # vbox1 1D chromotograms
     vb1Lb = ipywidgets.Label(value="chromatograms:")
-    xROI1Tx = ipywidgets.Text(value='0.02, 0.03', description='x-ray ROI1:', 
+    xROI1Tx = ipywidgets.Text(value=HPLC_GUI_par['xroi1'], 
+                              description='x-ray ROI1:', 
                               layout=ipywidgets.Layout(width='90%'),
                               style = {'description_width': 'initial'})    
-    xROI2Tx = ipywidgets.Text(value='', description='x-ray ROI2:', 
+    xROI2Tx = ipywidgets.Text(value=HPLC_GUI_par['xroi2'], 
+                              description='x-ray ROI2:', 
                               layout=ipywidgets.Layout(width='90%'),
                               style = {'description_width': 'initial'})    
-    xROI3Tx = ipywidgets.Text(value='', description='x-ray ROI3:', 
+    xROI3Tx = ipywidgets.Text(value=HPLC_GUI_par['xroi3'], 
+                              description='x-ray ROI3:', 
                               layout=ipywidgets.Layout(width='90%'),
                               style = {'description_width': 'initial'})    
-    xROIlogCB = ipywidgets.Checkbox(value=True, description='log scale',
+    xROIlogCB = ipywidgets.Checkbox(value=HPLC_GUI_par['xroi_log'], 
+                                    description='log scale',
                                     layout=ipywidgets.Layout(width='80%'),
                                     style = {'description_width': 'initial'})
-    showLC1CB = ipywidgets.Checkbox(value=True, description='LC det 1',
+    showLC1CB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_LC1'], 
+                                    description='LC det 1',
                                     layout=ipywidgets.Layout(width='80%'),
                                     style = {'description_width': 'initial'})
-    showLC2CB = ipywidgets.Checkbox(value=True, description='LC det 2',
+    showLC2CB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_LC2'], 
+                                    description='LC det 2',
                                     layout=ipywidgets.Layout(width='80%'),
                                     style = {'description_width': 'initial'})
     btnUpdate = ipywidgets.Button(description='Update plot', 
@@ -572,49 +618,59 @@ def display_HPLC_data(fn):
     
     # vbox2, 2D plot parameters
     vb2Lb = ipywidgets.Label(value="2D map:")
-    x2dMaplogCB = ipywidgets.Checkbox(value=True, description='log scale',
+    x2dMaplogCB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_2d_log'], 
+                                      description='log scale',
                                       layout=ipywidgets.Layout(width='90%'),
                                       style = {'description_width': 'initial'})
-    x2dMapSubtractedCB = ipywidgets.Checkbox(value=True, description='show subtracted',
+    x2dMapSubtractedCB = ipywidgets.Checkbox(value=HPLC_GUI_par['show_2d_sub'], 
+                                             description='show subtracted',
                                              layout=ipywidgets.Layout(width='95%'),
                                              style = {'description_width': 'initial'})
-    cminTx = ipywidgets.Text(value='0.1', description='vmin:', 
-                              layout=ipywidgets.Layout(width='70%'),
-                              style = {'description_width': 'initial'})    
-    cmaxTx = ipywidgets.Text(value='200', description='vmax:', 
-                              layout=ipywidgets.Layout(width='70%'),
-                              style = {'description_width': 'initial'})    
+    cminTx = ipywidgets.Text(value=HPLC_GUI_par['cmin'], 
+                             description='vmin:', 
+                             layout=ipywidgets.Layout(width='70%'),
+                             style = {'description_width': 'initial'})    
+    cmaxTx = ipywidgets.Text(value=HPLC_GUI_par['cmax'], 
+                             description='vmax:', 
+                             layout=ipywidgets.Layout(width='70%'),
+                             style = {'description_width': 'initial'})    
     vbox2 = ipywidgets.VBox([vb2Lb, x2dMapSubtractedCB, x2dMaplogCB, cminTx, cmaxTx], 
-                            layout=ipywidgets.Layout(width='15%'))
+                            layout=ipywidgets.Layout(width='15%')) 
     
     # vbox3, backgorund subtraction, export
     vb3Lb = ipywidgets.Label(value="subtraction:")
-    subModeDd = ipywidgets.Dropdown(options=['normal', 'SVD'], value='normal',
+    subModeDd = ipywidgets.Dropdown(options=['normal', 'SVD'], 
+                                    value=HPLC_GUI_par['sub_mode'],
                                     description='mode of subtraction:',
                                     layout=ipywidgets.Layout(width='65%'),
                                     style = {'description_width': 'initial'})
     btnSubtract = ipywidgets.Button(description='subtract', 
-                                  layout=ipywidgets.Layout(width='25%'))
+                                    layout=ipywidgets.Layout(width='25%'))
     hbox31 = ipywidgets.HBox([subModeDd, btnSubtract])  
     
-    frnsSubTx = ipywidgets.Text(value='0-40', description='buffer frames:', 
+    frnsSubTx = ipywidgets.Text(value=HPLC_GUI_par['frns_sub'], 
+                                description='buffer frames:', 
                                 layout=ipywidgets.Layout(width='40%'),
                                 style = {'description_width': 'initial'})
-    ncTx = ipywidgets.Text(value='3', description='Nc:', 
-                              layout=ipywidgets.Layout(width='15%'),
-                              disabled = True,
-                              style = {'description_width': 'initial'})
-    polyNTx = ipywidgets.Text(value='3', description='poly N:', 
+    ncTx = ipywidgets.Text(value=HPLC_GUI_par['SVD_Nc'], 
+                           description='Nc:', 
+                           layout=ipywidgets.Layout(width='15%'),
+                           disabled = True,
+                           style = {'description_width': 'initial'})
+    polyNTx = ipywidgets.Text(value=HPLC_GUI_par['SVD_polyN'], 
+                              description='poly N:', 
                               layout=ipywidgets.Layout(width='20%'),
                               disabled = True,
                               style = {'description_width': 'initial'})
 
-    slideScFactor = ipywidgets.FloatSlider(value=0.998, min=0.8, max=1.2, step=0.001,
-                                       style = {'description_width': 'initial'},
-                                       layout=ipywidgets.Layout(width='60%'),
-                                       description='Scaling factor:', readout_format='.3f')
+    slideScFactor = ipywidgets.FloatSlider(value=HPLC_GUI_par['sc_factor'], 
+                                           min=0.8, max=1.2, step=0.001,
+                                           style = {'description_width': 'initial'},
+                                           layout=ipywidgets.Layout(width='60%'),
+                                           description='Scaling factor:', readout_format='.3f')
 
-    filterWidthTx = ipywidgets.Text(value='1, 1.5', description='filter width:', 
+    filterWidthTx = ipywidgets.Text(value=HPLC_GUI_par['SVD_fw'], 
+                                    description='filter width:', 
                                     layout=ipywidgets.Layout(width='30%'),
                                     disabled = True,
                                     style = {'description_width': 'initial'})
@@ -625,17 +681,19 @@ def display_HPLC_data(fn):
     
     btnExport = ipywidgets.Button(description='Export', 
                                   layout=ipywidgets.Layout(width='30%'))
-    frnsExportTx = ipywidgets.Text(value='0-40', description='export frames:', 
+    frnsExportTx = ipywidgets.Text(value=HPLC_GUI_par['frns_export'], 
+                                   description='export frames:', 
                                    layout=ipywidgets.Layout(width='40%'),
                                    style = {'description_width': 'initial'})
-    exportAllCB = ipywidgets.Checkbox(value=False, description='export all',
-                                    layout=ipywidgets.Layout(width='30%'),
-                                    style = {'description_width': 'initial'})
+    exportAllCB = ipywidgets.Checkbox(value=HPLC_GUI_par['export_all'], 
+                                      description='export all',
+                                      layout=ipywidgets.Layout(width='30%'),
+                                      style = {'description_width': 'initial'})
     
     hbox33 = ipywidgets.HBox([btnExport, frnsExportTx, exportAllCB])      
 
     vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox33], 
-                            layout=ipywidgets.Layout(width='45%')) #, border="solid"))
+                            layout=ipywidgets.Layout(width='45%'))
     
     
     box = ipywidgets.HBox([vbox1, vbox2, vbox3])
@@ -644,6 +702,26 @@ def display_HPLC_data(fn):
         
     fig1 = plt.figure(figsize=(8,5))
     fig2 = plt.figure(figsize=(8,3))
+    
+    def updateDefaults():
+        HPLC_GUI_par['xroi1'] = xROI1Tx.value
+        HPLC_GUI_par['xroi2'] = xROI2Tx.value
+        HPLC_GUI_par['xroi3'] = xROI3Tx.value
+        HPLC_GUI_par['xroi_log'] = xROIlogCB.value
+        HPLC_GUI_par['show_LC1'] = showLC1CB.value
+        HPLC_GUI_par['show_LC2'] = showLC2CB.value
+        HPLC_GUI_par['show_2d_log'] = x2dMaplogCB.value
+        HPLC_GUI_par['show_2d_sub'] = x2dMapSubtractedCB.value
+        HPLC_GUI_par['cmin'] = cminTx.value
+        HPLC_GUI_par['cmax'] = cmaxTx.value
+        HPLC_GUI_par['sub_mode'] = subModeDd.value
+        HPLC_GUI_par['frns_sub'] = frnsSubTx.value
+        HPLC_GUI_par['SVD_Nc'] = ncTx.value
+        HPLC_GUI_par['SVD_polyN'] = polyNTx.value
+        HPLC_GUI_par['sc_factor'] = slideScFactor.value
+        HPLC_GUI_par['SVD_fw'] = filterWidthTx.value
+        HPLC_GUI_par['frns_export'] = frnsExportTx.value
+        HPLC_GUI_par['export_all'] = exportAllCB.value
     
     def updatePlot(w):
         fig1.clear()
@@ -663,8 +741,10 @@ def display_HPLC_data(fn):
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
                      ax1=ax1a, ax2=ax1b)
         plt.show(fig1)
+        updateDefaults()
     
     def changeSubtractionMode(w):
+        HPLC_GUI_par['sub_mode'] = subModeDd.value
         if subModeDd.value=="normal":
             filterWidthTx.disabled = True
             ncTx.disabled = True
@@ -677,6 +757,7 @@ def display_HPLC_data(fn):
             frnsSubTx.description='excluded frames:'            
     
     def changeExportMode(w):
+        HPLC_GUI_par['export_all'] = exportAllCB.value
         if exportAllCB.value == True:
             frnsExportTx.disabled = True
         else:
@@ -718,6 +799,7 @@ def display_HPLC_data(fn):
         updatePlot(None)
             
     def export(w):
+        updateDefaults()
         fig2.clear()
         if not os.path.isdir("processed/"):
             os.mkdir("processed")

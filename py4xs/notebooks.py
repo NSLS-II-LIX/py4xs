@@ -415,7 +415,7 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
         """ should update the selection field in h5 file
             add d1s to a list
         """
-        d1fb = updataAvgPlot(None)
+        d1fb = updateAvgPlot(None)
         sn1 = ddSample.value
         sn2 = ddBlank.value
         dt1.fh5[f'{sn1}/processed'].attrs['selected'] = dt1.attrs[sn1]['selected']
@@ -495,7 +495,7 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
     
     btnUpdate = ipywidgets.Button(description='Update plot')
     btnSave1D = ipywidgets.Button(description='Save 1D')
-    ftScale1 = ipywidgets.FloatText(value=0.8, description='blank scale:', disabled=False)
+    ftScale1 = ipywidgets.FloatText(value=0.998, description='blank scale:', disabled=False)
     vbox3 = ipywidgets.VBox([btnUpdate, btnSave1D, ftScale1])
     
     hbox1 = ipywidgets.HBox([vbox1, vbox2, vbox3])

@@ -16,7 +16,7 @@ from py4xs.data2d import Data2d, Axes2dPlot
 from itertools import combinations
 
 from scipy.linalg import svd
-from scipy.interpolate import splrep,sproot
+from scipy.interpolate import splrep,sproot,splev
 from scipy.ndimage.filters import gaussian_filter
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
@@ -354,13 +354,13 @@ class h5xs():
                     trans_data = self.fh5[f'{s}/primary/data/{self.transField}'][...]
                     ts = self.fh5[f'{s}/primary/timestamps/{self.transField}'][...]
                 elif self.transField in self.fh5[f'{s}']:
-                    trans_data = dt.fh5[f'{s}/{self.transField}/data/{self.transField}'][...]
-                    ts = dt.fh5[f'{s}/{self.transField}/timestamps/{self.transField}'][...]
+                    trans_data = self.fh5[f'{s}/{self.transField}/data/{self.transField}'][...]
+                    ts = self.fh5[f'{s}/{self.transField}/timestamps/{self.transField}'][...]
                 else:
                     raise Exception(f"could not find transmission data from {self.transField}.")
             if interpolate:  ## smoothing really
                 spl = splrep(ts, gaussian_filter(trans_data, gf_sigma))
-                ts0 = self.fh5[f'{s}/primary/timestamps/{list(dt.det_name.values())[0]}'][...]
+                ts0 = self.fh5[f'{s}/primary/timestamps/{list(self.det_name.values())[0]}'][...]
                 trans_data = splev(ts0, spl)
         
             # these are the datasets that needs updated trans values

@@ -1283,11 +1283,11 @@ class h5sol_HPLC(h5xs):
             if len(d1s)>1:
                 d1s0.avg(d1s[1:], weighted=True, plot_data=plot_averaged, ax=ax, debug=debug)
             d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}{dkey[0]}.dat", 
-                      debug=debug, footer=self.md_string(sn))
+                      debug=debug, footer=self.md_string(sn, md_keys=['HPLC']))
         else:
             for i in range(len(d1s)):
                 d1s[i].save(f"{path}{sn}_{i+first_frame:04d}{dkey[0]}.dat", 
-                            debug=debug, footer=self.md_string(sn))                    
+                            debug=debug, footer=self.md_string(sn, md_keys=['HPLC']))                    
 
         
 class h5sol_HT(h5xs):

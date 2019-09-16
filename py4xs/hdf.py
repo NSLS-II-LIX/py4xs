@@ -11,13 +11,15 @@ import multiprocessing as mp
 from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
 from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.local import det_names    # e.g. "_SAXS": "pil1M_image"
+from py4xs.local import det_names,det_model,beamline_name    # e.g. "_SAXS": "pil1M_image"
 from py4xs.data2d import Data2d, Axes2dPlot
 from itertools import combinations
 
 from scipy.linalg import svd
 from scipy.interpolate import splrep,sproot,splev
 from scipy.ndimage.filters import gaussian_filter
+from scipy.interpolate import UnivariateSpline 
+
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
     """ list the content of a HDF5 file
@@ -299,6 +301,70 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
+    def md_string(self, sn, md_keys=[]):
+        """ create the meta data to be recorded in ascii data files
+            from the detector_config (attribute of the h5xs object) 
+            and scan header (in the dataset attribute, value set when writting h5 using suitcase)
+            based on SASDBD
+
+            example for static samples:
+
+            Instrument: BM29
+            Detector: Pilatus 2M
+            Date: 2017-10-17
+            Wavelength (nm): 0.1240
+            (Or, alternatively: X-ray energy (keV): 10.00)
+            Sample-to-detector distance (m): 2.01
+            Exposure time/frame (s): 0.100
+            Sample temperature (C): 20.0
+
+            example for inline SEC:
+
+            instrument: BM29
+            Detector: Pilatus 2M
+            Column type: S75 Increase
+            Date: 2017-10-17
+            Wavelength (nm): 0.1240
+            (Or, alternatively: X-ray energy (keV): 10.00)
+            Sample-to-detector distance (m): 2.01
+            Exposure time/frame (s): 0.995
+            Sample temperature (C): 20.0
+            Flow rate (ml/min): 0.500
+            Sample injection concentration (mg/ml): 25.0
+            Sample injection volume (ml): 0.0750
+        """    
+        md = {}
+        bshdr = json.loads(self.fh5[sn].attrs['start'])
+        md["Instrument"] = bshdr['beamline_id']
+        ts = time.localtime(bshdr['time'])
+        md["Date"] = time.strftime("%Y-%m-%d", ts)
+        md["Time"] = time.strftime("%H:%M:%S", ts)
+        ene = bshdr["energy"]["energy"]
+        md["Wavelength (A)"] = f"{2.*3.1416*1973/ene:.4f}"
+        
+        bscfg = json.loads(self.fh5[sn].attrs["descriptors"])[0]['configuration']
+        for det in self.detectors:
+            dn = self.det_name[det.extension].strip("_image")
+            exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
+            if not "Detector" in md.keys():
+                md["Detector"] = det_model[det.extension]
+                md["Exposure time/frame (s)"] = f"{exp:.3f}"
+                md["Sample-to-detector distance (m): "] = f"{det.s2d_distance/1000: .3f}"
+            else:
+                md["Detector"] += f" , {det_model[det.extension]}"
+                md["Exposure time/frame (s)"] += f" , {exp:.3f}" 
+                md["Sample-to-detector distance (m): "] += f" , {det.s2d_distance/1000: .3f}"
+        
+        for k in md_keys:
+            if k in bshdr.keys():
+                md[k] = bshdr[k]
+        
+        md_str = ""
+        for k in md.keys():
+            md_str += f"# {k} : {md[k]}\n"
+        
+        return md_str
+    
     def list_samples(self, quiet=False):
         self.samples = lsh5(self.fh5, top_only=True, silent=True)
         if not quiet:
@@ -359,9 +425,9 @@ class h5xs():
                 else:
                     raise Exception(f"could not find transmission data from {self.transField}.")
             if interpolate:  ## smoothing really
-                spl = splrep(ts, gaussian_filter(trans_data, gf_sigma))
+                spl = UnivariateSpline(ts, gaussian_filter(trans_data, gf_sigma))
                 ts0 = self.fh5[f'{s}/primary/timestamps/{list(self.det_name.values())[0]}'][...]
-                trans_data = splev(ts0, spl)
+                trans_data = spl(ts0)
         
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():
@@ -556,13 +622,15 @@ class h5xs():
                 if 'subtracted' not in self.d1s[sn].keys():
                     print("subtracted data not available.")
                     return
-                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug)
+                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug, 
+                                                footer=self.md_string(sn))
             else:
                 if 'merged' not in self.d1s[sn].keys():
                     print("1d data not available.")
                     return
                 for i in range(len(self.d1s[sn]['merged'])):
-                    self.d1s[sn]['merged'][i].save("%s%s_%d%c.dat"%(path,sn,i,'m'), debug=debug)                    
+                    self.d1s[sn]['merged'][i].save("%s%s_%d%c.dat"%(path,sn,i,'m'), debug=debug, 
+                                                footer=self.md_string(sn))                    
                 
     def load_data_mp(self, *args, **kwargs):
         print('load_data_mp() will be deprecated. use load_data() instead.')
@@ -796,7 +864,7 @@ class h5sol_HPLC(h5xs):
         for d1 in self.d1s[sn]['merged']:
             d1.scale(ref_trans/d1.trans)
         
-    def process(self, update_only=False, ext_trans=True,
+    def process(self, update_only=False, ext_trans=False,
                 reft=-1, save_1d=False, save_merged=False, 
                 filter_data=False, debug=False, N=8, max_c_size=0):
         """ load data from 2D images, merge, then set transmitted beam intensity
@@ -808,7 +876,7 @@ class h5sol_HPLC(h5xs):
         # This should account for any beam intensity fluctuation during the HPLC run. While
         # typically for solution scattering the water peak intensity is relied upon for normalization,
         # it could be problematic if sample scattering has features at high q.  
-        if ext_trans:
+        if ext_trans and self.transField is not None:
             self.set_trans(transMode=trans_mode.external)
         else:
             self.set_trans(transMode=trans_mode.from_waxs) 
@@ -816,7 +884,7 @@ class h5sol_HPLC(h5xs):
 
     def subtract_buffer_SVD(self, excluded_frames_list, sn=None, sc_factor=0.995,
                             gaussian_filter_width=None,
-                            Nc=5, poly_order=8,
+                            Nc=5, poly_order=8, smoothing_factor=0.04, fit_with_polynomial=False,
                             plot_fit=False, ax1=None, ax2=None, debug=False):
         """ perform SVD background subtraction, use Nc eigenvalues 
             poly_order: order of polynomial fit to each eigenvalue
@@ -826,6 +894,7 @@ class h5sol_HPLC(h5xs):
         if debug is True:
             print("start processing: subtract_buffer()")
             t1 = time.time()
+
         if isinstance(poly_order, int):
             poly_order = poly_order*np.ones(Nc, dtype=np.int)
         elif isinstance(poly_order, list):
@@ -833,7 +902,15 @@ class h5sol_HPLC(h5xs):
                 raise Exception(f"the length of poly_order ({poly_order}) must match Nc ({Nc}).")
         else:
             raise Exception(f"invalid poly_order: {poly_order}")
-        
+
+        if isinstance(smoothing_factor, float) or isinstance(smoothing_factor, int):
+            smoothing_factor = smoothing_factor*np.ones(Nc, dtype=np.float)
+        elif isinstance(poly_order, list):
+            if len(smoothing_factor)!=Nc:
+                raise Exception(f"the length of smoothing_factor ({smoothing_factor}) must match Nc ({Nc}).")
+        else:
+            raise Exception(f"invalid smoothing_factor: {smoothing_factor}")
+                    
         nf = len(self.d1s[sn]['merged'])
         all_frns = list(range(nf))
         ex_frns = []
@@ -853,8 +930,15 @@ class h5sol_HPLC(h5xs):
         s[Nc:] = 0
 
         Uf = []
+        # the time-dependence of the eigen values are fitted to fill the gap (excluded frames) 
+        # polynomial fits will likely produce unrealistic fluctuations
+        # cubic (default, k=3) spline fits with smoothing factor provides better control
+        #     smoothing factor: # of knots are added to reduce fitting error below the s factor??
         for i in range(Nc):
-            Uf.append(np.poly1d(np.polyfit(bkg_frns, U[:,i], poly_order[i])))
+            if fit_with_polynomial:
+                Uf.append(np.poly1d(np.polyfit(bkg_frns, U[:,i], poly_order[i])))
+            else:
+                Uf.append(UnivariateSpline(bkg_frns, U[:,i], s=smoothing_factor[i]))
         Ub = np.vstack([f(all_frns) for f in Uf]).T
         dd2c = np.dot(np.dot(Ub, np.diag(s[:Nc])), Vh[:Nc,:]).T
 
@@ -872,8 +956,7 @@ class h5sol_HPLC(h5xs):
             if ax2 is not None:
                 for i in reversed(range(Nc)):
                     ax2.plot(self.qgrid, np.sqrt(s[i])*Vh[i]) #s[i]*U[:,i])
-                ax2.set_xlabel("q")
-                
+                ax2.set_xlabel("q")                
 
         self.attrs[sn]['sc_factor'] = sc_factor
         self.attrs[sn]['svd excluded frames'] = excluded_frames_list
@@ -1199,10 +1282,12 @@ class h5sol_HPLC(h5xs):
             d1s0 = copy.deepcopy(d1s[0])
             if len(d1s)>1:
                 d1s0.avg(d1s[1:], weighted=True, plot_data=plot_averaged, ax=ax, debug=debug)
-            d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}{dkey[0]}.dat", debug=debug)
+            d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}{dkey[0]}.dat", 
+                      debug=debug, footer=self.md_string(sn))
         else:
             for i in range(len(d1s)):
-                d1s[i].save(f"{path}{sn}_{i+first_frame:04d}{dkey[0]}.dat", debug=debug)                    
+                d1s[i].save(f"{path}{sn}_{i+first_frame:04d}{dkey[0]}.dat", 
+                            debug=debug, footer=self.md_string(sn))                    
 
         
 class h5sol_HT(h5xs):

@@ -569,7 +569,7 @@ class Data1d:
         ax.set_ylabel("$P(r)$", fontsize=get_font_size(i_fs)[1])
         # plt.subplots_adjust(bottom=0.15)
 
-    def save(self, fn, nz=True, save_comments=False, debug=False):
+    def save(self, fn, nz=True, save_comments=False, debug=False, footer=None):
         """
         should save all the relevant information, such as scaling, merging, averaging
         save data points with non-zero intensity only if nz==1
@@ -580,9 +580,12 @@ class Data1d:
         if debug==True:
             print("saving file: %s, nz=%d" % (fn, nz))
         np.savetxt(fn, qidi.T, "%12.5f")
-        if save_comments:
+        if save_comments or footer is not None:
             ff = open(fn, "a")
-            ff.write(self.comments)
+            if save_comments:
+                ff.write(self.comments)
+            elif footer is not None:
+                ff.write(footer)
             ff.close()
 
     def plot(self, ax=None, scale=1., fontsize='large'):

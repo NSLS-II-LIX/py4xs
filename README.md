@@ -69,4 +69,7 @@ error bar calculation in Data1d.avg()
 
 2019-05:
 added notebooks.py to define data processing notebook GUIs
+
+2019-09:
+meta data footer in exported 1D scattering profile
  

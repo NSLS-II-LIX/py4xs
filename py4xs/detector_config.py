@@ -1,7 +1,7 @@
 import copy
 import pickle,bz2
 import numpy as np
-from py4xs.local import ExpPara, exp_attr
+from py4xs.local import ExpPara,exp_attr
 
 det_attr = ['ImageWidth', 'ImageHeight', 'extension', 'fix_scale']
 
@@ -15,12 +15,15 @@ class DetectorConfig():
     """
     def __init__(self, extension = "", exp_para = None, qgrid = None, 
                  dark = None, flat = None, dezinger = False, 
+                 desc = "Pilatus", pixel_size=0.172,
                  fix_scale = None, bad_pixels = [[], []]):
         self.extension = extension
         self.exp_para = exp_para
-        if exp_para!=None:
+        if exp_para is not None:
             self.ImageWidth = exp_para.ImageWidth
             self.ImageHeight = exp_para.ImageHeight
+            self.exp_para.init_coordinates()
+            self.s2d_distance = pixel_size*self.exp_para.Dd
         #self.qgrid = qgrid
         if qgrid is not None:
             print("Warning: qgrid under DectorConfig is no longer in use.")
@@ -55,7 +58,7 @@ class DetectorConfig():
         det_dict['exp_para'] = exp_dict
         return det_dict 
         
-    def unpack_dict(self, det_dict):
+    def unpack_dict(self, det_dict, pixel_size=0.172):
         for attr in det_dict:
             self.__setattr__(attr, det_dict[attr])
         #self.qgrid = np.asarray(det_dict['qgrid'])
@@ -65,6 +68,7 @@ class DetectorConfig():
         self.exp_para.mask = pickle.loads(bz2.decompress(bytes(det_dict['exp_para']['mask'])))
         self.exp_para.calc_rot_matrix()
         self.exp_para.init_coordinates()
+        self.s2d_distance = pixel_size*self.exp_para.Dd
     
     def pre_process(self, data):
         """ this deals with flat field and dark current corrections, and dezinger
@@ -75,3 +79,4 @@ class DetectorConfig():
             pass
         if self.flat is not None:
             pass
+        

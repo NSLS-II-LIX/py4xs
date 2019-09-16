@@ -17,3 +17,9 @@ det_names = [{"_SAXS": "pil1M_image",
              {"_SAXS": "pil1M_ext_image",
               "_WAXS1": "pilW1_ext_image",
               "_WAXS2": "pilW2_ext_image"}]
+
+beamline_name = "# LiX (16-ID), NSLS-II"
+
+det_model = {"_SAXS": "Pilatus3X 1M",
+              "_WAXS1": "Pilatus3X 300K",
+              "_WAXS2": "Pilatus3X 900K"}

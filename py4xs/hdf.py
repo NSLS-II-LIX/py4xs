@@ -611,26 +611,35 @@ class h5xs():
         """ if path is used, be sure that it ends with '/'
         """
         if samples is None:
-            samples = list(self.buffer_list.keys())
+            samples = self.samples
+            #samples = list(self.buffer_list.keys())
         elif isinstance(samples, str):
             samples = [samples]
 
         if debug is True:
-            print("start processing: export_txt()")
+            print("start processing: export_d1s()")
         for sn in samples:
-            if save_subtracted:
-                if 'subtracted' not in self.d1s[sn].keys():
-                    print("subtracted data not available.")
-                    return
-                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug, 
-                                                footer=self.md_string(sn))
-            else:
+            if debug is True:
+                print(f"   processing: {sn} ...")
+            if save_subtracted=="merged":
                 if 'merged' not in self.d1s[sn].keys():
                     print("1d data not available.")
-                    return
+                    continue
                 for i in range(len(self.d1s[sn]['merged'])):
                     self.d1s[sn]['merged'][i].save("%s%s_%d%c.dat"%(path,sn,i,'m'), debug=debug, 
-                                                footer=self.md_string(sn))                    
+                                                footer=self.md_string(sn))                                    
+            elif save_subtracted is True:
+                if 'subtracted' not in self.d1s[sn].keys():
+                    print("subtracted data not available.")
+                    continue
+                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug, 
+                                                footer=self.md_string(sn))
+            else: 
+                if 'averaged' not in self.d1s[sn].keys():
+                    print("1d data not available.")
+                    continue
+                self.d1s[sn]['averaged'].save("%s%s_%c.dat"%(path,sn,'a'), debug=debug, 
+                                              footer=self.md_string(sn))
                 
     def load_data_mp(self, *args, **kwargs):
         print('load_data_mp() will be deprecated. use load_data() instead.')

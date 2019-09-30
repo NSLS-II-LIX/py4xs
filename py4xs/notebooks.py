@@ -18,6 +18,13 @@ def display_solHT_data(fn, atsas_path=""):
     if not os.path.exists("processed/"):
         os.mkdir("processed")
     
+    if "run_type" not in dt.fh5['/'].attrs.keys():
+        dt.fh5['/'].attrs['run_type'] = 'static'
+        dt.fh5['/'].attrs['instrument'] = 'LiX'
+        dt.fh5.flush()
+    elif dt.fh5['/'].attrs['run_type']!='static':
+        raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")
+    
     # widgets
     ddSample = ipywidgets.Dropdown(options=dt.samples, 
                                    value=dt.samples[0], description='Sample:')
@@ -579,7 +586,14 @@ def display_HPLC_data(fn):
     dt.load_d1s()
     dt.set_trans()
     dt.normalize_int()
-    
+
+    if "run_type" not in dt.fh5['/'].attrs.keys():
+        dt.fh5['/'].attrs['run_type'] = 'SEC'
+        dt.fh5['/'].attrs['instrument'] = "LiX"
+        dt.fh5.flush()
+    elif dt.fh5['/'].attrs['run_type']!='SEC':
+        raise Exception(f"this h5 has been assigned an incompatible run_type: {dt.fh5['/'].attrs['run_type']}")          
+              
     # vbox1 1D chromotograms
     vb1Lb = ipywidgets.Label(value="chromatograms:")
     xROI1Tx = ipywidgets.Text(value=HPLC_GUI_par['xroi1'], 

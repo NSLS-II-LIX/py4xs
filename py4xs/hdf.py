@@ -606,6 +606,32 @@ class h5xs():
                     ax.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
                             color="gray", lw=2, ls=":")
                 sc *= offset
+                
+    def compare_d1s(self, samples=None, show_subtracted=True, ax=None):
+        if samples is None:
+            samples = self.samples
+        if show_subtracted:
+            grp = "subtracted"
+        else: 
+            grp = "averaged"
+
+        sl = []  
+        for s in samples:
+            if "averaged" not in self.d1s[s].keys():
+                raise Exception(f"processed data not found for {s}.")
+            if grp in self.d1s[s].keys():
+                sl.append(s)
+        if len(sl)==0:
+            print("no suitable data to plot ...")
+            return    
+        
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+        
+        for s in sl:
+            self.d1s[s][grp].plot(ax=ax)
+        
 
     def export_d1s(self, samples=None, path="", save_subtracted=True, debug=False):
         """ if path is used, be sure that it ends with '/'
@@ -1172,7 +1198,7 @@ class h5sol_HPLC(h5xs):
         else:
             ax1a.set_xlabel("time (minutes)")
         for j in range(nq):
-            ax1a.plot(d_t, d_i[j], markers[j], markersize=5, label=f'x-ray ROI #{j}')
+            ax1a.plot(d_t, d_i[j], markers[j], markersize=5, label=f'x-ray ROI #{j+1}')
         ax1a.set_xlim((d_t[0],d_t[-1]))
         leg = ax1a.legend(loc='upper left', fontsize=9, frameon=False)
 
@@ -1348,7 +1374,23 @@ class h5sol_HT(h5xs):
             if sn in list(self.buffer_list.keys()):
                 self.fh5[sn].attrs['buffer'] = '  '.join(self.buffer_list[sn])
         self.fh5.flush()               
-                
+
+    def change_buffer(self, sample_name, buffer_name):
+        """ buffer_name could be just a string (name) or a list of names 
+        """
+        if sample_name not in self.samples:
+            raise Exception(f"invalid sample name: {sample_name}")
+        if isinstance(buffer_name, str):
+            buffer_name = [buffer_name]
+        for b in buffer_name:
+            if b not in self.samples:
+                raise Exception(f"invalid buffer name: {b}")
+        
+        self.buffer_list[sample_name] = buffer_name 
+        self.fh5[sample_name].attrs['buffer'] = '  '.join(buffer_name)
+        self.fh5.flush()               
+        self.subtract_buffer(sample_name)
+        
     def update_h5(self, debug=False):
         """ raw data are updated using add_sample()
             save sample-buffer assignment

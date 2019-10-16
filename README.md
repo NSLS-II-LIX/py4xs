@@ -72,4 +72,7 @@ added notebooks.py to define data processing notebook GUIs
 
 2019-09:
 meta data footer in exported 1D scattering profile
+
+2019-10:
+functions in h5sol_HT to compare samples and change buffer
  

@@ -312,14 +312,15 @@ def atsas_dat_tools(fn_out, path=""):
             #"datvc": r_vc,  # this won't work if q_max is below 0.3 
             "datmow": r_mow}
     
-def gen_report_d1s(d1s, ax=None, sn=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
+def gen_report_d1s(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
     if ax is None:
         ax = []
-        fig = plt.figure(figsize=(9,3))
+        if fig is None:
+            fig = plt.figure(figsize=(9,3))
         # rect = l, b, w, h
         ax.append(fig.add_axes([0.09, 0.25, 0.25, 0.6])) 
         ax.append(fig.add_axes([0.41, 0.25, 0.25, 0.6])) 
-        ax.append(fig.add_axes([0.75, 0.25, 0.25, 0.6])) 
+        ax.append(fig.add_axes([0.73, 0.25, 0.25, 0.6])) 
     else:
         for a in ax:
             a.clear()
@@ -564,7 +565,7 @@ HPLC_GUI_par = {
 }              
               
               
-def display_HPLC_data(fn):
+def display_HPLC_data(fn, atsas_path=""):
     """
     This function provides a GUI to access commonly used for interacting with h5sol_HPLC
     
@@ -576,6 +577,9 @@ def display_HPLC_data(fn):
         and merging). The processed data is expected under the group sample_name/processed.
         The HPLC detector data are expected under the group sample_name/hplc.
 
+    atsas_path : str
+        path to ATSAS binary
+        
     Returns
     -------
     dt : 
@@ -693,25 +697,28 @@ def display_HPLC_data(fn):
     hbox32b = ipywidgets.HBox([slideScFactor, filterWidthTx]) 
     
     
+    btnReport = ipywidgets.Button(description='ATSAS report')
     btnExport = ipywidgets.Button(description='Export', 
-                                  layout=ipywidgets.Layout(width='30%'))
+                                  layout=ipywidgets.Layout(width='20%'))
     frnsExportTx = ipywidgets.Text(value=HPLC_GUI_par['frns_export'], 
                                    description='export frames:', 
                                    layout=ipywidgets.Layout(width='40%'),
                                    style = {'description_width': 'initial'})
-    exportAllCB = ipywidgets.Checkbox(value=HPLC_GUI_par['export_all'], 
-                                      description='export all',
-                                      layout=ipywidgets.Layout(width='30%'),
-                                      style = {'description_width': 'initial'})
+    # this is no longer necessary now that RAW can read h5
+    #exportAllCB = ipywidgets.Checkbox(value=HPLC_GUI_par['export_all'], 
+    #                                  description='export all',
+    #                                  layout=ipywidgets.Layout(width='30%'),
+    #                                  style = {'description_width': 'initial'})
     
-    hbox33 = ipywidgets.HBox([btnExport, frnsExportTx, exportAllCB])      
+    hbox33 = ipywidgets.HBox([btnExport, frnsExportTx, btnReport])  #, exportAllCB])      
 
     vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox33], 
                             layout=ipywidgets.Layout(width='45%'))
     
+    outTxt = ipywidgets.Textarea(layout=ipywidgets.Layout(width='80%')) #, height='100%'))
     
     box = ipywidgets.HBox([vbox1, vbox2, vbox3])
-    display(box)
+    display(ipywidgets.VBox([box, outTxt]))
 
         
     fig1 = plt.figure(figsize=(8,5))
@@ -735,7 +742,7 @@ def display_HPLC_data(fn):
         HPLC_GUI_par['sc_factor'] = slideScFactor.value
         HPLC_GUI_par['SVD_fw'] = filterWidthTx.value
         HPLC_GUI_par['frns_export'] = frnsExportTx.value
-        HPLC_GUI_par['export_all'] = exportAllCB.value
+        #HPLC_GUI_par['export_all'] = exportAllCB.value
     
     def updatePlot(w):
         fig1.clear()
@@ -751,7 +758,8 @@ def display_HPLC_data(fn):
             
         dt.plot_data(plot_merged=(not x2dMapSubtractedCB.value), 
                      q_ranges=q_ranges, logROI=xROIlogCB.value,
-                     clim=[1.e-1, .2e2], logScale=x2dMaplogCB.value,
+                     clim=[np.float(cminTx.value), np.float(cmaxTx.value)], 
+                     logScale=x2dMaplogCB.value,
                      show_hplc_data=[showLC1CB.value, showLC2CB.value], 
                      ax1=ax1a, ax2=ax1b)
         plt.show(fig1)
@@ -770,12 +778,12 @@ def display_HPLC_data(fn):
             polyNTx.disabled = False
             frnsSubTx.description='excluded frames:'            
     
-    def changeExportMode(w):
-        HPLC_GUI_par['export_all'] = exportAllCB.value
-        if exportAllCB.value == True:
-            frnsExportTx.disabled = True
-        else:
-            frnsExportTx.disabled = False
+    #def changeExportMode(w):
+    #    HPLC_GUI_par['export_all'] = exportAllCB.value
+    #    if exportAllCB.value == True:
+    #        frnsExportTx.disabled = True
+    #    else:
+    #        frnsExportTx.disabled = False
         
     def subtract_buffer(w):
         if subModeDd.value=="normal":
@@ -817,12 +825,25 @@ def display_HPLC_data(fn):
         fig2.clear()
         if not os.path.isdir("processed/"):
             os.mkdir("processed")
-        if exportAllCB.value:
-            dt.export_txt(path="processed/")
-        else:
-            dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
-                                     save_data=True, path="processed/",
-                                     fig=fig2, plot_data=True, debug='quiet')
+        #if exportAllCB.value:
+        #    dt.export_txt(path="processed/")
+        #else:
+        dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
+                                 save_data=True, path="processed/",
+                                 fig=fig2, plot_data=True, debug='quiet')
+                        
+    def report(w):
+        updateDefaults()
+        fig2.clear()
+        if not os.path.isdir("processed/"):
+            os.mkdir("processed")
+        #if exportAllCB.value:
+        #    raise Exception("not implemented")
+        d1 = dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
+                                      save_data=True, path="processed/",
+                                      fig=fig2, plot_data=False, debug='quiet')
+        txt = gen_report_d1s(d1, fig=fig2, print_results=False, path=atsas_path)                                
+        outTxt.value = txt                
     
     btnUpdate.on_click(updatePlot)
     xROIlogCB.observe(updatePlot)
@@ -832,8 +853,9 @@ def display_HPLC_data(fn):
     x2dMapSubtractedCB.observe(updatePlot)
     
     subModeDd.observe(changeSubtractionMode)
-    exportAllCB.observe(changeExportMode)
+    #exportAllCB.observe(changeExportMode)
     btnSubtract.on_click(subtract_buffer)
+    btnReport.on_click(report)
     btnExport.on_click(export)
     
     updatePlot(None)

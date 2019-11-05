@@ -342,19 +342,22 @@ class h5xs():
         ene = bshdr["energy"]["energy"]
         md["Wavelength (A)"] = f"{2.*3.1416*1973/ene:.4f}"
         
-        bscfg = json.loads(self.fh5[sn].attrs["descriptors"])[0]['configuration']
-        for det in self.detectors:
-            dn = self.det_name[det.extension].strip("_image")
-            exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
-            if not "Detector" in md.keys():
-                md["Detector"] = det_model[det.extension]
-                md["Exposure time/frame (s)"] = f"{exp:.3f}"
-                md["Sample-to-detector distance (m): "] = f"{det.s2d_distance/1000: .3f}"
-            else:
-                md["Detector"] += f" , {det_model[det.extension]}"
-                md["Exposure time/frame (s)"] += f" , {exp:.3f}" 
-                md["Sample-to-detector distance (m): "] += f" , {det.s2d_distance/1000: .3f}"
-        
+        try:
+            bscfg = json.loads(self.fh5[sn].attrs["descriptors"])[0]['configuration']
+            for det in self.detectors:
+                dn = self.det_name[det.extension].strip("_image")
+                exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
+                if not "Detector" in md.keys():
+                    md["Detector"] = det_model[det.extension]
+                    md["Exposure time/frame (s)"] = f"{exp:.3f}"
+                    md["Sample-to-detector distance (m): "] = f"{det.s2d_distance/1000: .3f}"
+                else:
+                    md["Detector"] += f" , {det_model[det.extension]}"
+                    md["Exposure time/frame (s)"] += f" , {exp:.3f}" 
+                    md["Sample-to-detector distance (m): "] += f" , {det.s2d_distance/1000: .3f}"
+        except:  # the header information may be incomplete
+            pass
+                    
         for k in md_keys:
             if k in bshdr.keys():
                 md[k] = bshdr[k]
@@ -1252,7 +1255,7 @@ class h5sol_HPLC(h5xs):
         #plt.tight_layout()
         #plt.show()
         
-    def bin_subtracted_frames(self, sn=None, frame_range=None, first_frame=0, last_frame=-1, 
+    def bin_subtracted_frames(self, sn=None, frame_range=None, first_frame=0, last_frame=-1, weighted=True,
                               plot_data=True, fig=None, qmax=0.5, qs=0.01,
                               save_data=False, path="", debug=False): 
         """ this is typically used after running subtract_buffer_SVD()
@@ -1279,7 +1282,8 @@ class h5sol_HPLC(h5xs):
                 print(f"binning frames {fr}: first_frame={first_frame}, last_frame={last_frame}")
             d1s0 = copy.deepcopy(self.d1s[sn]['subtracted'][first_frame])
             if last_frame>first_frame+1:
-                d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], weighted=True, debug=debug)
+                d1s0 = d1s0.avg(self.d1s[sn]['subtracted'][first_frame+1:last_frame], 
+                                weighted=weighted, debug=debug)
             if save_data:
                 d1s0.save(f"{path}{sn}_{first_frame:04d}-{last_frame-1:04d}s.dat", debug=debug)
             if plot_data:
@@ -1290,7 +1294,9 @@ class h5sol_HPLC(h5xs):
             #print(f"I0={i0:.2g}, Rg={rg:.2f}")
 
         if plot_data:
-            plt.tight_layout()            
+            plt.tight_layout()   
+            
+        return d1s0
     
         
     def export_txt(self, sn=None, first_frame=0, last_frame=-1, save_subtracted=True,

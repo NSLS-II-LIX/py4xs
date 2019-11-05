@@ -235,6 +235,8 @@ class Data1d:
             er2 = (self.err/wt[-1])**2
             d0.err = 1./er2
             d0.data = d0.data/er2 
+            if debug!='quiet':
+                print("weight factors: ", wt)
         
         for i in range(len(dsets)):
             d1 = dsets[i]

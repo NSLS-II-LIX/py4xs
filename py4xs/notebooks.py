@@ -2,7 +2,7 @@ import ipywidgets
 from IPython.display import display,clear_output
 import numpy as np
 import json,os
-from py4xs.hdf import h5xs,h5sol_HT,h5sol_HPLC,lsh5
+from py4xs.hdf import h5xs,h5sol_HT,h5sol_HPLC,lsh5,create_linked_files
 from py4xs.slnxs import trans_mode
 from py4xs.slnxs import get_font_size
 import pylab as plt
@@ -381,7 +381,8 @@ def gen_report_d1s(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, print_
         return txt
               
               
-def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_mean_value'):
+#def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_mean_value'):
+def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value'):
 
     def onChangeSample(w):
         sel1 = [sampleLabels[i] for i in range(len(sampleLabels)) 
@@ -488,16 +489,31 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
         else:
             return d1sl[0].avg(d1sl[1:], plot_data=True, ax=ax, debug='quiet')
     
-    dt1 = h5xs(fn1)
-    dt1.load_d1s()
-    set_trans(dt1, field, trans_field)
-    if fn2 is not None:
-        dt2 = h5xs(fn2)
-        dt2.load_d1s()    
-        set_trans(dt2, field, trans_field)
+    #dt1 = h5xs(fn1)
+    #dt1.load_d1s()
+    #set_trans(dt1, field, trans_field)
+    #if fn2 is not None:
+    #    dt2 = h5xs(fn2)
+    #    dt2.load_d1s()    
+    #    set_trans(dt2, field, trans_field)
+    #else:
+    #    dt2 = dt1
+    
+    if isinstance(fns, str):
+        fn = fns
+    elif not isinstance(fns, list):
+        raise Exception(f"input is not a filename or a list of filenames: {fns}")
+    elif len(fns)==1:
+        fn = fns[0]
     else:
-        dt2 = dt1
-        
+        # create a temporary file to link to the individual files
+        fn = "t.h5"
+        create_linked_files(fn, fnlist)
+    dt1 = h5xs(fn)
+    dt1.load_d1s() 
+    set_trans(dt1, field, trans_field)
+    dt2 = dt1
+              
     d1list = {}
 
     fields = list(set(dt1.d1s[dt1.samples[0]].keys())-set(['averaged']))

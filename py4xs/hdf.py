@@ -40,6 +40,22 @@ def lsh5(hd, prefix='', top_only=False, silent=False):
             print(list(hd[k].attrs.items()))
             lsh5(hd[k], prefix+"=")
 
+def create_linked_files(fn, fnlist):
+    """ create a new file to links to data in existing files in the fn_list
+        for now assume that all files have the same detector/qgrid configuration without checking
+    """
+    ff = h5py.File(fn, 'w')
+    for s in fnlist:
+        fs = h5py.File(s, "r")
+        if len(ff.attrs)==0:
+            for an in fs.attrs:
+                ff.attrs[an] = fs.attrs[an]
+            ff.flush()
+        for ds in lsh5(fs, top_only=True, silent=True):
+            ff[ds] = h5py.ExternalLink(s, ds)
+        fs.close()
+    ff.close()
+
 def pack_d1(data, ret_trans=True):
     """ utility function to creat a list of [intensity, error] from a Data1d object 
         or from a list of Data1s objects

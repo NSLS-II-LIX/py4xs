@@ -75,4 +75,9 @@ meta data footer in exported 1D scattering profile
 
 2019-10:
 functions in h5sol_HT to compare samples and change buffer
- 
+
+2019-11:
+fixed bug in bin_subtracted_frames(); added ATSAS report to HPLC GUI
+handles em as monitor for transmission intensity
+
+

@@ -461,10 +461,25 @@ def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_
         d1f.save(fn)
         
     def set_trans(dh5, field, trans_field):
-        for sn in dh5.samples:
-            for i in range(len(dh5.d1s[sn][field])):
-                dh5.d1s[sn][field][i].set_trans(dh5.fh5[f'{sn}/primary/data/{trans_field}'][i], 
-                                            transMode=trans_mode.external)
+        """ at LiX, the transmitted beam intensity (beam stop, em2_sum_all_mean_value) can be recorded
+            in two ways, the location of the data varies accordingly: (A) em2 as a detector, data under 
+            the "primary" stream, (B) em2 as a monitor, data under the 
+        """
+        sn = dh5.samples[0]
+        stlist = [_ for _ in list(dh5.fh5[sn].keys()) if trans_field in _]
+        if len(stlist)>0:
+            stream_name = stlist[0]   
+            for sn in dh5.samples:
+                for i in range(len(dh5.d1s[sn][field])):
+                    # ideally this should be calculated based on the timestamps
+                    dh5.d1s[sn][field][i].set_trans(np.average(dh5.fh5[f'{sn}/{stream_name}/data/{trans_field}']), 
+                                                transMode=trans_mode.external)
+        else:
+            stream_name = "primary"      
+            for sn in dh5.samples:
+                for i in range(len(dh5.d1s[sn][field])):
+                    dh5.d1s[sn][field][i].set_trans(dh5.fh5[f'{sn}/{stream_name}/data/{trans_field}'][i], 
+                                                transMode=trans_mode.external)
 
     def avg_d1(d1s, selection, ax):
         d1sl = [d1s[i] for i in range(len(selection)) if selection[i]]
@@ -697,7 +712,6 @@ def display_HPLC_data(fn, atsas_path=""):
     hbox32b = ipywidgets.HBox([slideScFactor, filterWidthTx]) 
     
     
-    btnReport = ipywidgets.Button(description='ATSAS report')
     btnExport = ipywidgets.Button(description='Export', 
                                   layout=ipywidgets.Layout(width='20%'))
     frnsExportTx = ipywidgets.Text(value=HPLC_GUI_par['frns_export'], 
@@ -710,16 +724,25 @@ def display_HPLC_data(fn, atsas_path=""):
     #                                  layout=ipywidgets.Layout(width='30%'),
     #                                  style = {'description_width': 'initial'})
     
-    hbox33 = ipywidgets.HBox([btnExport, frnsExportTx, btnReport])  #, exportAllCB])      
-
+    hbox33 = ipywidgets.HBox([btnExport, frnsExportTx])  #, exportAllCB])      
+                        
     vbox3 = ipywidgets.VBox([vb3Lb, hbox31, hbox32a, hbox32b, hbox33], 
                             layout=ipywidgets.Layout(width='45%'))
     
-    outTxt = ipywidgets.Textarea(layout=ipywidgets.Layout(width='80%')) #, height='100%'))
-    
+    btnReport = ipywidgets.Button(description='ATSAS report') #, layout=ipywidgets.Layout(width='20%'))
+    qSkipTx = ipywidgets.Text(value='0', description='skip:', 
+                                layout=ipywidgets.Layout(width='20%'),
+                                style = {'description_width': 'initial'})    
+    qCutoffTx = ipywidgets.Text(value='0.3', description='q cutoff:', 
+                                layout=ipywidgets.Layout(width='25%'),
+                                style = {'description_width': 'initial'})    
+    outTxt = ipywidgets.Textarea(layout=ipywidgets.Layout(width='60%', height='100%'))
+    hbox5 = ipywidgets.HBox([outTxt, 
+                             ipywidgets.VBox([btnReport, 
+                                              ipywidgets.HBox([qSkipTx, qCutoffTx])]) ])
+                        
     box = ipywidgets.HBox([vbox1, vbox2, vbox3])
-    display(ipywidgets.VBox([box, outTxt]))
-
+    display(ipywidgets.VBox([box, hbox5]))
         
     fig1 = plt.figure(figsize=(8,5))
     fig2 = plt.figure(figsize=(8,3))
@@ -842,7 +865,10 @@ def display_HPLC_data(fn, atsas_path=""):
         d1 = dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
                                       save_data=True, path="processed/",
                                       fig=fig2, plot_data=False, debug='quiet')
-        txt = gen_report_d1s(d1, fig=fig2, print_results=False, path=atsas_path)                                
+        txt = gen_report_d1s(d1, fig=fig2, 
+                             skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
+                             print_results=False, path=atsas_path)
+        #txt = gen_report_d1s(d1, fig=fig2, print_results=False, path=atsas_path)                                
         outTxt.value = txt                
     
     btnUpdate.on_click(updatePlot)

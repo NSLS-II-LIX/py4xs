@@ -8,6 +8,8 @@ from py4xs.slnxs import get_font_size
 import pylab as plt
 from io import StringIO
 import copy,subprocess,os
+from scipy import interpolate,integrate
+import json
 
 def display_solHT_data(fn, atsas_path=""):
     """ atsas_path for windows might be c:\atsas\bin
@@ -452,7 +454,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         else:
             d1b = d1list[ddSolventS.value]
             d1f = d1s.bkg_cor(d1b, plot_data=True, ax=ax, 
-                              sc_factor=ftScale1.value, debug='quiet')
+                              sc_factor=slideScFactor.value, debug='quiet')
         return d1f
         
     def onExport(w):
@@ -471,10 +473,29 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
         if len(stlist)>0:
             stream_name = stlist[0]   
             for sn in dh5.samples:
-                for i in range(len(dh5.d1s[sn][field])):
-                    # ideally this should be calculated based on the timestamps
-                    dh5.d1s[sn][field][i].set_trans(np.average(dh5.fh5[f'{sn}/{stream_name}/data/{trans_field}']), 
-                                                transMode=trans_mode.external)
+                # first interpolate the monitor counts
+                h = json.loads(dh5.fh5[sn].attrs["start"])
+                di = dh5.fh5[f"{sn}/{stream_name}/data/{trans_field}"][...]
+                dt = dh5.fh5[f"{sn}/{stream_name}/timestamps/{trans_field}"][...]
+                # this will interpolate the em values, maybe unnecessary, especially if em values
+                # are read more frequently than detector exposures 
+                #fi = interpolate.interp1d(dt, di)
+                if h['plan_name']=="raster":
+                    fast_axis = h["motors"][-1]
+                    dt1 = dh5.fh5[f"{sn}/primary/timestamps/{fast_axis}"][...].flatten()
+                    exp = dt1[1]-dt1[0]  # the exposure time needs to be added to the header 
+                    for i in range(len(dh5.d1s[sn][field])):
+                        t = dt1[i] # this is the time stamp on the trigger
+                        #trans = integrate.quad(fi, t, t+exp)[0]/exp
+                        ti1 = np.fabs(t-dt).argmin()
+                        ti2 = np.fabs(dt-(t+exp)).argmin()
+                        if ti2==ti1:
+                            trans = di[ti1]
+                        else:
+                            trans = np.sum(di[ti1:ti2])/(ti2-ti1)
+                        dh5.d1s[sn][field][i].set_trans(trans, transMode=trans_mode.external)
+                else:
+                    raise Exception(f"don't know how to handle plan: {h['plan_name']}")
         else:
             stream_name = "primary"      
             for sn in dh5.samples:
@@ -508,7 +529,7 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
     else:
         # create a temporary file to link to the individual files
         fn = "t.h5"
-        create_linked_files(fn, fnlist)
+        create_linked_files(fn, fns)
     dt1 = h5xs(fn)
     dt1.load_d1s() 
     set_trans(dt1, field, trans_field)

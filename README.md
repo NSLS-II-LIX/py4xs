@@ -81,4 +81,5 @@ fixed bug in bin_subtracted_frames(); added ATSAS report to HPLC GUI
 handles em as monitor for transmission intensity;
 create new h5 file with links to multiple files; update display_data_h5xs()
 
-
+2020-01:
+fixed tick lables in HPLC 2D plot

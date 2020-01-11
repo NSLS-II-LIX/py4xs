@@ -56,6 +56,28 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
+def qgrid_labels(qgrid):
+    dq = qgrid[1]-qgrid[0]
+    gpindex = [0]
+    gpvalues = [qgrid[0]]
+    gplabels = []
+
+    for i in range(1,len(qgrid)-1):
+        dq1 = qgrid[i+1]-qgrid[i]
+        if np.fabs(dq1-dq)/dq>0.01:
+            dq = dq1
+            gpindex.append(i)
+            prec = int(-np.log(dq)/np.log(10))+1
+            gpvalues.append(qgrid[i])
+    gpindex.append(len(qgrid)-1)
+    gpvalues.append(qgrid[-1])
+
+    for v in gpvalues:
+        prec = int(-np.log(v)/np.log(10))+2
+        gplabels.append(f"{v:.{prec}f}".rstrip('0'))
+    
+    return gpindex,gpvalues,gplabels
+    
 def pack_d1(data, ret_trans=True):
     """ utility function to creat a list of [intensity, error] from a Data1d object 
         or from a list of Data1s objects
@@ -1162,11 +1184,15 @@ class h5sol_HPLC(h5xs):
         
         if ax1 is None:
             if plot2d:
-                plt.figure(figsize=(fig_w, fig_h1+fig_h2))
-                plt.subplot(211)
+                fig = plt.figure(figsize=(fig_w, fig_h1+fig_h2))
+                hfrac = 0.82                
+                ht2 = fig_h1/(fig_h1+fig_h2)
+                box1 = [0.1, ht2+0.05, hfrac, (0.95-ht2)*hfrac] # left, bottom, width, height
+                box2 = [0.1, 0.02, hfrac, ht2*hfrac]
+                ax1 = fig.add_axes(box1)
             else:
                 plt.figure(figsize=(fig_w, fig_h2))
-            ax1 = plt.gca()
+                ax1 = plt.gca()
         ax1a = ax1.twiny()
         ax1b = ax1.twinx()
         
@@ -1188,7 +1214,6 @@ class h5sol_HPLC(h5xs):
         else:
             pl_ymax = ymax+0.05*(ymax-ymin)
             pl_ymin = ymin-0.05*(ymax-ymin)
-            
 
         if export_txt:
             # export the scattering-intensity-based chromatogram
@@ -1247,26 +1272,29 @@ class h5sol_HPLC(h5xs):
 
         if plot2d:
             if ax2 is None:
-                plt.subplots_adjust(bottom=0.)
-                plt.subplot(212)
-                plt.subplots_adjust(top=1.)
-                ax2 = plt.gca()
+                ax2 = fig.add_axes(box2)
             ax2.tick_params(axis='x', top=True)
             ax2.xaxis.set_major_formatter(plt.NullFormatter())
-            #ax3 = ax1.twinx()
+
             d2 = d_s + clim[0]/2
-            ext = [0, len(data), self.qgrid[-1], self.qgrid[0]]
-            asp = len(data)/self.qgrid[-1]/(fig_w/fig_h1)
+            ext = [0, len(data), len(self.qgrid), 0]
+            asp = len(d_t)/len(self.qgrid)/(fig_w/fig_h1)
             if logScale:
-                im = ax2.imshow(np.log(d2), extent=ext, aspect=asp) 
+                im = ax2.imshow(np.log(d2), extent=ext, aspect="auto") 
                 im.set_clim(np.log(clim))
             else:
-                im = ax2.imshow(d2, extent=ext, aspect=asp) 
+                im = ax2.imshow(d2, extent=ext, aspect="auto") 
                 im.set_clim(clim)
-            #plt.xlabel('frame #')
-            ax2.set_ylabel('q')
-            #ax3.set_xlabel('frame #')
-            #plt.tight_layout()
+            
+            gpindex,gpvalues,gplabels = qgrid_labels(self.qgrid)
+            ax2.set_yticks(gpindex)
+            ax2.set_yticklabels(gplabels)
+            ax2.set_ylabel('q')            
+            
+            ax2a = ax2.twinx()
+            ax2a.set_ylim(len(self.qgrid)-1, 0)
+            ax2a.set_ylabel('point #')
+            
 
         #plt.tight_layout()
         #plt.show()

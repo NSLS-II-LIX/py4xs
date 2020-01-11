@@ -7,7 +7,7 @@ setup(
     version=py4xs.__version__,
     author='Lin Yang',
     author_email='lyang@bnl.gov',
-    license="MIT",
+    license="BSD",
     url="",
     packages=['py4xs'],
     install_requires=['fabio', 'h5py', 'pillow', 

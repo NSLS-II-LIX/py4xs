@@ -781,8 +781,11 @@ def display_HPLC_data(fn, atsas_path=""):
     box = ipywidgets.HBox([vbox1, vbox2, vbox3])
     display(ipywidgets.VBox([box, hbox5]))
         
-    fig1 = plt.figure(figsize=(8,5))
-    fig2 = plt.figure(figsize=(8,3))
+    figw = 8
+    figh1 = 2
+    figh2 = 3
+    fig1 = plt.figure(figsize=(figw, figh1+figh2))
+    fig2 = plt.figure(figsize=(figw, 3))
     
     def updateDefaults():
         HPLC_GUI_par['xroi1'] = xROI1Tx.value
@@ -806,8 +809,14 @@ def display_HPLC_data(fn, atsas_path=""):
     
     def updatePlot(w):
         fig1.clear()
-        ax1a = fig1.add_subplot(211)
-        ax1b = fig1.add_subplot(212)
+        hfrac = 0.82                
+        ht2 = figh1/(figh1+figh2)
+        box1 = [0.1, ht2+0.05, hfrac, (0.95-ht2)*hfrac] # left, bottom, width, height
+        box2 = [0.1, 0.02, hfrac, ht2*hfrac]
+        ax1a = fig1.add_axes(box1)
+        ax1b = fig1.add_axes(box2)
+        #ax1a = fig1.add_subplot(211)
+        #ax1b = fig1.add_subplot(212)
         
         q_ranges = []
         for roiTx in[xROI1Tx, xROI2Tx, xROI3Tx]:

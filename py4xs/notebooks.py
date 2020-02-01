@@ -868,6 +868,8 @@ def display_HPLC_data(fn, atsas_path=""):
                 filter_width = float(filter_width)
             except:
                 filter_width = json.loads(f"[{filter_width}]")
+                if len(filter_width)==0:
+                    filter_width = None
 
             polyN = polyNTx.value
             try:
@@ -880,7 +882,7 @@ def display_HPLC_data(fn, atsas_path=""):
             dt.subtract_buffer_SVD(excluded_frames_list = frnsSubTx.value, 
                                   sc_factor = slideScFactor.value,
                                   gaussian_filter_width=filter_width,
-                                  Nc = int(ncTx.value), 
+                                  Nc = int(ncTx.value), fit_with_polynomial=True, 
                                   poly_order=polyN,
                                   plot_fit=True, ax1=ax2a, ax2=ax2b)
             plt.show(fig2)

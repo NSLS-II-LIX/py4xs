@@ -298,7 +298,8 @@ class Data2d:
         self.qphi_data = self.data.conv(Nq, Nphi, self.exp.Q, self.exp.Phi, 
                                         mask=mask, cor_factor=cor_factor, datatype=DataType.qphi)
         
-    def conv_Iq(self, qgrid, mask=None, cor_factor=1, adjust_edges=True, min_norm_scale=0.):
+    def conv_Iq(self, qgrid, mask=None, cor_factor=1, 
+                adjust_edges=True, interpolate=True, min_norm_scale=0.002):
         
         dd = self.data.d/cor_factor
         
@@ -338,16 +339,22 @@ class Data2d:
             bidx = np.ones(len(qgrid), dtype=bool)
 
         norm = np.histogram(qd, bins=bins, weights=np.ones(len(qd)))[0][bidx] 
+        qq = np.histogram(qd, bins=bins, weights=qd)[0][bidx]
         Iq = np.histogram(qd, bins=bins, weights=dd)[0][bidx]
         Iq2 = np.histogram(qd, bins=bins, weights=dd*dd)[0][bidx]
 
         idx1 = (norm>min_norm_scale*np.arange(len(norm))**2)
+        qq[idx1] /= norm[idx1]
         Iq[idx1] /= norm[idx1]
         Iq2[idx1] /= norm[idx1]
         dI = np.sqrt(Iq2-Iq*Iq)
         dI[idx1] /= np.sqrt(norm[idx1])
+        qq[~idx1] = np.nan
         Iq[~idx1] = np.nan
         dI[~idx1] = np.nan
+        
+        if interpolate:
+            Iq = np.interp(qgrid, qq, Iq)
         
         return Iq,dI
 

@@ -114,8 +114,8 @@ class Data1d:
         #                           exp_para.bm_ctr_y+BEAM_SIZE_hH, mask)
 
         self.data,self.err = d2.conv_Iq(qgrid, mask,
-                                        #cor_factor = exp_para.FSA*exp_para.FPol)
-                                        cor_factor = exp_para.FPol)  
+                                        cor_factor = exp_para.FSA*exp_para.FPol)
+                                        #cor_factor = exp_para.FPol)  
         if isinstance(image, np.ndarray):
             del d2      # d2 is only used temporarily
         

@@ -7,7 +7,7 @@ import pylab as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
 from enum import Enum 
-
+from PIL import Image
 
 class DataType(Enum):
     det = 1
@@ -236,6 +236,20 @@ class Data2d:
             self.flip(0)
             self.height, self.width = self.data.d.shape
 
+    def save_as_8bit_tif(self, filename, mask=None, max_intensity=2000):
+        """ the purpose of this function is to create a image from which a new mask can be created
+            8bit depth is sufficient for this purpose and log scale is used 
+            best data for this purpose is water scattering or empty cell scattering
+        """
+        img_data = np.log(self.data.d+1)+1
+        idx = np.isinf(img_data)|np.isnan(img_data)
+        img_data *= 240/np.log(max_intensity)
+        img_data[idx] = 255
+        if mask is not None:
+            img_data[mask.map] = 255
+        im = Image.fromarray(np.uint8(img_data))
+        im.save(filename)    
+            
     def set_timestamp(self, ts):
         # ts must be a valid datetime structure
         self.timestamp = ts
@@ -284,33 +298,56 @@ class Data2d:
         self.qphi_data = self.data.conv(Nq, Nphi, self.exp.Q, self.exp.Phi, 
                                         mask=mask, cor_factor=cor_factor, datatype=DataType.qphi)
         
-    def conv_Iq(self, qgrid, mask=None, cor_factor=1):
+    def conv_Iq(self, qgrid, mask=None, cor_factor=1, adjust_edges=True, min_norm_scale=0.):
         
         dd = self.data.d/cor_factor
         
-        # Pilatus might use negative values to mark deak pixels
+        # Pilatus might use negative values to mark dead pixels
         idx = (self.data.d>=0)
         if mask is not None:
             idx &= ~(mask.map)
             
         qd = self.exp.Q[idx].flatten()
         dd = np.asarray(dd[idx].flatten(), dtype=np.float)  # other wise dd*dd might become negative
+        
+        if adjust_edges:
+            # willing to throw out some data, but the edges strictly correspond to qgrid 
+            dq  = qgrid[1:]-qgrid[:-1]
+            dq1 = np.hstack(([dq[0]], dq))
 
-        # generate bins from qgrid, 
-        bins = np.append([2*qgrid[0]-qgrid[1]], qgrid) 
-        bins += np.append(qgrid , [2*qgrid[-1]-qgrid[-2]])
-        bins *= 0.5
+            bins = [qgrid[0]-dq1[0]/2]
+            bidx = []
+            binw = []
 
-        norm,edges = np.histogram(qd, bins=bins, weights=np.ones(len(qd))) 
-        Iq,edges = np.histogram(qd, bins=bins, weights=dd)
-        Iq2,edges = np.histogram(qd, bins=bins, weights=dd*dd)
+            for i in range(len(qgrid)):
+                el = qgrid[i] - dq1[i]/2
+                eu = qgrid[i] + dq1[i]/2
+                if i==0 or np.fabs(el-bins[-1])<dq1[i]/100:
+                    bins += [eu]
+                    bidx += [True]
+                    binw += [dq1[i]]
+                else:
+                    bins += [el, eu]
+                    bidx += [False, True]
+                    binw += [dq1[i-1], dq1[i]]
+        else:
+            # keep all the data, but the histogrammed data will be less accurate 
+            bins = np.append([2*qgrid[0]-qgrid[1]], qgrid) 
+            bins += np.append(qgrid , [2*qgrid[-1]-qgrid[-2]])
+            bins *= 0.5
+            bidx = np.ones(len(qgrid), dtype=bool)
 
-        Iq[norm>0] /= norm[norm>0]
-        Iq2[norm>0] /= norm[norm>0]
+        norm = np.histogram(qd, bins=bins, weights=np.ones(len(qd)))[0][bidx] 
+        Iq = np.histogram(qd, bins=bins, weights=dd)[0][bidx]
+        Iq2 = np.histogram(qd, bins=bins, weights=dd*dd)[0][bidx]
+
+        idx1 = (norm>min_norm_scale*np.arange(len(norm))**2)
+        Iq[idx1] /= norm[idx1]
+        Iq2[idx1] /= norm[idx1]
         dI = np.sqrt(Iq2-Iq*Iq)
-        dI[norm>0] /= np.sqrt(norm[norm>0])
-        Iq[norm<=0] = np.nan
-        dI[norm<=0] = np.nan
+        dI[idx1] /= np.sqrt(norm[idx1])
+        Iq[~idx1] = np.nan
+        dI[~idx1] = np.nan
         
         return Iq,dI
 

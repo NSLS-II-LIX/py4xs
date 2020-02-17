@@ -83,3 +83,6 @@ create new h5 file with links to multiple files; update display_data_h5xs()
 
 2020-01:
 fixed tick lables in HPLC 2D plot
+
+2020-02:
+functions to help generate mask from the data

@@ -1,6 +1,6 @@
 from PIL import Image, ImageDraw, ImageChops
 import numpy as np
-
+import fabio
 
 class Mask:
     """ a bit map to determine whehter a pixel should be included in
@@ -31,6 +31,18 @@ class Mask:
             if stype in ['h', 'c', 'r', 'f', 'p']:
                 para = [float(t) for t in fields[1:]]
                 self.add_item(stype, para)
+                
+    def read_from_8bit_tif(self, filename):
+        """ convert the specified image file into a bitmap and use as mask
+            all 0 value pixels will be blocked
+            the image size must be identical with the data/mask size
+        """
+        img = fabio.open(filename)
+        if img.shape!=self.map.shape:
+            raise Exception(f"{filename} does not have the same shape as the mask ({self.map.shape})")
+        idx = (img.data==255)
+        self.map[idx] = 1
+        self.map[~idx] = 0
 
     def fix_dead_pixels(self, d2, max_value=2097151):
         """ this is for dealing with dead pixels on Pilatus detectors

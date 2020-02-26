@@ -743,10 +743,8 @@ class h5xs():
             dset = fh5["%s/primary/data" % sn]
             
             s = dset["%s" % self.det_name[self.detectors[0].extension]].shape
-            if len(s)==3:
+            if len(s)==3 or len(s)==4:
                 n_total_frames = s[0]
-            elif len(s)==4:
-                n_total_frames = s[1]
             else:
                 raise Exception("don't know how to handle shape:", )
             if n_total_frames<N*N/2:
@@ -760,28 +758,43 @@ class h5xs():
                     c_size = int(n_total_frames/Np)
                     
             # process data in group in hope to limit memory use
+            # the raw data could be stored in a 1d or 2d array
+            if detectors is None:
+                detectors = self.detectors
             for i in range(Np):
                 if i==Np-1:
                     nframes = n_total_frames - c_size*(Np-1)
                 else:
                     nframes = c_size
                     
-                images = {}
-                if detectors is None:
-                    detectors = self.detectors
-                for det in detectors:
-                    if len(s)==3:
-                        images[det.extension] = dset['%s' % self.det_name[det.extension]][i*c_size:i*c_size+nframes]
-                    else:
-                        images[det.extension] = dset['%s' % self.det_name[det.extension]][0][i*c_size:i*c_size+nframes]
-                if N>1: # multi-processing, need to keep track of total number of active processes                    
-                    job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
-                                                         detectors, self.qgrid, reft, save_1d, save_merged)])
-                    jobs.append(job)
-                else: # serial processing
-                    [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug, 
-                                                    detectors, self.qgrid, reft, save_1d, save_merged)) 
-                    results[sn][fr1] = data                
+                if len(s)==3:
+                    images = {}
+                    for det in detectors:
+                        gn = f'{self.det_name[det.extension]}'
+                        images[det.extension] = dset[gn][i*c_size:i*c_size+nframes]    
+
+                    if N>1: # multi-processing, need to keep track of total number of active processes                    
+                        job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
+                                                             detectors, self.qgrid, reft, save_1d, save_merged)])
+                        jobs.append(job)
+                    else: # serial processing
+                        [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug, 
+                                                        detectors, self.qgrid, reft, save_1d, save_merged)) 
+                        results[sn][fr1] = data                
+                else: # len(s)==4
+                    for j in range(s[1]):
+                        images = {}
+                        for det in detectors:
+                            gn = f'{self.det_name[det.extension]}'
+                            images[det.extension] = dset[gn][i*c_size:i*c_size+nframes, j]
+                        if N>1: # multi-processing, need to keep track of total number of active processes
+                            job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size+j*s[0], debug,
+                                                                 detectors, self.qgrid, reft, save_1d, save_merged)])
+                            jobs.append(job)
+                        else: # serial processing
+                            [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size+j*s[0], debug, 
+                                                            detectors, self.qgrid, reft, save_1d, save_merged)) 
+                            results[sn][fr1] = data                
 
         if N>1:             
             for job in jobs:
@@ -1154,7 +1167,7 @@ class h5sol_HPLC(h5xs):
             d_s.append(data[i].data)
 
             if ii>thresh and calc_Rg and dkey=='subtracted':
-                i0,rg = dt.plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
+                i0,rg = data[i].plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
                 d_rg[i] = rg
     
         # read HPLC data directly from HDF5

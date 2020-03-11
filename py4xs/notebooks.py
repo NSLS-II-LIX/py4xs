@@ -47,9 +47,9 @@ def display_solHT_data(fn, atsas_path=""):
                                      style = {'description_width': 'initial'},
                                      description='show subtracted')
 
-    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.8, max=1.2, step=0.001,
+    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.8, max=1.2, step=0.0001,
                                            style = {'description_width': 'initial'},
-                                           description='Scaling factor:', readout_format='.3f')
+                                           description='Scaling factor:', readout_format='.4f')
     guinierQsTx = ipywidgets.Text(value='0.01', 
                                   layout=ipywidgets.Layout(width='40%'),
                                   description='Guinier fit qs:')
@@ -569,8 +569,8 @@ def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value
     ddSolventS = ipywidgets.Dropdown(description='Solvent:')    
     hbox2 = ipywidgets.HBox([ddSampleS, ddSolventS])  
 
-    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.2, max=5.0, step=0.001,
-                                           description='Scaling factor:', readout_format='.3f')
+    slideScFactor = ipywidgets.FloatSlider(value=1.0, min=0.2, max=5.0, step=0.0001,
+                                           description='Scaling factor:', readout_format='.4f')
     btnExport = ipywidgets.Button(description='Export')
     txFnSuffix = ipywidgets.Text(value='s', description='filename suffix:', disabled=False, 
                                  layout=ipywidgets.Layout(width='10%'))
@@ -734,10 +734,10 @@ def display_HPLC_data(fn, atsas_path=""):
                               style = {'description_width': 'initial'})
 
     slideScFactor = ipywidgets.FloatSlider(value=HPLC_GUI_par['sc_factor'], 
-                                           min=0.8, max=1.2, step=0.001,
+                                           min=0.8, max=1.2, step=0.0001,
                                            style = {'description_width': 'initial'},
                                            layout=ipywidgets.Layout(width='60%'),
-                                           description='Scaling factor:', readout_format='.3f')
+                                           description='Scaling factor:', readout_format='.4f')
 
     filterWidthTx = ipywidgets.Text(value=HPLC_GUI_par['SVD_fw'], 
                                     description='filter width:', 

@@ -89,4 +89,6 @@ refined conv_Iq() to improve accuracy
 functions to help generate mask from the data
 h5xs.load_data() now work for scattering data store in 2D arrays
 
-
+2020-03:
+implemented cormap-equivalent pair-wise comparison
+added check_bm_center() function in hdf

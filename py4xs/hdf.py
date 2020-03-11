@@ -9,7 +9,7 @@ import json,pickle
 import multiprocessing as mp
 
 from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
-from py4xs.utils import common_name
+from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names,det_model,beamline_name    # e.g. "_SAXS": "pil1M_image"
 from py4xs.data2d import Data2d, Axes2dPlot
@@ -339,7 +339,7 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
-    def md_string(self, sn, md_keys=[]):
+    def md_dict(self, sn, md_keys=[]):
         """ create the meta data to be recorded in ascii data files
             from the detector_config (attribute of the h5xs object) 
             and scan header (in the dataset attribute, value set when writting h5 using suitcase)
@@ -399,7 +399,12 @@ class h5xs():
         for k in md_keys:
             if k in bshdr.keys():
                 md[k] = bshdr[k]
-        
+
+        return md
+                
+    def md_string(self, sn, md_keys=[]):
+
+        md = self.md_dict(sn, md_keys=md_keys)
         md_str = ""
         for k in md.keys():
             md_str += f"# {k} : {md[k]}\n"
@@ -411,10 +416,7 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
-    def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,
-                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
-        """ display frame #frn of the data under det for sample sn
-        """
+    def get_d2(self, sn=None, det='_SAXS', frn=0):
         if sn is None:
             sn = self.samples[0]
         dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det])]
@@ -423,7 +425,60 @@ class h5xs():
         di = np.argwhere([d.extension==det for d in self.detectors])[0][0]
         exp = self.detectors[di].exp_para
         d2 = Data2d(dset[frn], exp=exp)
+
+        return d2
+    
+    def check_bm_center(self, sn=None, det='_SAXS', frn=0, 
+                        qs=0.005, qe=0.05, qn=100, i=0):
+        """ this function compares the beam intensity on both sides of the beam center,
+            and advise if the beam center as defined in the detector configuration is incorrect
+            the data is divided into 36 slices, slice #i is compared with slice #i+18
+        """
+        d2 = self.get_d2(sn=sn, det=det, frn=frn)
+        qg = np.linspace(qs, qe, qn)
+        d2.conv_Iqphi(Nq=qg, Nphi=36, mask=d2.exp.mask)
+
+        i %= 18
+        d1a = d2.qphi_data.d[i]
+        d1b = d2.qphi_data.d[i+18]
+        s0,d0 = max_len(d1a, d1b, return_all=True)
+        p0 = Schilling_p_value(qn, np.max(d0))
+        s1,d1 = max_len(d1a[1:], d1b[:-1], return_all=True)
+        p1 = Schilling_p_value(qn, np.max(d1))
+        s_1,d_1 = max_len(d1a[:-1], d1b[1:], return_all=True)
+        p_1 = Schilling_p_value(qn, np.max(d_1))
+
+        fig = plt.figure(figsize=(8,4), constrained_layout=True)
+        #fig.subplots_adjust(bottom=0.3)
+        gs = fig.add_gridspec(2,2)
+
+        fig.add_subplot(gs[:, 0])
+        plt.semilogy(d2.qphi_data.xc, d1a)
+        plt.semilogy(d2.qphi_data.xc, d1b)        
         
+        fig.add_subplot(gs[1, 1])
+        plt.bar(range(len(s0)), (s0*2-1)/3, bottom=0, width=1)
+        plt.bar(range(len(s1)), (s1*2-1)/3, bottom=1, width=1)
+        plt.bar(range(len(s_1)), (s_1*2-1)/3, bottom=-1, width=1)
+        plt.xlabel("point position")
+
+        fig.add_subplot(gs[0, 1])
+        maxb = 0.5+int(np.max(np.hstack((d0,d1,d_1,[qn/3]))))
+        plt.hist(d0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
+        plt.hist(d1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
+        plt.hist(d_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
+        plt.ylim(-1.2,1.8)
+        plt.xlabel("patch size")
+        
+        print(f"p-values(C): {p0:.4f} (as is), {p1:.4f} (shift +1), {p_1:.4f} (shift -1)")
+
+        plt.show()
+        
+    def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,
+                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+        """ display frame #frn of the data under det for sample sn
+        """
+        d2 = self.get_d2(sn=sn, det=det, frn=frn)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -1157,8 +1212,8 @@ class h5sol_HPLC(h5xs):
         
         for i in range(len(data)):
             ti = (ts[i]-ts[0])/60
-            if flowrate>0:
-                ti*=flowrate
+            #if flowrate>0:
+            #    ti*=flowrate
             d_t[i] = ti
                 
             for j in range(nq): 
@@ -1182,7 +1237,7 @@ class h5sol_HPLC(h5xs):
             
     def plot_data(self, sn=None, 
                   q_ranges=[[0.02,0.05]], logROI=False, markers=['bo', 'mo', 'co', 'yo'],
-                  flowrate=0, plot_merged=False,
+                  flowrate=-1, plot_merged=False,
                   ymin=-1, ymax=-1, offset=0, uv_scale=1, showFWHM=False, 
                   calc_Rg=False, thresh=2.5, qs=0.01, qe=0.04, fix_qe=True,
                   plot2d=True, logScale=True, clim=[1.e-3, 10.],
@@ -1210,6 +1265,9 @@ class h5sol_HPLC(h5xs):
         ax1b = ax1.twinx()
         
         fh5,sn = self.process_sample_name(sn, debug=debug)
+        if flowrate<0:  # get it from metadata
+            md = self.md_dict(sn, md_keys=['HPLC'])
+            flowrate = float(md["HPLC"]["Flow Rate (ml_min)"])
         dkey,d_t,d_i,d_hplc,d_rg,d_s = self.get_chromatogram(sn, q_ranges=q_ranges, 
                                                              flowrate=flowrate, plot_merged=plot_merged, 
                                                              calc_Rg=calc_Rg, thresh=thresh, 

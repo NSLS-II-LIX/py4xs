@@ -2,6 +2,40 @@ import numpy as np
 import matplotlib.colors as mc
 from functools import reduce
 
+def max_len(d1a, d1b, return_all=False):
+    """ 
+    """ 
+    idx = ~(np.isnan(d1a) |  np.isnan(d1b))
+    seq0 = d1a[idx]>d1b[idx]
+    seq1 = ~seq0
+    dif0 = np.diff(np.where(np.concatenate(([seq0[0]], seq0[:-1] != seq0[1:], [True])))[0])[::2]
+    dif1 = np.diff(np.where(np.concatenate(([seq1[0]], seq1[:-1] != seq1[1:], [True])))[0])[::2]
+    dif = np.hstack((dif0, dif1))
+    
+    if return_all:
+        return seq1,dif
+
+    return np.max(dif)
+
+def Schilling_p_value(n, C):
+    """ see Franke et.al. 2015, or Schilling 1990
+        the probability of having longest patch size of C or larger with data size of n is
+            1 - A(n,C)/2^n
+        A(n,C) is the number of n-length sequences with the longest run not exceeding C 
+        A(n,C) is given by 2^n if n<=C
+        Otherwise it is calculated interatively: 
+            sum{j=0,C | A_(n-1-j, C)}            
+    """
+    
+    # first construct An(C)
+    AnC = np.zeros(n+1)
+    for i in range(C+1):
+        AnC[i] = np.power(2.0, i)
+    for i in range(C+1, n+1):
+            AnC[i]= AnC[:i][-C-1:].sum()
+    
+    return 1.0-AnC[-1]/np.power(2.0, n)
+
 def strip_name(s):
     strs = ["_SAXS","_WAXS1","_WAXS2",".cbf",".tif"]
     for ts in strs:

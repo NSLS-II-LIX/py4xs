@@ -463,7 +463,7 @@ class h5xs():
         plt.xlabel("point position")
 
         fig.add_subplot(gs[0, 1])
-        maxb = 0.5+int(np.max(np.hstack((d0,d1,d_1,[qn/3]))))
+        maxb = 2.5+int(np.max(np.hstack((d0,d1,d_1,[qn/3]))))
         plt.hist(d0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
         plt.hist(d1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
         plt.hist(d_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)

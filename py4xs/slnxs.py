@@ -4,7 +4,7 @@ import collections
 
 from py4xs.data2d import Data2d
 from py4xs.mask import Mask
-from py4xs.utils import common_name
+from py4xs.utils import common_name,smooth
 
 import os
 import sys
@@ -836,4 +836,71 @@ def analyze(d1, qstart, qend, fix_qe, qcutoff, dmax):
     d1.plot_pr(I0, Rg, qmax=1.2, dmax=dmax)
     plt.subplots_adjust(bottom=0.15, wspace=0.25)
 
-
+    
+def estimate_scaling_factor(d1s, d1b, 
+                            q_min=0.5, smoothing_width=5, prec=4, s_thresh=1,
+                            plot_data=False, ax=None, debug=False):
+    """ Estimate the scaling factor needed to subtract buffer scattering d1b
+        from sample scattering d1s, d1s/d1b should be instances of Data1d
+        
+        This function iteratively vary the scaling factor, up to the specified 
+        precision (number of digits after the decimal point), and optinally smooth 
+        the data before the calcualtion. Several critiera for over sub-traction are 
+        used to stop the interation: 
+        (1) non-zero value in the subtracted result
+        (2) minimum of the subtracted result fall below 1/q
+        (3) dynamic range of the value of the result, as measured by the span or std
+            deviation of the log, becomes too high
+        
+        only test the data above q_min, which should not exceed 1.0
+    """
+    idx = (d1s.qgrid>q_min)
+    md1s = d1s.data[idx]
+    md1b = d1b.data[idx]
+    md1sm = smooth(md1s, half_window_len=smoothing_width)
+    md1bm = smooth(md1b, half_window_len=smoothing_width)
+    mq = d1s.qgrid[idx]
+    sc = 0.9
+    prec0 = 2
+    std0 = np.log(md1s-md1b*sc).std()
+    n,bins = np.histogram((md1s-md1b*sc)*mq)
+    sp0 = bins[-1]-bins[0]
+    
+    if debug:
+        print("# sc,   mean,   std,   span,   qmin")
+    while prec0<=prec:
+        sc1 = sc
+        while np.all(md1s-sc1*md1b>0):
+            # data should have finite dynamic range
+            td = np.log(md1s-md1b*sc1)
+            n,bins = np.histogram(td)
+            sp1 = bins[-1]-bins[0]
+            std1 = td.std()
+            #if std1>s_thresh*std0:
+            #    break
+            #elif std1<std0:
+            #    std0 = std1
+            if sp1>sp0+s_thresh:
+                break
+            # assume that data*q should have a lower bound
+            # this should work better on the smoothed data
+            td1 = (md1sm-md1bm*sc1)*mq
+            q_Imin = mq[td1.argmin()]
+            if q_Imin>1.7:  # under the water peak, indication of over-subtraction
+                break
+            sc = sc1
+            if debug:
+                print(f"{sc1:.5f}, {td.mean():.3f}, {std1:.3f}, {sp1:3f}, {q_Imin:.3f}")
+            sc1 = sc+np.power(10., -prec0)
+        prec0 += 1
+    
+    if plot_data:
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+        plt.semilogy(d1s.qgrid, d1s.data)
+        plt.semilogy(d1b.qgrid, d1b.data)
+        plt.errorbar(d1s.qgrid, (d1s.data-sc*d1b.data), d1s.err*1.414)
+    
+    return sc
+    

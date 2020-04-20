@@ -3,7 +3,10 @@ import matplotlib.colors as mc
 from functools import reduce
 
 def max_len(d1a, d1b, return_all=False):
-    """ 
+    """ perform a Cormap-like pairwise comparison between 2 arrays
+        if return_all is True, return a sequence of True/False base on the compasion of 
+            the 2 arrays, as well as the sequence of "patch" (consecutive True/False) sizes
+        otherwise return only the largest patch size
     """ 
     idx = ~(np.isnan(d1a) |  np.isnan(d1b))
     seq0 = d1a[idx]>d1b[idx]
@@ -16,6 +19,7 @@ def max_len(d1a, d1b, return_all=False):
         return seq1,dif
 
     return np.max(dif)
+
 
 def Schilling_p_value(n, C):
     """ see Franke et.al. 2015, or Schilling 1990
@@ -36,6 +40,7 @@ def Schilling_p_value(n, C):
     
     return 1.0-AnC[-1]/np.power(2.0, n)
 
+
 def strip_name(s):
     strs = ["_SAXS","_WAXS1","_WAXS2",".cbf",".tif"]
     for ts in strs:
@@ -43,6 +48,7 @@ def strip_name(s):
             ss = s.split(ts)
             s = "".join(ss)
     return s
+
 
 def common_name(s1, s2):
     s1 = strip_name(s1)
@@ -60,6 +66,7 @@ def common_name(s1, s2):
     if len(s) < 1:
         s = s1.copy()
     return s.rstrip("-_ ")
+
 
 def reduced_cmap(cmap, step):
     return np.array(cmap(step)[0:3])
@@ -100,3 +107,63 @@ def cmap_map(function, cmap):
 
     return mc.LinearSegmentedColormap('colormap', cdict, 1024)
 
+
+def smooth(x,half_window_len=11,window='hanning'):
+    """smooth the data using a window with requested size.
+    revised from numpy cookbook, https://scipy-cookbook.readthedocs.io/items/SignalSmooth.html
+    
+    This method is based on the convolution of a scaled window with the signal.
+    The signal is prepared by introducing reflected copies of the signal 
+    (with the window size) in both ends so that transient parts are minimized
+    in the begining and end part of the output signal.
+    
+    input:
+        x: the input signal 
+        window_len: the dimension of the smoothing window; should be an odd integer
+        window: the type of window from 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'
+            flat window will produce a moving average smoothing.
+
+    output:
+        the smoothed signal
+        
+    example:
+
+    t=linspace(-2,2,0.1)
+    x=sin(t)+randn(len(t))*0.1
+    y=smooth(x)
+    
+    see also: 
+    
+    numpy.hanning, numpy.hamming, numpy.bartlett, numpy.blackman, numpy.convolve
+    scipy.signal.lfilter
+ 
+    TODO: the window parameter could be the window itself if an array instead of a string
+    NOTE: length(output) != length(input), to correct this: return y[(window_len/2-1):-(window_len/2)] instead of just y.
+    """
+
+    if x.ndim != 1:
+        raise ValueError("smooth only accepts 1 dimension arrays.")
+
+    window_len = 2*half_window_len+1
+    if x.size < window_len:
+        raise ValueError("Input vector needs to be bigger than window size.")
+
+
+    if window_len<3:
+        return x
+
+    #x = np.hstack((x, np.ones(window_len)*x[-1]))
+
+    if not window in ['flat', 'hanning', 'hamming', 'bartlett', 'blackman']:
+        raise ValueError("Window is on of 'flat', 'hanning', 'hamming', 'bartlett', 'blackman'")
+
+
+    s = np.r_[x[window_len-1:0:-1],x,x[-2:-window_len-1:-1]]
+    #print(len(s))
+    if window == 'flat': #moving average
+        w=np.ones(window_len,'d')
+    else:
+        w=eval('np.'+window+'(window_len)')
+
+    y=np.convolve(w/w.sum(),s,mode='valid')
+    return y[half_window_len:-half_window_len]

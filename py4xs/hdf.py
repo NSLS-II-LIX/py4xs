@@ -273,19 +273,19 @@ class h5xs():
         Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
-    """
-    d1s = {}
-    detectors = None
-    samples = []
-    attrs = {}
-    # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
-    transField = None  
-    
+    """    
     def __init__(self, fn, exp_setup=None, transField='', save_d1=True):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
         """
+        self.d1s = {}
+        self.detectors = None
+        self.samples = []
+        self.attrs = {}
+        # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
+        self.transField = None  
+
         self.fn = fn
         self.save_d1 = save_d1
         self.fh5 = h5py.File(self.fn, "r+")   # file must exist
@@ -964,11 +964,11 @@ class h5sol_HPLC(h5xs):
     """ single sample (not required, but may behave unexpectedly when there are multiple samples), 
         many frames; frames can be added gradually (not tested)
     """ 
-    dbuf = None
-    updating = False   # this is set to True when add_data() is active
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.dbuf = None
+        self.updating = False   # this is set to True when add_data() is active
         
     def add_data(self, ):
         """ watch the given path
@@ -1267,7 +1267,10 @@ class h5sol_HPLC(h5xs):
         fh5,sn = self.process_sample_name(sn, debug=debug)
         if flowrate<0:  # get it from metadata
             md = self.md_dict(sn, md_keys=['HPLC'])
-            flowrate = float(md["HPLC"]["Flow Rate (ml_min)"])
+            if "HPLC" in md.keys():
+                flowrate = float(md["HPLC"]["Flow Rate (ml_min)"])
+            else: 
+                flowrate = 0.5
         dkey,d_t,d_i,d_hplc,d_rg,d_s = self.get_chromatogram(sn, q_ranges=q_ranges, 
                                                              flowrate=flowrate, plot_merged=plot_merged, 
                                                              calc_Rg=calc_Rg, thresh=thresh, 
@@ -1449,11 +1452,11 @@ class h5sol_HPLC(h5xs):
 class h5sol_HT(h5xs):
     """ multiple samples, not many frames per sample
     """    
-    d1b = {}   # buffer data used, could be averaged from multiple samples
-    buffer_list = {}    
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.d1b = {}   # buffer data used, could be averaged from multiple samples
+        self.buffer_list = {}    
         
     def add_sample(self, db, uid):
         """ add another group to the HDF5 file

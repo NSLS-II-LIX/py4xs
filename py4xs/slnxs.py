@@ -838,7 +838,7 @@ def analyze(d1, qstart, qend, fix_qe, qcutoff, dmax):
 
     
 def estimate_scaling_factor(d1s, d1b, 
-                            q_min=0.5, smoothing_width=5, prec=4, s_thresh=1,
+                            q_min=0.5, q_max=3.5, smoothing_width=5, prec=4, s_thresh=1,
                             plot_data=False, ax=None, debug=False):
     """ Estimate the scaling factor needed to subtract buffer scattering d1b
         from sample scattering d1s, d1s/d1b should be instances of Data1d
@@ -854,7 +854,7 @@ def estimate_scaling_factor(d1s, d1b,
         
         only test the data above q_min, which should not exceed 1.0
     """
-    idx = (d1s.qgrid>q_min)
+    idx = (d1s.qgrid>q_min) & (d1s.qgrid<q_max) & (d1s.data>0) & (d1b.data>0)
     md1s = d1s.data[idx]
     md1b = d1b.data[idx]
     md1sm = smooth(md1s, half_window_len=smoothing_width)

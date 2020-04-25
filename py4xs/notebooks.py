@@ -5,11 +5,9 @@ import json,os
 from py4xs.hdf import h5xs,h5sol_HT,h5sol_HPLC,lsh5,create_linked_files
 from py4xs.slnxs import trans_mode
 from py4xs.slnxs import get_font_size
+from py4xs.atsas import gen_atsas_report
 import pylab as plt
-from io import StringIO
-import copy,subprocess,os
 from scipy import interpolate,integrate
-import json
 
 def display_solHT_data(fn, atsas_path=""):
     """ atsas_path for windows might be c:\atsas\bin
@@ -118,9 +116,9 @@ def display_solHT_data(fn, atsas_path=""):
     
     def onReport(w):
         #try:
-        txt = gen_report_d1s(dt.d1s[ddSample.value]["subtracted"], ax=axr, sn=ddSample.value,
-                             skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
-                             print_results=False, path=atsas_path)
+        txt = gen_atsas_report(dt.d1s[ddSample.value]["subtracted"], ax=axr, sn=ddSample.value,
+                               skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
+                               print_results=False, path=atsas_path)
         outTxt.value = txt
         #except:
         #    outTxt.value = "unable to run ATSAS ..."
@@ -192,197 +190,7 @@ def display_solHT_data(fn, atsas_path=""):
     
     return dt
 
-def run(cmd, path=""):
-    cmd = path+cmd
-    p = subprocess.Popen(cmd.split(" "), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    if len(err)>0:
-        print(err.decode())
-        raise Exception(err.decode())
-    return out.decode()
-
-def extract_vals(txt, dtype=float, strip=None, debug=False):
-    if strip is not None:
-        txt = txt.replace(strip, " ")
-    sl = txt.split(" ")
-    ret = []
-    for ss in sl:
-        try:
-            val = dtype(ss)
-        except:
-            pass
-        else:
-            ret.append(val)
-    return ret
-    
-def atsas_create_temp_file(fn, d1s, skip=0, q_cutoff=0.6):
-    idx = (d1s.qgrid<=q_cutoff)
-    np.savetxt(fn, np.vstack([d1s.qgrid[idx][skip:], d1s.data[idx][skip:], d1s.err[idx][skip:]]).T)
-    
-def atsas_autorg(fn, debug=False, path=""):
-    ret = run(f"autorg {fn}", path).split('\n')
-    #rg,drg = extract_vals(ret[0], "+/-", debug=debug)
-    #i0,di0 = extract_vals(ret[1], "+/-", debug=debug)
-    #n1,n2 = extract_vals(ret[2], " to ", debug=debug, dtype=int)
-    #qual = extract_vals(ret[3], "%", debug=debug)
-    rg,drg = extract_vals(ret[0])
-    i0,di0 = extract_vals(ret[1])
-    n1,n2 = extract_vals(ret[2], dtype=int)
-    qual = extract_vals(ret[3], strip="%")[0]
-    
-    return {"Rg": rg, "Rg err": drg, 
-            "I0": i0, "I0 err": di0,
-            "fit range": [n1,n2],
-            "quality": qual}
-
-def atsas_datgnom(fn, rg, first, last, fn_out=None, path=""):
-    """ 
-    """
-    if fn_out is None:
-        fn_out = fn.split('.')[0]+'.out'
-    
-    options = f"-r {rg} --first {first} --last {last} -o {fn_out}"
-    # datgnom vs datgnom4, slightly different input parameters
-    ret = run(f"datgnom {options} {fn}", path).split("\n")
-    dmax,qual = extract_vals(ret[0])
-    rgg,rgp = extract_vals(ret[1])
-    
-    return {"Dmax": dmax, "quality": qual, 
-            "Rg (q)": rgg, "Rg (r)": rgp}
-
-def read_arr_from_strings(lines, cols=[0,1,2]):
-    """ assuming that any none numerical values will be ignored
-        data are in multiple columns
-        some columns may be missing values at the top
-        for P(r), cols=[0,1,2]
-        for I_fit(q), cols=[0,-1]
-    """
-    ret = []
-    for buf in lines:
-        if len(buf)<len(cols):  # empty line
-            continue        
-        tb = np.genfromtxt(StringIO(buf))
-        if np.isnan(tb).any():   # mixed text and numbersS          J EXP       ERROR       J REG       I REG
-            continue
-        ret.append([tb[i] for i in cols])
-    return np.asarray(ret).T
-
-def read_gnom_out_file(fn, plot_pr=False, ax=None):
-    ff = open(fn, "r")
-    tt = ff.read()
-    ff.close()
-    
-    hdr,t1 = tt.split("####      Experimental Data and Fit                     ####")
-    #hdr,t1 = tt.split("S          J EXP       ERROR       J REG       I REG")
-    iq, pr = t1.split("####      Real Space Data                               ####")
-    #iq, pr = t1.split("Distance distribution  function of particle")
-    di, dq = read_arr_from_strings(iq.rstrip().split("\n"), cols=[0,-1])
-    dr, dpr, dpre = read_arr_from_strings(pr.rstrip().split("\n"), cols=[0,1,2])
-    
-    if plot_pr:
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-        ax.errorbar(dr, dpr, dpre)
-    
-    return hdr.rstrip(),di,dq,dr,dpr,dpre
-
-# ALMERGE   Automatically merges data collected from two different concentrations or 
-#           extrapolates it to infinite dilution assuming moderate particle interactions.
-#
-
-def atsas_dat_tools(fn_out, path=""):
-    # datporod: the used Rg, I0, the computed volume estimate and the input file name
-    #
-    # datvc: the first three numbers are the integrated intensities up to 0.2, 0.25 and 0.3, respectively. 
-    #        the second three numbers the corresponding MW estimates
-    #
-    # datmow: Output: Q', V' (apparent Volume), V (Volume, A^3), MW (Da), file name
-    ret = run(f"datporod {fn_out}", path).split('\n')
-    t,t,Vv = extract_vals(ret[0])
-    r_porod = {"vol": Vv}
-    
-    #ret = run(f"datvc {fn_out}").split('\n')
-    #ii1,ii2,ii3,mw1,mw2,mw3 = extract_vals(ret[0])
-    #r_vc = {"MW": [mw1, mw2, mw3]}
-    
-    ret = run(f"datmow {fn_out}", path).split('\n')
-    Qp,Vp,Vv,mw = extract_vals(ret[0])
-    r_mow = {"Q'": Qp, "app vol": Vp, "vol": Vv, "MW": mw}
-
-    return {"datporod": r_porod, 
-            #"datvc": r_vc,  # this won't work if q_max is below 0.3 
-            "datmow": r_mow}
-    
-def gen_report_d1s(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, print_results=True, path=""):
-    if ax is None:
-        ax = []
-        if fig is None:
-            fig = plt.figure(figsize=(9,3))
-        # rect = l, b, w, h
-        ax.append(fig.add_axes([0.09, 0.25, 0.25, 0.6])) 
-        ax.append(fig.add_axes([0.41, 0.25, 0.25, 0.6])) 
-        ax.append(fig.add_axes([0.73, 0.25, 0.25, 0.6])) 
-    else:
-        for a in ax:
-            a.clear()
-    
-    if sn is None:
-        tfn = "processed/t.dat"
-        tfn_out = "processed/t.out"
-    else:
-        tfn = "processed/t.dat"
-        tfn_out = f"processed/{sn}.out"
-    atsas_create_temp_file(tfn, d1s, skip=skip, q_cutoff=q_cutoff)
-
-    re_autorg = atsas_autorg(tfn, path=path)
-    re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=skip+1,
-                            last=len(d1s.qgrid[d1s.qgrid<=q_cutoff]), fn_out=tfn_out, path=path)
-    hdr,di,dq,dr,dpr,dpre = read_gnom_out_file(tfn_out)
-    
-    idx = (d1s.qgrid<q_cutoff)
-    ax[0].semilogy(di, dq)
-    ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx])
-    #ax[0].yaxis.set_major_formatter(plt.NullFormatter())
-    ax[0].set_title("intensity")
-    ax[0].set_xlabel("q")
-
-    if re_autorg["Rg"]==0:
-        kratky_qm=0.3
-        idx = (d1s.qgrid<kratky_qm)
-        ax[1].plot(d1s.qgrid[idx], d1s.data[idx]*np.power(d1s.qgrid[idx], 2))
-        ax[1].set_xlabel("q")
-    else:
-        kratky_qm=10./re_autorg["Rg"]
-        idx = (d1s.qgrid<kratky_qm)
-        ax[1].plot(d1s.qgrid[idx]*re_autorg["Rg"], d1s.data[idx]*np.power(d1s.qgrid[idx], 2))
-        ax[1].set_xlabel("q x Rg")    
-    ax[1].yaxis.set_major_formatter(plt.NullFormatter())
-    ax[1].set_title("kratky plot")
-
-    ax[2].errorbar(dr, dpr, dpre)
-    ax[2].yaxis.set_major_formatter(plt.NullFormatter())
-    ax[2].set_title("P(r)")
-    ax[2].set_xlabel("r")
-
-    ret = atsas_dat_tools(tfn_out, path=path)
-    if print_results:
-        print(f"Gunier fit: quality = {re_autorg['quality']} %,", end=" ")
-        print(f"I0 = {re_autorg['I0']:.2f} +/- {re_autorg['I0 err']:.2f} , ", end="")
-        print(f"Rg = {re_autorg['Rg']:.2f} +/- {re_autorg['Rg err']:.2f}")
-        print(f"GNOM fit: quality = {re_gnom['quality']:.2f}, Dmax = {re_gnom['Dmax']:.2f}, Rg = {re_gnom['Rg (r)']:.2f}")
-        print(f"Volume estimate: {ret['datporod']['vol']:.1f} (datporod), {ret['datmow']['vol']:.1f} (MoW)")
-        print(f"MW estimate: {ret['datmow']['MW']/1000:.1f} kDa (MoW)")          
-    else:
-        txt = f"Gunier fit: quality = {re_autorg['quality']} %, "
-        txt += f"I0 = {re_autorg['I0']:.2f} +/- {re_autorg['I0 err']:.2f} , "
-        txt += f"Rg = {re_autorg['Rg']:.2f} +/- {re_autorg['Rg err']:.2f}\n"
-        txt += f"GNOM fit: quality = {re_gnom['quality']:.2f}, Dmax = {re_gnom['Dmax']:.2f}, Rg = {re_gnom['Rg (r)']:.2f}\n"
-        txt += f"Volume estimate: {ret['datporod']['vol']:.1f} (datporod), {ret['datmow']['vol']:.1f} (MoW)\n"
-        txt += f"MW estimate: {ret['datmow']['MW']/1000:.1f} kDa (MoW)"          
-        return txt
-              
-              
+                  
 #def display_data_h5xs(fn1, fn2=None, field='merged', trans_field = 'em2_sum_all_mean_value'):
 def display_data_h5xs(fns, field='merged', trans_field = 'em2_sum_all_mean_value'):
 
@@ -913,10 +721,9 @@ def display_HPLC_data(fn, atsas_path=""):
         d1 = dt.bin_subtracted_frames(frame_range=frnsExportTx.value,
                                       save_data=True, path="processed/",
                                       fig=fig2, plot_data=False, debug='quiet')
-        txt = gen_report_d1s(d1, fig=fig2, 
-                             skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
-                             print_results=False, path=atsas_path)
-        #txt = gen_report_d1s(d1, fig=fig2, print_results=False, path=atsas_path)                                
+        txt = gen_atsas_report(d1, fig=fig2, 
+                               skip=int(qSkipTx.value), q_cutoff=float(qCutoffTx.value), 
+                               print_results=False, path=atsas_path)
         outTxt.value = txt                
     
     btnUpdate.on_click(updatePlot)

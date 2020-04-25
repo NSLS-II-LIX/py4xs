@@ -92,3 +92,10 @@ h5xs.load_data() now work for scattering data store in 2D arrays
 2020-03:
 implemented cormap-equivalent pair-wise comparison
 added check_bm_center() function in hdf
+
+2020-04:
+added estimate_scaling_factor() for buffer subtraction
+assume default flow rate with older HPLC data
+revised ATSAS support functions; paralellized modelling using Dask
+
+

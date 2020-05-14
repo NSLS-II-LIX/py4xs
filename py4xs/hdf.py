@@ -429,49 +429,87 @@ class h5xs():
         return d2
     
     def check_bm_center(self, sn=None, det='_SAXS', frn=0, 
-                        qs=0.005, qe=0.05, qn=100, i=0):
+                        qs=0.005, qe=0.05, qn=100, Ns=9):
         """ this function compares the beam intensity on both sides of the beam center,
             and advise if the beam center as defined in the detector configuration is incorrect
-            the data is divided into 36 slices, slice #i is compared with slice #i+18
+            dividing data into 4*Ns slices, show data in horizontal and vertical cuts
         """
+        i = 0
         d2 = self.get_d2(sn=sn, det=det, frn=frn)
         qg = np.linspace(qs, qe, qn)
-        d2.conv_Iqphi(Nq=qg, Nphi=36, mask=d2.exp.mask)
+        d2.conv_Iqphi(Nq=qg, Nphi=Ns*4, mask=d2.exp.mask)
 
-        i %= 18
-        d1a = d2.qphi_data.d[i]
-        d1b = d2.qphi_data.d[i+18]
-        s0,d0 = max_len(d1a, d1b, return_all=True)
-        p0 = Schilling_p_value(qn, np.max(d0))
-        s1,d1 = max_len(d1a[1:], d1b[:-1], return_all=True)
-        p1 = Schilling_p_value(qn, np.max(d1))
-        s_1,d_1 = max_len(d1a[:-1], d1b[1:], return_all=True)
-        p_1 = Schilling_p_value(qn, np.max(d_1))
+        dch1 = d2.qphi_data.d[i]
+        dch2 = d2.qphi_data.d[i+2*Ns]
+        dcv1 = d2.qphi_data.d[i+Ns]
+        dcv2 = d2.qphi_data.d[i+3*Ns]
 
-        fig = plt.figure(figsize=(8,4), constrained_layout=True)
+        sh0,dh0 = max_len(dch1, dch2, return_all=True)
+        ph0 = Schilling_p_value(qn, np.max(dh0))
+        sh1,dh1 = max_len(dch1[1:], dch2[:-1], return_all=True)
+        ph1 = Schilling_p_value(qn, np.max(dh1))
+        sh_1,dh_1 = max_len(dch1[:-1], dch2[1:], return_all=True)
+        ph_1 = Schilling_p_value(qn, np.max(dh_1))
+
+        print(f"horizontal cuts:")
+        print(f"p-values(C): {ph0:.4f} (as is), {ph1:.4f} (shift +1), {ph_1:.4f} (shift -1)")
+        fig = plt.figure(figsize=(6,3), constrained_layout=True)
         #fig.subplots_adjust(bottom=0.3)
         gs = fig.add_gridspec(2,2)
 
         fig.add_subplot(gs[:, 0])
-        plt.semilogy(d2.qphi_data.xc, d1a)
-        plt.semilogy(d2.qphi_data.xc, d1b)        
+        plt.semilogy(d2.qphi_data.xc, dch1)
+        plt.semilogy(d2.qphi_data.xc, dch2)        
         
         fig.add_subplot(gs[1, 1])
-        plt.bar(range(len(s0)), (s0*2-1)/3, bottom=0, width=1)
-        plt.bar(range(len(s1)), (s1*2-1)/3, bottom=1, width=1)
-        plt.bar(range(len(s_1)), (s_1*2-1)/3, bottom=-1, width=1)
+        plt.bar(range(len(sh0)), (sh0*2-1)/3, bottom=0, width=1)
+        plt.bar(range(len(sh1)), (sh1*2-1)/3, bottom=1, width=1)
+        plt.bar(range(len(sh_1)), (sh_1*2-1)/3, bottom=-1, width=1)
         plt.xlabel("point position")
 
         fig.add_subplot(gs[0, 1])
-        maxb = 2.5+int(np.max(np.hstack((d0,d1,d_1,[qn/3]))))
-        plt.hist(d0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
-        plt.hist(d1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
-        plt.hist(d_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
+        maxb = 2.5+int(np.max(np.hstack((dh0,dh1,dh_1,[qn/3]))))
+        plt.hist(dh0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
+        plt.hist(dh1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
+        plt.hist(dh_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
         plt.ylim(-1.2,1.8)
         plt.xlabel("patch size")
         
-        print(f"p-values(C): {p0:.4f} (as is), {p1:.4f} (shift +1), {p_1:.4f} (shift -1)")
+        sv0,dv0 = max_len(dcv1, dcv2, return_all=True)
+        pv0 = Schilling_p_value(qn, np.max(dv0))
+        sv1,dv1 = max_len(dcv1[1:], dcv2[:-1], return_all=True)
+        pv1 = Schilling_p_value(qn, np.max(dv1))
+        sv_1,dv_1 = max_len(dcv1[:-1], dcv2[1:], return_all=True)
+        pv_1 = Schilling_p_value(qn, np.max(dv_1))
 
+        print(f"vertical cuts:")
+        print(f"p-values(C): {pv0:.4f} (as is), {pv1:.4f} (shift +1), {pv_1:.4f} (shift -1)")
+        fig = plt.figure(figsize=(6,3), constrained_layout=True)
+        #fig.subplots_adjust(bottom=0.3)
+        gs = fig.add_gridspec(2,2)
+
+        fig.add_subplot(gs[:, 0])
+        plt.semilogy(d2.qphi_data.xc, dcv1)
+        plt.semilogy(d2.qphi_data.xc, dcv2)        
+        
+        fig.add_subplot(gs[1, 1])
+        plt.bar(range(len(sv0)), (sv0*2-1)/3, bottom=0, width=1)
+        plt.bar(range(len(sv1)), (sv1*2-1)/3, bottom=1, width=1)
+        plt.bar(range(len(sv_1)), (sv_1*2-1)/3, bottom=-1, width=1)
+        plt.xlabel("point position")
+
+        fig.add_subplot(gs[0, 1])
+        maxb = 2.5+int(np.max(np.hstack((dv0,dv1,dv_1,[qn/3]))))
+        plt.hist(dv0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
+        plt.hist(dv1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
+        plt.hist(dv_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
+        plt.ylim(-1.2,1.8)
+        plt.xlabel("patch size")
+        
+        dq = d2.qphi_data.xc[1]-d2.qphi_data.xc[0]
+        X,Y = d2.exp.calc_from_QPhi(np.asarray([0., dq]), np.asarray([0., 0.]))
+        dx = np.sqrt((X[1]-X[0])**2+(Y[1]-Y[0])**2)
+        print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
     def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,

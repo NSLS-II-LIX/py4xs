@@ -98,4 +98,5 @@ added estimate_scaling_factor() for buffer subtraction
 assume default flow rate with older HPLC data
 revised ATSAS support functions; paralellized modelling using Dask
 
-
+2020-05:
+revised h5xs.check_bm_center()

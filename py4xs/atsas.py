@@ -4,18 +4,21 @@ from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
 
-def run(cmd, path=""):
+def run(cmd, path="", ignoreErrors=True, returnError=False):
     """ cmd should be a list, e.g. ["ls", "-lh"]
         path is for the cmd, not the same as cwd
     """
     cmd[0]+=path
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
-    if len(err)>0:
+    if len(err)>0 and not ignoreErrors:
         print(err.decode())
         raise Exception(err.decode())
-    return out.decode()
-
+    if returnError:
+        return out.decode(),err.decode()
+    else:
+        return out.decode()
+    
 def extract_vals(txt, dtype=float, strip=None, debug=False):
     if strip is not None:
         txt = txt.replace(strip, " ")

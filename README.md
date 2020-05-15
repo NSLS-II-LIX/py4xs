@@ -100,3 +100,6 @@ revised ATSAS support functions; paralellized modelling using Dask
 
 2020-05:
 revised h5xs.check_bm_center()
+added h5exp.recalibrate()
+incorporate estimate_scaling_dactor() into h5solHT.process()
+

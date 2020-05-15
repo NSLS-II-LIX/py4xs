@@ -4,15 +4,16 @@ import pylab as plt
 import h5py
 import numpy as np
 import time, datetime
-import copy
-import json,pickle
+import os,copy,subprocess,re
+import json,pickle,fabio
 import multiprocessing as mp
 
-from py4xs.slnxs import Data1d, average, filter_by_similarity, trans_mode
+from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names,det_model,beamline_name    # e.g. "_SAXS": "pil1M_image"
 from py4xs.data2d import Data2d, Axes2dPlot
+from py4xs.atsas import run
 from itertools import combinations
 
 from scipy.linalg import svd
@@ -247,26 +248,79 @@ class h5exp():
     def __init__(self, fn, exp_setup=None):
         self.fn = fn
         if exp_setup==None:     # assume the h5 file will provide the detector config
-            self.fh5 = h5py.File(self.fn, "r")   # file must exist
             self.qgrid = self.read_detectors()
         else:
-            self.fh5 = h5py.File(self.fn, "w")   # new file
             self.detectors, self.qgrid = exp_setup
             self.save_detectors()
-        self.fh5.close()
         
     def save_detectors(self):
+        self.fh5 = h5py.File(self.fn, "w")   # new file
         dets_attr = [det.pack_dict() for det in self.detectors]
         self.fh5.attrs['detectors'] = json.dumps(dets_attr)
         self.fh5.attrs['qgrid'] = list(self.qgrid)
         self.fh5.flush()
+        self.fh5.close()
     
     def read_detectors(self):
+        self.fh5 = h5py.File(self.fn, "r")   # file must exist
         dets_attr = self.fh5.attrs['detectors']
         qgrid = self.fh5.attrs['qgrid']
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+        self.fh5.close()
         return np.asarray(qgrid)
-        
+    
+    def recalibrate(self, fn_std, det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}):
+        """ fn_std should be a h5 file that contains AgBH pattern 
+            detector type
+        """
+        pxsize = 0.172e-3
+        dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
+        uname = os.getenv("USER")
+        sn = dstd.samples[0]
+        for det in self.detectors:
+            print(f"processing detector {det.extension} ...")    
+            ep = det.exp_para
+            poni_file = f"/tmp/{uname}{det.extension}.poni"
+            data_file = f"/tmp/{uname}{det.extension}.cbf"
+            img = dstd.fh5["%s/primary/data/%s" % (sn, dstd.det_name[det.extension])][0]
+            fabio.cbfimage.CbfImage(data=img).write(data_file)
+            if ep.flip: ## can only handle flip=1 right now
+                if ep.flip!=1: 
+                    raise Exception(f"don't know how to handle flip={ep.flip}.")
+                poni1 = pxsize*ep.bm_ctr_x
+                poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
+            else: 
+                poni1 = pxsize*ep.bm_ctr_y
+                poni2 = pxsize*ep.bm_ctr_x
+            poni_file_text = ["poni_version: 2",
+                              f"Detector: {det_type[det.extension]}",
+                              "Detector_config: {}",
+                              f"Distance: {pxsize*ep.Dd}",
+                              f"Poni1: {poni1}", # y-axis
+                              f"Poni2: {poni2}", # x-axis
+                              "Rot1: 0.0", "Rot2: 0.0", "Rot3: 0.0",
+                              f"Wavelength: {ep.wavelength*1e-10:.4g}"]
+            fh = open(poni_file, "w")
+            fh.write("\n".join(poni_file_text))
+            fh.close()
+            cmd = ["pyFAI-recalib", "-i", poni_file, 
+                   "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+            ret = run(cmd)
+            txt = ret.strip().split('\n')[-1]
+            #print(txt)
+            print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+            d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=np.float)[:3]
+            dr = d/(ep.Dd*pxsize)/1000  # d is in mm
+            ep.ratioDw *= dr
+            if ep.flip: ## can only handle flip=1 right now
+                ep.bm_ctr_x = yc
+                ep.bm_ctr_y = ep.ImageHeight-xc
+            else: 
+                ep.bm_ctr_y = yc
+                ep.bm_ctr_x = xc
+            print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+            ep.init_coordinates()
+        self.save_detectors()
         
 class h5xs():
     """ Scattering data in transmission geometry
@@ -1570,7 +1624,7 @@ class h5sol_HT(h5xs):
         
     def process(self, detectors=None, update_only=False,
                 reft=-1, sc_factor=1., save_1d=False, save_merged=False, 
-                filter_data=False, debug=False, N = 1):
+                filter_data=True, debug=False, N = 1):
         """ does everything: load data from 2D images, merge, then subtract buffer scattering
         """
         self.load_data(update_only=update_only, detectors=detectors, reft=reft, 
@@ -1607,9 +1661,16 @@ class h5sol_HT(h5xs):
             else:
                 self.d1b[sn] = self.d1s[bns[0]]['averaged'].avg([self.d1s[bn]['averaged'] for bn in bns[1:]], 
                                                                 debug=debug)
-            if sc_factor>0:
+            if sc_factor is "auto":
+                sf = estimate_scaling_factor(self.d1s[sn]['averaged'], self.d1b[sn])
+                if debug is not "quiet":
+                    print(f"setting sc_factor for {sn} to {sf:.4f}")
+                self.attrs[sn]['sc_factor'] = sf
+            elif sc_factor>0:
                 self.attrs[sn]['sc_factor'] = sc_factor
-            sf = self.attrs[sn]['sc_factor']
+                sf = sc_factor
+            else:
+                sf = self.attrs[sn]['sc_factor']
             self.d1s[sn]['subtracted'] = self.d1s[sn]['averaged'].bkg_cor(self.d1b[sn], 
                                                                           sc_factor=sf, debug=debug)
 

@@ -857,8 +857,11 @@ def estimate_scaling_factor(d1s, d1b,
     idx = (d1s.qgrid>q_min) & (d1s.qgrid<q_max) & (d1s.data>0) & (d1b.data>0)
     md1s = d1s.data[idx]
     md1b = d1b.data[idx]
-    md1sm = smooth(md1s, half_window_len=smoothing_width)
-    md1bm = smooth(md1b, half_window_len=smoothing_width)
+    try:
+        md1sm = smooth(md1s, half_window_len=smoothing_width)
+        md1bm = smooth(md1b, half_window_len=smoothing_width)
+    except:
+        return 1.0      # problems like incomplete data can cause smooth() to fail, no point to continue
     mq = d1s.qgrid[idx]
     sc = 0.9
     prec0 = 2

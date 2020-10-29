@@ -90,6 +90,7 @@ class ExpPara:
         calculate all coordinates (pixel position as well as various derived values)
         all coordinates are stored in 2D arrays, as is the data itself in Data2D
         """
+        self.calc_rot_matrix()
         (w,h) = (self.ImageWidth, self.ImageHeight)
         self.X = np.repeat(np.arange(w), h).reshape((w, h)).T
         X = self.X.flatten()

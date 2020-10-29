@@ -269,29 +269,42 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)
     
-    def recalibrate(self, fn_std, det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}):
-        """ fn_std should be a h5 file that contains AgBH pattern 
+    def recalibrate(self, fn_std, energy=-1, 
+                    det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
+                    bkg={}):
+        """ fn_std should be a h5 file that contains AgBH pattern
+            use the specified energy (keV) if the value is valid
             detector type
         """
         pxsize = 0.172e-3
         dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
         uname = os.getenv("USER")
         sn = dstd.samples[0]
+        if energy>5. and energy<20.:
+            wl = 2.*np.pi*1.973/energy
+            for det in self.detectors:
+                det.exp_para.wavelength = wl
         for det in self.detectors:
             print(f"processing detector {det.extension} ...")    
             ep = det.exp_para
             poni_file = f"/tmp/{uname}{det.extension}.poni"
             data_file = f"/tmp/{uname}{det.extension}.cbf"
             img = dstd.fh5["%s/primary/data/%s" % (sn, dstd.det_name[det.extension])][0]
-            fabio.cbfimage.CbfImage(data=img).write(data_file)
+
+            # this would work better if the detector geometry specification 
+            # can be more flexible for pyFAI-recalib 
             if ep.flip: ## can only handle flip=1 right now
                 if ep.flip!=1: 
                     raise Exception(f"don't know how to handle flip={ep.flip}.")
                 poni1 = pxsize*ep.bm_ctr_x
                 poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
+                dmask = np.fliplr(det.exp_para.mask.map.T)
             else: 
                 poni1 = pxsize*ep.bm_ctr_y
                 poni2 = pxsize*ep.bm_ctr_x
+                dmask = det.exp_para.mask.map
+            fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+
             poni_file_text = ["poni_version: 2",
                               f"Detector: {det_type[det.extension]}",
                               "Detector_config: {}",
@@ -303,8 +316,13 @@ class h5exp():
             fh = open(poni_file, "w")
             fh.write("\n".join(poni_file_text))
             fh.close()
-            cmd = ["pyFAI-recalib", "-i", poni_file, 
-                   "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+            if det.extension in bkg.keys():
+                cmd = ["pyFAI-recalib", "-i", poni_file, "-b", f"{bkg[det.extension]}", 
+                       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+            else:
+                cmd = ["pyFAI-recalib", "-i", poni_file, 
+                       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+            print(" ".join(cmd))
             ret = run(cmd)
             txt = ret.strip().split('\n')[-1]
             #print(txt)
@@ -566,6 +584,26 @@ class h5xs():
         print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
+    def show_data0(self, sn=None, det='_SAXS', frn=0, ax=None,
+                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+        """ display frame #frn of the data under det for sample sn
+        """
+        d2 = self.get_d2(sn=sn, det=det, frn=frn)
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+        pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
+        pax.plot(log=logScale)
+        if cmap is not None:
+            pax.set_color_scale(plt.get_cmap(cmap)) 
+        if showMask:
+            pax.plot(log=logScale, mask=d2.exp.mask)
+        pax.img.set_clim(*clim)
+        pax.coordinate_translation="xy2qphi"
+        if showRef:
+            pax.mark_standard("AgBH", "r:")
+        pax.capture_mouse()
+
     def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,
                   logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
@@ -574,6 +612,7 @@ class h5xs():
         if ax is None:
             plt.figure()
             ax = plt.gca()
+        
         pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
         pax.plot(log=logScale)
         if cmap is not None:

@@ -1,0 +1,6 @@
+site_name: py4xs documentaiton
+
+nav:
+    - Home: 'index.md'
+    - Class overview: 'class-overview.md'
+    - Examples: 'examples.md'

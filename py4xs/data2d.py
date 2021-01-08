@@ -220,7 +220,7 @@ class Data2d:
                     except:
                         self.uid = ''
             #f.close()
-        elif isinstance(img, np.ndarray):
+        elif isinstance(img, np.ndarray): 
             self.im = img
             self.timestamp = timestamp
             self.uid = uid

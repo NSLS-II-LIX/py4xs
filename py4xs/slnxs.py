@@ -519,7 +519,10 @@ class Data1d:
             cnt += 1
             # print i0, rg
         td[1, :] = i0 * np.exp(-td[0, :]*rg*rg/3.)
-
+        n1 = len(self.qgrid[self.qgrid<qs])
+        n2 = len(self.qgrid)-len(self.qgrid[self.qgrid>qe])
+        fit_range = [n1,n2]
+        
         if no_plot==False and rg>0.1:
             #ax.tick_params(axis='y', labelleft=False)    
             ax.plot([td[0, 0], td[0, -1]], [td[1, 0], td[1, -1]], "ro")
@@ -534,7 +537,7 @@ class Data1d:
             if i0>0:
                 ax.set_ylim(top=i0*2, bottom=i0*np.exp(-(qe*rg)**2/3)/2)
         # print "I0=%f, Rg=%f" % (i0,rg)
-        return (i0, rg)
+        return (i0, rg, fit_range) # include fit range to be more compatible with ATSAS
 
     def plot_pr(self, i0, rg, qmax=5., dmax=200., ax=None, fontsize='large'):
         """ calculate p(r) function
@@ -828,7 +831,7 @@ def process(sfns, bfns, detectors, qgrid, qmax=-1, qmin=-1,
 def analyze(d1, qstart, qend, fix_qe, qcutoff, dmax):
     plt.figure(figsize=(14, 5.5))
     plt.subplot(121)
-    (I0, Rg) = d1.plot_Guinier(qs=qstart, qe=qend, fix_qe=fix_qe)
+    I0,Rg,_ = d1.plot_Guinier(qs=qstart, qe=qend, fix_qe=fix_qe)
 
     print("I0=%f, Rg=%f" % (I0, Rg))
 

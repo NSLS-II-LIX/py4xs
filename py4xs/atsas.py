@@ -3,21 +3,7 @@ import numpy as np
 from io import StringIO
 import pylab as plt
 from dask.distributed import as_completed
-
-def run(cmd, path="", ignoreErrors=True, returnError=False):
-    """ cmd should be a list, e.g. ["ls", "-lh"]
-        path is for the cmd, not the same as cwd
-    """
-    cmd[0]+=path
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    if len(err)>0 and not ignoreErrors:
-        print(err.decode())
-        raise Exception(err.decode())
-    if returnError:
-        return out.decode(),err.decode()
-    else:
-        return out.decode()
+from py4xs.utils import run
     
 def extract_vals(txt, dtype=float, strip=None, debug=False):
     if strip is not None:
@@ -43,10 +29,17 @@ def atsas_autorg(fn, debug=False, path=""):
     #i0,di0 = extract_vals(ret[1], "+/-", debug=debug)
     #n1,n2 = extract_vals(ret[2], " to ", debug=debug, dtype=int)
     #qual = extract_vals(ret[3], "%", debug=debug)
-    rg,drg = extract_vals(ret[0])
-    i0,di0 = extract_vals(ret[1])
-    n1,n2 = extract_vals(ret[2], dtype=int)
-    qual = extract_vals(ret[3], strip="%")[0]
+    try:
+        rg,drg = extract_vals(ret[0])
+        i0,di0 = extract_vals(ret[1])
+        n1,n2 = extract_vals(ret[2], dtype=int)
+        qual = extract_vals(ret[3], strip="%")[0]
+    except:
+        print("Unable to run autorg ...")
+        rg,drg = 0,0
+        i0,di0 = 0,0
+        n1,n2 = 0,-1
+        qual = 0
     
     return {"Rg": rg, "Rg err": drg, 
             "I0": i0, "I0 err": di0,
@@ -64,31 +57,37 @@ def atsas_datgnom(fn, rg, first, last=None, fn_out=None, path=""):
     
     # datgnom vs datgnom4, slightly different input parameters
     ret = run(["datgnom", *options, fn], path).split("\n")
-    if len(ret)>1:
-        # example stdout results:
-        #    dmax:   50.170000000000002       Total:  0.90463013315175844     
-        #    Guinier:   15.332727107179052       Gnom:   15.332431498444064   
-        dmax,qual = extract_vals(ret[0])
-        rgg,rgp = extract_vals(ret[1])
-    else: 
-        # newer version of datgnom no longer reports Dmax/Rg on stdout,
-        # the .out file format is also different
-        # the Rg/Dmax values used to be located at the end of the file:
-        #    Total  estimate : 0.944  which is  AN EXCELLENT  solution
-        #    Reciprocal space: Rg =   14.75     , I(0) =   0.5740E+01
-        #    Real space: Rg =   14.74 +- 0.092  I(0) =   0.5740E+01 +-  0.2274E-01
-        # in the more recent files, this info in embedded in the header
-        #    Total Estimate:                      0.9546 (a EXCELLENT solution)
-        #    Reciprocal space Rg:             0.1471E+02
-        #    Reciprocal space I(0):           0.5733E+01
-        #    Real space range:                    0.0000 to      45.9000
-        #    Real space Rg:                   0.1470E+02 +-   0.1148E+00
-        #    Real space I(0):                 0.5733E+01 +-   0.2619E-01
-        qual = extract_vals(run(["grep", "Total Estimate", fn_out], path))[0]
-        dmax = extract_vals(run(["grep", "Real space range", fn_out], path))[1]
-        rgg = extract_vals(run(["grep", "Reciprocal space Rg", fn_out], path))[0]
-        rgp = extract_vals(run(["grep", "Real space Rg", fn_out], path))[0]
-        
+    try:
+        if len(ret)>1:
+            # example stdout results:
+            #    dmax:   50.170000000000002       Total:  0.90463013315175844     
+            #    Guinier:   15.332727107179052       Gnom:   15.332431498444064   
+            dmax,qual = extract_vals(ret[0])
+            rgg,rgp = extract_vals(ret[1])
+        else: 
+            # newer version of datgnom no longer reports Dmax/Rg on stdout,
+            # the .out file format is also different
+            # the Rg/Dmax values used to be located at the end of the file:
+            #    Total  estimate : 0.944  which is  AN EXCELLENT  solution
+            #    Reciprocal space: Rg =   14.75     , I(0) =   0.5740E+01
+            #    Real space: Rg =   14.74 +- 0.092  I(0) =   0.5740E+01 +-  0.2274E-01
+            # in the more recent files, this info in embedded in the header
+            #    Total Estimate:                      0.9546 (a EXCELLENT solution)
+            #    Reciprocal space Rg:             0.1471E+02
+            #    Reciprocal space I(0):           0.5733E+01
+            #    Real space range:                    0.0000 to      45.9000
+            #    Real space Rg:                   0.1470E+02 +-   0.1148E+00
+            #    Real space I(0):                 0.5733E+01 +-   0.2619E-01
+            qual = extract_vals(run(["grep", "Total Estimate", fn_out], path))[0]
+            dmax = extract_vals(run(["grep", "Real space range", fn_out], path))[1]
+            rgg = extract_vals(run(["grep", "Reciprocal space Rg", fn_out], path))[0]
+            rgp = extract_vals(run(["grep", "Real space Rg", fn_out], path))[0]
+    except:
+        qual = 0
+        dmax = 100
+        rgg = 0
+        rgp = 0
+    
     return {"Dmax": dmax, "quality": qual, 
             "Rg (q)": rgg, "Rg (r)": rgp}
 
@@ -240,16 +239,27 @@ def atsas_dat_tools(fn_out, path=""):
     #
     # datmow: Output: Q', V' (apparent Volume), V (Volume, A^3), MW (Da), file name
     ret = run(["datporod", fn_out], path).split('\n')
-    Vv = extract_vals(ret[0])[-1]
-    r_porod = {"vol": Vv}
+    try:
+        Vv = extract_vals(ret[0])[-1]
+        r_porod = {"vol": Vv}
+    except:
+        r_porod = {"vol": np.nan}
+        print("Unable to get output from datporod ...")
     
     #ret = run(f"datvc {fn_out}").split('\n')
-    #ii1,ii2,ii3,mw1,mw2,mw3 = extract_vals(ret[0])
-    #r_vc = {"MW": [mw1, mw2, mw3]}
+    #try:
+    #    ii1,ii2,ii3,mw1,mw2,mw3 = extract_vals(ret[0])
+    #    r_vc = {"MW": [mw1, mw2, mw3]}
+    #except:
+    #    print("Unable to get output from datvc ...")
     
     ret = run(["datmow", fn_out], path).split('\n')
-    Qp,Vp,Vv,mw = extract_vals(ret[0])[-4:]
-    r_mow = {"Q'": Qp, "app vol": Vp, "vol": Vv, "MW": mw}
+    try:
+        Qp,Vp,Vv,mw = extract_vals(ret[0])[-4:]
+        r_mow = {"Q": Qp, "app vol": Vp, "vol": Vv, "MW": mw}
+    except:
+        r_mow = {"Q": np.nan, "app vol": np.nan, "vol": np.nan, "MW": np.nan}
+        print("Unable to get output from datmow ...")
 
     return {"datporod": r_porod, 
             #"datvc": r_vc,  # this won't work if q_max is below 0.3 
@@ -280,32 +290,53 @@ def gen_atsas_report(d1s, ax=None, fig=None, sn=None, skip=0, q_cutoff=0.6, prin
     re_autorg = atsas_autorg(tfn, path=path)
     re_gnom = atsas_datgnom(tfn, re_autorg["Rg"], first=skip+1,
                             last=len(d1s.qgrid[d1s.qgrid<=q_cutoff]), fn_out=tfn_out, path=path)
-    hdr,di,dq,dr,dpr,dpre = read_gnom_out_file(tfn_out)
-    
+    try:
+        hdr,di,dq,dr,dpr,dpre = read_gnom_out_file(tfn_out)
+    except: # this would happen if gnom fails to run
+        hdr,di,dq,dr,dpr,dpre = 0,0,0,0,0,0
+        
     idx = (d1s.qgrid<q_cutoff)
     ax[0].semilogy(di, dq)
     ax[0].errorbar(d1s.qgrid[idx], d1s.data[idx], d1s.err[idx])
     #ax[0].yaxis.set_major_formatter(plt.NullFormatter())
-    ax[0].set_title("intensity")
-    ax[0].set_xlabel("q")
-
+    #ax[0].set_title("intensity")
+    ax[0].set_xlabel(r"$q$")
+    if re_autorg["Rg"]>0 and di is not None:
+        axx = ax[0].twiny()
+        Rg = re_autorg["Rg"] 
+        I0 = re_autorg["I0"]
+        n1,n2 = re_autorg["fit range"]
+        qf = d1s.qgrid[n1:n2]
+        gf = I0*np.exp(-(qf*Rg)**2/3)*2
+        idx = (d1s.qgrid<1.5/re_autorg["Rg"])
+        axx.errorbar(d1s.qgrid[idx]**2, d1s.data[idx]*2, d1s.err[idx], fmt="b.")
+        axx.plot(qf*qf, gf, "k")
+        axx.set_xlim(0, 3*(1.5/re_autorg["Rg"])**2)
+        axx.set_xlabel(r"$q^2$", loc='right')
+        locs = axx.get_xticks()
+        #if len(locs>6):
+        #    locs = locs[::2]
+        labels = [str(t) for t in locs]
+        axx.set_xticks(locs[:-2])
+        axx.set_xticklabels(labels[:-2])
+    
     if re_autorg["Rg"]==0:
         kratky_qm=0.3
         idx = (d1s.qgrid<kratky_qm)
         ax[1].plot(d1s.qgrid[idx], d1s.data[idx]*np.power(d1s.qgrid[idx], 2))
-        ax[1].set_xlabel("q")
+        ax[1].set_xlabel(r"$q$")
     else:
         kratky_qm=10./re_autorg["Rg"]
         idx = (d1s.qgrid<kratky_qm)
         ax[1].plot(d1s.qgrid[idx]*re_autorg["Rg"], d1s.data[idx]*np.power(d1s.qgrid[idx], 2))
-        ax[1].set_xlabel("q x Rg")    
+        ax[1].set_xlabel(r"$q %times Rg$")    
     ax[1].yaxis.set_major_formatter(plt.NullFormatter())
     ax[1].set_title("kratky plot")
 
     ax[2].errorbar(dr, dpr, dpre)
     ax[2].yaxis.set_major_formatter(plt.NullFormatter())
-    ax[2].set_title("P(r)")
-    ax[2].set_xlabel("r")
+    ax[2].set_title(r"$P(r)$")
+    ax[2].set_xlabel(r"$r$")
 
     ret = atsas_dat_tools(tfn_out, path=path)
     if print_results:

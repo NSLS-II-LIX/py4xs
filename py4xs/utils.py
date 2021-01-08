@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.colors as mc
 from functools import reduce
+import subprocess
 
 def max_len(d1a, d1b, return_all=False):
     """ perform a Cormap-like pairwise comparison between 2 arrays
@@ -148,7 +149,6 @@ def smooth(x,half_window_len=11,window='hanning'):
     if x.size < window_len:
         raise ValueError("Input vector needs to be bigger than window size.")
 
-
     if window_len<3:
         return x
 
@@ -167,3 +167,18 @@ def smooth(x,half_window_len=11,window='hanning'):
 
     y=np.convolve(w/w.sum(),s,mode='valid')
     return y[half_window_len:-half_window_len]
+
+def run(cmd, path="", ignoreErrors=True, returnError=False):
+    """ cmd should be a list, e.g. ["ls", "-lh"]
+        path is for the cmd, not the same as cwd
+    """
+    cmd[0] = path+cmd[0]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    if len(err)>0 and not ignoreErrors:
+        print(err.decode())
+        raise Exception(err.decode())
+    if returnError:
+        return out.decode(),err.decode()
+    else:
+        return out.decode()

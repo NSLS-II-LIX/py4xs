@@ -1,6 +1,34 @@
 site_name: py4xs documentaiton
 
+theme: readthedocs
+
+extra_javascript:
+  - javascripts/config.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  
+markdown_extensions:
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.arithmatex:
+      generic: true
+      
 nav:
-    - Home: 'index.md'
-    - Class overview: 'class-overview.md'
-    - Examples: 'examples.md'
+- Overview: 'index.md'
+- API:
+  - 'Detector': 'detector.md'
+  - 'Data': 'data.md'
+  - 'Data organization': 'hdf.md'
+- Examples: 
+  - 'mask and line cuts': 'Data2D_demo.ipynb'
+  - 'SAXS/WAXS': 'show_data.ipynb' 
+
+#plugins:
+#  - mkdocs-jupyter:
+#      include_source: false
+#      execute: true
+
+
+plugins:
+  - mknotebooks

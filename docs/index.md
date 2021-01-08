@@ -1,20 +1,24 @@
-# py4xs overview
+#
+py4xs is a collection of python modules for processing x-ray 
+scattering data. It aims to takes the experiemntal data from raw detector images 
+to a form that can be further analyzed using generic numerical tools, by taking into
+account the configuration of the x-ray scattering instrumentation. 
 
-py4xs is a collection of python modules that are developed for processing x-ray 
-scattering data. It provides the following functionalities:
+The development of py4xs started at the X9 beamline at NSLS and continuted at 
+the LiX beamline after the transition to NSLS-II, where it is being actively used for processing data in 
+solution scattering and microbeam mapping experiments.
+
+py4xs provides the following generic functionalities:
 
 * **Recipracal coordinates translation** Once the scattering geometry is defined,
   the recipracal coordinates for each detector pixel is calculated. Functions are 
   provided to translate the data into maps of various coordinates.
 
 * **Plotting** Scattering data are plotted using matplotlib with awareness of 
-  scattering 
+  the experimental configuration
 
 * **Solution scattering** Support for azimuthal average, merging of data from 
   multiple detectors, and buffer scattering subtraction.
-
-* **Data processing GUIs** These are provided as functions that run within Jupyter
-  notebooks.
 
 * **HDF5 packaging** All information relevant to the scattering experiment, including
   scattering geometry, raw data, and processed data, can be packaged into a single
@@ -22,6 +26,9 @@ scattering data. It provides the following functionalities:
 
 * **Data processing pipeline (under development)** Custom data processing pipelines 
   can be defined and saved in the hdf5 file.
+
+Functionalities specific to the LiX beamline (e.g. data processing GUIs) can be found
+under lixtools.
 
 ## Project layout
 

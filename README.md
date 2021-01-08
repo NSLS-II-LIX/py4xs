@@ -103,3 +103,9 @@ revised h5xs.check_bm_center()
 added h5exp.recalibrate()
 incorporate estimate_scaling_dactor() into h5solHT.process()
 
+2020-12:
+revised handling of transField in h5xs
+revised h5xs.load_data()
+added h5xs.show_data_qxy() and show_data_qphi()
+
+

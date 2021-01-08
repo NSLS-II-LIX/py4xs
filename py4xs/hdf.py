@@ -12,15 +12,15 @@ from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names,det_model,beamline_name    # e.g. "_SAXS": "pil1M_image"
-from py4xs.data2d import Data2d, Axes2dPlot
-from py4xs.atsas import run
+from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
+from py4xs.utils import run
 from itertools import combinations
 
 from scipy.linalg import svd
 from scipy.interpolate import splrep,sproot,splev
 from scipy.ndimage.filters import gaussian_filter
-from scipy.interpolate import UnivariateSpline 
-
+from scipy.interpolate import interp1d
+from scipy.interpolate import UnivariateSpline as uspline
 
 def lsh5(hd, prefix='', top_only=False, silent=False):
     """ list the content of a HDF5 file
@@ -158,6 +158,72 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
         s0.save(s0.label+".dd", debug=debug)
         
     return s0
+
+
+# copied from pipeline-test: merge, fix_angular_range, interp_d2
+def merge(ds):
+    """ merge a list of MatrixWithCoord together
+        the datatype should be DataType.qphi
+    """
+    if len(ds)==1:
+        return ds[0].copy()
+    
+    wt = np.zeros(ds[0].shape)
+    avg = np.zeros(ds[0].shape)
+    idx = None
+    for d in ds:
+        if d.shape!=avg.shape:
+            raise Exception("merge: the two data sets must have the same shape: ", d.shape, avg.shape)
+        idx = ~np.isnan(d)
+        avg[idx] += d[idx]
+        wt[idx] += 1
+
+    idx = (wt>0)
+    avg[idx] /= wt[idx]
+    avg[~idx] = np.nan
+    
+    return avg
+    
+def fix_angular_range(da):
+    """ da should be a numpy array
+        return modified angular range between -180 and 180
+        assume that the angular value is not too far off to begin with
+    """
+    da1 = np.copy(da)
+    da1[da1>180] -= 360    # worse case some angles may go up to 360+delta 
+    da1[da1<-180] += 360   # this shouldn't happen
+    return da1
+
+def interp_d2(d2, method="spline", param=0.05):
+    """ d2 is a 2d array
+        interpolate within each row 
+        methods should be "linear" or "spline"
+        
+        a better version of this should use 2d interpolation
+        but only fill in the space that is narrow enough in one direction (e.g. <5 missing data points)
+        
+    """
+    h,w = d2.shape
+    
+    xx1 = np.arange(w)
+    for k in range(h):
+        yy1 = d2[k,:]    
+        idx = ~np.isnan(yy1)
+        if len(idx)<=10:  # too few valid data points
+            continue
+        idx1 = np.where(idx)[0]
+        # only need to refill the values that are currently nan
+        idx2 = np.copy(idx)
+        idx2[:idx1[0]] = True
+        idx2[idx1[-1]:] = True
+        if method=="linear":
+            d2[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
+        elif method=="spline":
+            fs = uspline(xx1[idx], yy1[idx])
+            fs.set_smoothing_factor(param)
+            d2[k,~idx2] = fs(xx1[~idx2])
+        else:
+            raise Exception(f"unknown method for intepolation: {method}")
 
 
 def proc_2d(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
@@ -357,6 +423,7 @@ class h5xs():
         self.attrs = {}
         # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
         self.transField = None  
+        self.transStream = None  
 
         self.fn = fn
         self.save_d1 = save_d1
@@ -367,36 +434,50 @@ class h5xs():
             self.detectors, self.qgrid = exp_setup
             self.save_detectors()
         self.list_samples(quiet=True)
+
         # find out what are the fields corresponding to the 2D detectors
         # at LiX there are two possibilities
-        data_fields = list(self.fh5[self.samples[0]+'/primary/data'])
+        sn = self.samples[0]
+        streams = list(self.fh5[f"{sn}"])
+        data_fields = {}
+        for stnm in streams:
+            if 'data' in self.fh5[f"{sn}/{stnm}"].keys(): 
+                for tf in list(self.fh5[f"{sn}/{stnm}/data"]):
+                    data_fields[tf] = stnm
+        
         self.det_name = None
         # these are the detectors that are present in the data
         d_dn = [d.extension for d in self.detectors]
         for det_name in det_names:
             for k in set(det_name.keys()).difference(d_dn):
                 del det_name[k]
-            if set(det_name.values()).issubset(data_fields):
+            if set(det_name.values()).issubset(data_fields.keys()):
                 self.det_name = det_name
                 break
         if self.det_name is None:
             print('fields in the h5 file: ', data_fields)
             raise Exception("Could not find the data corresponding to the detectors.")
-        if transField=='':
+        if transField=='': 
             if 'trans' in self.fh5.attrs:
-                [v, self.transField] = self.fh5.attrs['trans'].split(',')
+                tf = self.fh5.attrs['trans'].split(',')
+                if len(tf)<3:  # in earlier code, transStream is not recorded
+                    [v, self.transField] = tf
+                else: 
+                    [v, self.transField, self.transStream] = tf
                 self.transMode = trans_mode(int(v))
                 return
             else:
                 self.transMode = trans_mode.from_waxs
                 self.transField = ''
-        elif transField not in data_fields:
-            print("invalid filed for transmitted intensity: ", transField)
+                self.transStream = ''
+        elif transField not in list(data_fields.keys()):
+            print("invalid field for transmitted intensity: ", transField)
             raise Exception()
         else:
             self.transField = transField
+            self.transStream = data_fields[transField]
             self.transMode = trans_mode.external
-        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])
+        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField, self.transStream])
         self.fh5.flush()
             
     def save_detectors(self):
@@ -488,26 +569,29 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
-    def get_d2(self, sn=None, det='_SAXS', frn=0):
+    def get_d2(self, sn=None, det_ext=None, frn=0):
         if sn is None:
             sn = self.samples[0]
-        dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det])]
-        if len(dset.shape)>3:
-            dset = dset[0]
-        di = np.argwhere([d.extension==det for d in self.detectors])[0][0]
-        exp = self.detectors[di].exp_para
-        d2 = Data2d(dset[frn], exp=exp)
-
-        return d2
-    
-    def check_bm_center(self, sn=None, det='_SAXS', frn=0, 
+        d2s = {}
+        for det in self.detectors:
+            dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])]
+            if len(dset.shape)>3:  # need to make more effort
+                dset = dset[0]
+            d2 = Data2d(dset[frn], exp=det.exp_para)
+            d2s[det.extension] = d2
+        if not det_ext:
+            return d2s
+        else:
+            return d2s[det_ext]
+                
+    def check_bm_center(self, sn=None, det_ext='_SAXS', frn=0, 
                         qs=0.005, qe=0.05, qn=100, Ns=9):
         """ this function compares the beam intensity on both sides of the beam center,
             and advise if the beam center as defined in the detector configuration is incorrect
             dividing data into 4*Ns slices, show data in horizontal and vertical cuts
         """
         i = 0
-        d2 = self.get_d2(sn=sn, det=det, frn=frn)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
         qg = np.linspace(qs, qe, qn)
         d2.conv_Iqphi(Nq=qg, Nphi=Ns*4, mask=d2.exp.mask)
 
@@ -584,11 +668,11 @@ class h5xs():
         print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
-    def show_data0(self, sn=None, det='_SAXS', frn=0, ax=None,
+    def show_data0(self, sn=None, det_ext='_SAXS', frn=0, ax=None,
                   logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
         """
-        d2 = self.get_d2(sn=sn, det=det, frn=frn)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -604,11 +688,11 @@ class h5xs():
             pax.mark_standard("AgBH", "r:")
         pax.capture_mouse()
 
-    def show_data(self, sn=None, det='_SAXS', frn=0, ax=None,
+    def show_data(self, sn=None, det_ext='_SAXS', frn=0, ax=None,
                   logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
         """
-        d2 = self.get_d2(sn=sn, det=det, frn=frn)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -626,6 +710,112 @@ class h5xs():
         pax.capture_mouse()
         #plt.show() 
     
+    def show_data_qxy(self, sn=None, frn=0, ax=None, dq=0.006,
+                      fig_type="qxy", apply_sym=False, fix_gap=False,
+                      logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+        """ display frame #frn of the data under det for sample sn
+            det is a list of detectors, or a string, data file extension
+            fig_type should be either "qxy" or "qphi"
+        """
+        d2s = self.get_d2(sn=sn, frn=frn)
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+
+        xqmax = np.max([d.exp_para.xQ.max() for d in self.detectors])
+        xqmin = np.min([d.exp_para.xQ.min() for d in self.detectors])
+        yqmax = np.max([d.exp_para.yQ.max() for d in self.detectors])
+        yqmin = np.min([d.exp_para.yQ.min() for d in self.detectors])
+
+        xqmax = np.floor(xqmax/dq)*dq
+        xqmin = np.ceil(xqmin/dq)*dq
+        yqmax = np.floor(yqmax/dq)*dq
+        yqmin = np.ceil(yqmin/dq)*dq
+
+        xqgrid = np.arange(start=xqmin, stop=xqmax+dq, step=dq)
+        yqgrid = np.arange(start=yqmin, stop=yqmax+dq, step=dq)        
+
+        xyqmaps = []
+        for dn in d2s.keys():   
+            if showMask:
+                mask = d2s[dn].exp.mask
+            else:
+                mask = None
+            mp = d2s[dn].data.conv(xqgrid, yqgrid, 
+                                   d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
+                                   mask=mask)
+            mp.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
+            xyqmaps.append(mp.d)
+        xyqmap = merge(xyqmaps)
+
+        if logScale:
+            plt.imshow(np.log(xyqmap), extent=(xqmin, xqmax, yqmin, yqmax))
+            plt.clim(np.log(clim))
+        else:
+            plt.imshow(xyqmap, extent=(xqmin, xqmax, yqmin, yqmax))
+            plt.clim(clim)
+
+    def show_data_qphi(self, sn=None, frn=0, ax=None, Nq=200, Nphi=60,
+                       apply_symmetry=False, fill_gap=False, interp_method='linear',
+                       logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+        d2s = self.get_d2(sn=sn, frn=frn)
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+
+        qmax = np.max([d.exp_para.Q.max() for d in self.detectors]) 
+        qmin = np.min([d.exp_para.Q.min() for d in self.detectors]) 
+        # keep 2 significant digits only for the step_size
+        dq = (qmax-qmin)/Nq
+        n = int(np.floor(np.log10(dq)))
+        sc = np.power(10., n)
+        dq = np.around(dq/sc, 1)*sc
+
+        qmax = dq*np.ceil(qmax/dq)
+        qmin = dq*np.floor(qmin/dq)
+        Nq = int((qmax-qmin)/dq+1)
+
+        q_grid = np.linspace(qmin, qmax, Nq) 
+
+        Nphi = 2*int(Nphi/2)+1
+        phi_grid = np.linspace(-180., 180, Nphi)
+
+        dms = []
+        for dn in d2s.keys():   
+            if showMask:
+                mask = d2s[dn].exp.mask
+            else:
+                mask = None
+            # since the q/phi grids are specified, use the MatrixWithCoord.conv() function
+            # the grid specifies edges of the bin for histogramming
+            # the phi value in exp_para may not always be in the range of (-180, 180)
+            dm = d2s[dn].data.conv(q_grid, phi_grid, 
+                                   d2s[dn].exp.Q, 
+                                   fix_angular_range(d2s[dn].exp.Phi),
+                                   mask=mask, datatype=DataType.qphi)
+
+            d1 = dm.d*(d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
+            if apply_symmetry:
+                Np = int(Nphi/2)
+                d2 = np.vstack([d1[Np:,:], d1[:Np,:]])
+                d1 = merge([d1,d2])
+
+            # not attempt to extrapolate into non-coveraged area in reciprocal space
+            # doing interpolation here since the non-coverage area is well defined for 
+            # a single detector, but may not be in merged data 
+            if fill_gap:
+                interp_d2(d1, method=interp_method)
+
+            dms.append(d1)
+
+        qphimap = merge(dms)
+        if logScale:
+            plt.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect="auto")
+            plt.clim(np.log(clim))
+        else:
+            plt.imshow(qphiqmap, extent=(qmin, qmax, -180, 180), aspect="auto")
+            plt.clim(clim)
+
     def set_trans(self, sn=None, transMode=None, interpolate=False, gf_sigma=5):
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
@@ -642,19 +832,13 @@ class h5xs():
         else:
             samples = [sn]
         for s in samples:
-            if transMode==trans_mode.external:
-                if self.transField in self.fh5[f'{s}/primary/data/']:
-                    trans_data = self.fh5[f'{s}/primary/data/{self.transField}'][...]
-                    ts = self.fh5[f'{s}/primary/timestamps/{self.transField}'][...]
-                elif self.transField in self.fh5[f'{s}']:
-                    trans_data = self.fh5[f'{s}/{self.transField}/data/{self.transField}'][...]
-                    ts = self.fh5[f'{s}/{self.transField}/timestamps/{self.transField}'][...]
-                else:
-                    raise Exception(f"could not find transmission data from {self.transField}.")
-            if interpolate:  ## smoothing really
-                spl = UnivariateSpline(ts, gaussian_filter(trans_data, gf_sigma))
-                ts0 = self.fh5[f'{s}/primary/timestamps/{list(self.det_name.values())[0]}'][...]
-                trans_data = spl(ts0)
+            if self.transMode==trans_mode.external: # transField should be set/validated already
+                trans_data = self.fh5[f'{s}/{self.transStream}/data/{self.transField}'][...]
+                ts = self.fh5[f'{s}/{self.transStream}/timestamps/{self.transField}'][...]
+                if interpolate:  ## smoothing really
+                    spl = UnivariateSpline(ts, gaussian_filter(trans_data, gf_sigma))
+                    ts0 = self.fh5[f'{s}/primary/timestamps/{list(self.det_name.values())[0]}'][...]
+                    trans_data = spl(ts0)
         
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():
@@ -1353,7 +1537,7 @@ class h5sol_HPLC(h5xs):
             d_s.append(data[i].data)
 
             if ii>thresh and calc_Rg and dkey=='subtracted':
-                i0,rg = data[i].plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
+                i0,rg,_ = data[i].plot_Guinier(qs, qe, fix_qe=fix_qe, no_plot=True)
                 d_rg[i] = rg
     
         # read HPLC data directly from HDF5
@@ -1539,7 +1723,7 @@ class h5sol_HPLC(h5xs):
                 ax1.semilogy(d1s0.qgrid, d1s0.data)
                 ax1.errorbar(d1s0.qgrid, d1s0.data, d1s0.err)
                 ax1.set_xlim(0,qmax)
-                i0,rg = d1s0.plot_Guinier(qs=qs, ax=ax2)
+                i0,rg,_ = d1s0.plot_Guinier(qs=qs, ax=ax2)
             #print(f"I0={i0:.2g}, Rg={rg:.2f}")
 
         if plot_data:
@@ -1702,6 +1886,9 @@ class h5sol_HT(h5xs):
                                                                 debug=debug)
             if sc_factor is "auto":
                 sf = estimate_scaling_factor(self.d1s[sn]['averaged'], self.d1b[sn])
+                # Data1d.bkg_cor() normalizes trans first before applying sc_factor
+                # in contrast the estimated 
+                sf /= self.d1s[sn]['averaged'].trans/self.d1b[sn].trans
                 if debug is not "quiet":
                     print(f"setting sc_factor for {sn} to {sf:.4f}")
                 self.attrs[sn]['sc_factor'] = sf
@@ -1731,4 +1918,3 @@ class h5sol_HT(h5xs):
      
     def export_txt(self, *args, **kwargs):
         super().export_d1s(*args, **kwargs)
-        

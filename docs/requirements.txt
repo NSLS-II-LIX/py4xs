@@ -1,0 +1,3 @@
+pymdown-extensions
+python-markdown-math
+mknotebooks

@@ -1,5 +1,7 @@
-h5xs
-----------------
+#
+
+## h5xs
+
   This is the base class that associates a h5 file with scattering data. `h5xs` translates 
   the raw information in the h5 file into meanful py4xs objects (e.g. Data1d instances),
   on which data analysis can be carried out.
@@ -20,9 +22,9 @@ h5xs
   in the h5 file in various coordinates (see examples).
   
   
-h5exp
-----------------
-  `h5exp` is derived from `h5xs` and is used to store the detector configuration and $q$-grid 
+## h5exp
+
+`h5exp` is derived from `h5xs` and is used to store the detector configuration and $q$-grid 
   so that this information can be propagated easily to other `h5xs` objects.
   
   ``save_detectors()`` and ``read_detectors()`` are provided to exchange information between 

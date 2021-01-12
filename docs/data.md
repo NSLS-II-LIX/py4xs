@@ -1,5 +1,5 @@
-MatrixWithCoords
-----------------
+#
+## MatrixWithCoords
   This class is created to define intensity maps, for which the coordinates for
   the pixels in the map need to be defined. 
 
@@ -17,8 +17,9 @@ MatrixWithCoords
   ``line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None)`` 
   returns a line cut from the intensity map. Masked pixels are omitted.
 
-Data2d
 ----------------
+
+## Data2d
   Generic scattering data. Multiple representations can exist: ``data`` (raw detector
   image), ``qrqz_data`` ( $q_r - q_z$ map, grazing incidence), and ``qphi_data`` 
   ( $q - \phi$ map).
@@ -38,8 +39,9 @@ Data2d
   map of the scattering data.
 
 
-Axes2dPlot
 ------------
+
+## Axes2dPlot
 
   This class displays 2D scattering data in a matplotlib ``Axes``. It captures mouse
   clicks to display the reciprocal coordinates at the clicked pixel, and can overlay
@@ -55,9 +57,9 @@ Axes2dPlot
 
   ``plot()`` plots the data. 
 
-
-Data1d
 -----------
+
+## Data1d
 
   ``trans`` is the (relative) value of the transmitted intensity, which is used as a reference
   for normlization during background subtraction. Two modes are allowed (defined as members of the 

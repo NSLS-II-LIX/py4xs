@@ -1,5 +1,7 @@
-ExpPara
----------------
+#
+
+## ExpPara
+
   Experimental parameters necessary to define the scattering geometry for 
   a 2D detector. 
 
@@ -40,8 +42,9 @@ ExpPara
 
   ``FSA``  accounts for the difference in the solid angle each pixel opens to the sample.
 
-Mask
 ---------------
+
+## Mask
   Mask for the scattering data to eliminate pixels to be excluded from data 
   processing. A mask in py4xs is typically defined as a collection of geometric
   shapes. The mask should have the same dimension as the detector image.
@@ -67,9 +70,9 @@ Mask
 
   ``add_item()`` : add new shapes into the existing mask
 
-
-DetectorConfig
 ---------------
+
+## DetectorConfig
   All detector-related information
 
   ``extension`` : file extension for the data file

@@ -6,7 +6,10 @@ h5xs
   
   Each `h5xs` object must be initilized with detector configurations and a $q$-grid.
   
-  ``d1s`` : dictionaries of Data1d objects derived from the scattering patterns.  
+  ``fh5``: the file handle to the associated h5 file. 
+  
+  ``d1s`` : dictionaries of Data1d objects derived from the scattering patterns, organized
+  by samples, then by data source.
   
   ``load_data()``: generate the initial `d1s` objects from the scattering patterns
   

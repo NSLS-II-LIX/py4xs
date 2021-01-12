@@ -16,13 +16,14 @@ markdown_extensions:
       
 nav:
 - Overview: 'index.md'
-- API:
+- Classes and utility functions:
   - 'Detector': 'detector.md'
   - 'Data': 'data.md'
   - 'Data organization': 'hdf.md'
 - Examples: 
-  - 'mask and line cuts': 'Data2D_demo.ipynb'
-  - 'SAXS/WAXS': 'show_data.ipynb' 
+  - The basics: Data2D_demo.ipynb
+  - Data visualization: show_data.ipynb 
+  - Data processing workflow: mapping.ipynb
 
 #plugins:
 #  - mkdocs-jupyter:

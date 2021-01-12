@@ -21,7 +21,8 @@
   `show_data()`, `show_data_qphi()`, and `show_data_qxy()`: display the scattering pattern
   in the h5 file in various coordinates (see examples).
   
-  
+---------------
+
 ## h5exp
 
 `h5exp` is derived from `h5xs` and is used to store the detector configuration and $q$-grid 

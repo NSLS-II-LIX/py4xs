@@ -75,7 +75,7 @@
 ## DetectorConfig
   All detector-related information
 
-  ``extension`` : file extension for the data file
+  ``extension`` : detector extension/designation that appears in the data file name
 
   ``exp_para`` : experimental parameters for the detector, as defined above
 

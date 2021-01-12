@@ -22,7 +22,7 @@ from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import interp1d
 from scipy.interpolate import UnivariateSpline as uspline
 
-def lsh5(hd, prefix='', top_only=False, silent=False):
+def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
     """ list the content of a HDF5 file
         
         hd: a handle returned by h5py.File()
@@ -38,8 +38,9 @@ def lsh5(hd, prefix='', top_only=False, silent=False):
     for k in list(hd.keys()):
         print(prefix, k)
         if isinstance(hd[k], h5py.Group):
-            print(list(hd[k].attrs.items()))
-            lsh5(hd[k], prefix+"=")
+            if print_attrs:
+                print(list(hd[k].attrs.items()))
+            lsh5(hd[k], prefix+"=", silent=silent, print_attrs=print_attrs)
 
 def create_linked_files(fn, fnlist):
     """ create a new file to links to data in existing files in the fn_list

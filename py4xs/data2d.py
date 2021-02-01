@@ -392,8 +392,7 @@ class Axes2dPlot:
     def clicked(self, event):
         if event.inaxes != self.ax:
             return True
-        toolbar = plt.get_current_fig_manager().toolbar
-        x = event.xdata 
+        x = event.xdatta 
         y = event.ydata 
         if self.coordinate_translation=="xy2qrqz":
             (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
@@ -402,29 +401,32 @@ class Axes2dPlot:
             (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
             msg = "q=%.4f, phi=%.1f" % (q[0],phi[0])
         else:
-            msg = f"({x}, {y})"
-        toolbar.set_message(msg)
+            msg = f"({x:.1f}, {y:.1f})"
+        self.ax.set_title(msg, fontsize="small")
+        print(msg)
         return True
 
     # best modify d2.xc/d2.yc instead of using xscale/yscale
-    def plot(self, mask=None, log=False, aspect=1., xscale=1., yscale=1.):
+    def plot(self, showMask=None, logScale=False,mask_alpha=0.1,
+             aspect=1., xscale=1., yscale=1.):
 
         dd = np.asarray(self.d2.d, dtype=np.float)
-        if mask is not None:
-            dd[mask.map] = np.nan
 
         immax = np.average(dd) + 5 * np.std(dd)
         immin = np.average(dd) - 5 * np.std(dd)
         if immin < 0:
             immin = 0
 
-        if log:
-            self.img = self.ax.imshow(dd, aspect=aspect,
+        if showMask and self.exp:
+            self.ax.imshow(self.exp.mask.map, cmap="gray")
+        if logScale:
+            self.img = self.ax.imshow(dd, aspect=aspect, alpha=1-mask_alpha,
                                       cmap=self.cmap, interpolation='nearest', norm=LogNorm(),
                                       extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
                                               self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale])
         else:
-            self.img = self.ax.imshow(dd, vmax=immax, vmin=immin, aspect=aspect,
+            self.img = self.ax.imshow(dd, vmax=immax, vmin=immin, 
+                                      aspect=aspect, alpha=1-mask_alpha,
                                       cmap=self.cmap, interpolation='nearest',
                                       extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
                                               self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]) 
@@ -519,6 +521,8 @@ class Axes2dPlot:
             q_std = [ 2.0116, 2.3219, 3.2838, 3.8504 ]
         elif std=="LaB6": # NIST SRM 660c
             q_std = [ 1.5115, 2.1376, 2.6180, 3.0230, 3.3799, 3.7025 ]
+        elif isinstance(std, list):
+            q_std = np.asarray(std, dtype=np.float)
         else: # unknown standard
             return 
         self.mark_coords(q_std, [], sym, DataType.q)

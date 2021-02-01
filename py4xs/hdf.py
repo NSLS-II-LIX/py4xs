@@ -3,7 +3,7 @@
 import pylab as plt
 import h5py
 import numpy as np
-import time, datetime
+import time,datetime
 import os,copy,subprocess,re
 import json,pickle,fabio
 import multiprocessing as mp
@@ -16,10 +16,8 @@ from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
 from py4xs.utils import run
 from itertools import combinations
 
-from scipy.linalg import svd
-from scipy.interpolate import splrep,sproot,splev
-from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import interp1d
+from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
 
 def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
@@ -314,7 +312,7 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)
     
-    def recalibrate(self, fn_std, energy=-1, use_recalib=True,
+    def recalibrate(self, fn_std, energy=-1, use_recalib=False,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
                     bkg={}):
         """ fn_std should be a h5 file that contains AgBH pattern
@@ -366,8 +364,10 @@ class h5exp():
                 fh = open(poni_file, "w")
                 fh.write("\n".join(poni_file_text))
                 fh.close()
-                cmd = ["pyFAI-recalib", "-i", poni_file, 
-                       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+                #cmd = ["pyFAI-recalib", "-i", poni_file, 
+                #       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+                cmd = ["pyFAI-calib", "-i", poni_file, 
+                       "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
                 print(" ".join(cmd))
                 ret = run(cmd)
                 txt = ret.strip().split('\n')[-1]
@@ -678,47 +678,25 @@ class h5xs():
         print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
-    def show_data0(self, sn=None, det_ext='_SAXS', frn=0, ax=None,
-                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
-        """ display frame #frn of the data under det for sample sn
-        """
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-        pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
-        pax.plot(log=logScale)
-        if cmap is not None:
-            pax.set_color_scale(plt.get_cmap(cmap)) 
-        if showMask:
-            pax.plot(log=logScale, mask=d2.exp.mask)
-        pax.img.set_clim(*clim)
-        pax.coordinate_translation="xy2qphi"
-        if showRef:
-            pax.mark_standard("AgBH", "r:")
-        pax.capture_mouse()
-
     def show_data(self, sn=None, det_ext='_SAXS', frn=0, ax=None,
-                  logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+                  logScale=True, showMask=False, mask_alpha=0.1, 
+                  clim=(0.1,14000), showRef=["AgBH", "r:"], cmap=None):
         """ display frame #frn of the data under det for sample sn
         """
         d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
         if ax is None:
             plt.figure()
             ax = plt.gca()
-        
         pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
-        pax.plot(log=logScale)
         if cmap is not None:
             pax.set_color_scale(plt.get_cmap(cmap)) 
-        if showMask:
-            pax.plot(log=logScale, mask=d2.exp.mask)
+        pax.plot(logScale=logScale, showMask=showMask, mask_alpha=mask_alpha)
         pax.img.set_clim(*clim)
         pax.coordinate_translation="xy2qphi"
         if showRef:
-            pax.mark_standard("AgBH", "r:")
+            pax.mark_standard(*showRef)
         pax.capture_mouse()
-        #plt.show() 
+        plt.show() 
     
     def show_data_qxy(self, sn=None, frn=0, ax=None, dq=0.006,
                       fig_type="qxy", apply_sym=False, fix_gap=False,

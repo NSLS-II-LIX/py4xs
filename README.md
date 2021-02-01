@@ -108,4 +108,6 @@ revised handling of transField in h5xs
 revised h5xs.load_data()
 added h5xs.show_data_qxy() and show_data_qphi()
 
-
+2021-01:
+revised 2d data plotting; possible to display arbitrary reference rings
+use pyFAI-calib2 for h5exp.recalibrate()

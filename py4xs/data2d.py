@@ -182,6 +182,15 @@ class MatrixWithCoords:
         
         return ret
     
+    def bkg_cor(self, dbkg, scale_factor=1.0, in_place=True):
+        if not np.array_equal(self.xc, dbkg.xc) or not np.array_equal(self.xc, dbkg.xc) or self.datatype!=dbkg.datatype:
+            raise Exception("attempted background subtraction using imcompatiple data.")
+        if in_place:
+            self.d -= np.asarray(dbkg.d*scale_factor, dtype=self.d.dtype)
+        else:
+            ret = copy.deepcopy(self)
+            ret.d = self.d - dbkg.d*scale_factor
+    
     def merge(self, datalist):
         """ merge with the list of data given, not necessarily having the same coordinates
         """
@@ -204,6 +213,7 @@ class Data2d:
         self.qrqz_data = MatrixWithCoords()
         self.qphi_data = MatrixWithCoords()
         self.label = label
+        self.md = {}
         
         if isinstance(img, str):
             f = fabio.open(img)
@@ -374,6 +384,7 @@ class Axes2dPlot:
         self.ptns = []
         self.xlim = None
         self.ylim = None
+        self.img = None
         self.coordinate_translation = None
         self.exp = exp
         self.n_step = 121
@@ -407,7 +418,7 @@ class Axes2dPlot:
         return True
 
     # best modify d2.xc/d2.yc instead of using xscale/yscale
-    def plot(self, showMask=None, logScale=False,mask_alpha=0.1,
+    def plot(self, showMask=None, logScale=False, mask_alpha=0.1,
              aspect=1., xscale=1., yscale=1.):
 
         dd = np.asarray(self.d2.d, dtype=np.float)
@@ -439,7 +450,8 @@ class Axes2dPlot:
         if not gamma == 1:
             cmap = cmap_map(lambda x: np.exp(gamma * np.log(x)), cmap)
         self.cmap = cmap
-        self.img.set_cmap(cmap)
+        if self.img is not None:
+            self.img.set_cmap(cmap)
 
     # xvalues and yvalues should be arrays of the same length, positons to be markes
     # used to mark a pixel position, in all types of 2D maps, or a (qr,qz) or (p,phi) pair on the detector image

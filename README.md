@@ -111,3 +111,8 @@ added h5xs.show_data_qxy() and show_data_qphi()
 2021-01:
 revised 2d data plotting; possible to display arbitrary reference rings
 use pyFAI-calib2 for h5exp.recalibrate()
+
+2021-02:
+new methods under h5xs: get_d1(), verify_frn()
+corrected data sequence in h5xs.d1s
+

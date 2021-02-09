@@ -579,15 +579,47 @@ class h5xs():
         if not quiet:
             print(self.samples)
     
-    def get_d2(self, sn=None, det_ext=None, frn=0):
+    def verify_frn(self, sn, frn, flatten=False):
+        dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+        if frn is None:
+            frn = 0
+        if hasattr(frn, '__iter__'): # tuple or list or np array
+            if len(frn)!=len(dshape):
+                raise Exception(f"invalid frame number {frn}, must contain {len(dshape)-2} element(s).")
+        if isinstance(frn, int): # translate to the right shape
+            if flatten:
+                return frn
+            idx = []
+            for i in reversed(range(len(dshape))):
+                idx = [frn%dshape[i]]+idx
+                frn = int(frn/dshape[i])
+            frn = idx
+        if flatten:
+            frn1 = 0 
+            gs = 1 # fastest axis, increasing the index by 1 = next frame
+            for i in reversed(range(len(frn))):
+                frn1+=gs*frn[i]
+                gs*=dshape[i]
+            return frn1
+        return frn
+    
+    def get_d1(self, sn=None, group="merged", frn=None):
+        if sn is None:
+            sn = self.samples[0]
+        if not group in self.d1s[sn].keys():
+            raise Exception(f"1d data do not exist under {group}.")
+        frn = self.verify_frn(sn, frn, flatten=True)
+        return self.d1s[sn][group][frn]    
+            
+    def get_d2(self, sn=None, det_ext=None, frn=None):
         if sn is None:
             sn = self.samples[0]
         d2s = {}
         for det in self.detectors:
             dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])]
-            if len(dset.shape)>3:  # need to make more effort
-                dset = dset[0]
-            d2 = Data2d(dset[frn], exp=det.exp_para)
+            frn = self.verify_frn(sn, frn)
+            d2 = Data2d(dset[tuple(frn)], exp=det.exp_para)
+            d2.md["frame #"] = frn 
             d2s[det.extension] = d2
         if not det_ext:
             return d2s
@@ -678,7 +710,7 @@ class h5xs():
         print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
-    def show_data(self, sn=None, det_ext='_SAXS', frn=0, ax=None,
+    def show_data(self, sn=None, det_ext='_SAXS', frn=None, ax=None,
                   logScale=True, showMask=False, mask_alpha=0.1, 
                   clim=(0.1,14000), showRef=["AgBH", "r:"], cmap=None):
         """ display frame #frn of the data under det for sample sn
@@ -695,10 +727,11 @@ class h5xs():
         pax.coordinate_translation="xy2qphi"
         if showRef:
             pax.mark_standard(*showRef)
+        ax.set_title(f"frame #{d2.md['frame #']}")
         pax.capture_mouse()
         plt.show() 
     
-    def show_data_qxy(self, sn=None, frn=0, ax=None, dq=0.006,
+    def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
                       fig_type="qxy", apply_sym=False, fix_gap=False,
                       logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
@@ -743,7 +776,10 @@ class h5xs():
             plt.imshow(xyqmap, extent=(xqmin, xqmax, yqmin, yqmax))
             plt.clim(clim)
 
-    def show_data_qphi(self, sn=None, frn=0, ax=None, Nq=200, Nphi=60,
+        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+
+
+    def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, interp_method='linear',
                        logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
         d2s = self.get_d2(sn=sn, frn=frn)
@@ -804,7 +840,10 @@ class h5xs():
             plt.imshow(qphiqmap, extent=(qmin, qmax, -180, 180), aspect="auto")
             plt.clim(clim)
 
-    def set_trans(self, sn=None, transMode=None, interpolate=False, gf_sigma=5):
+        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+
+            
+    def set_trans(self, sn=None, transMode=None, trigger=None, gf_sigma=5): 
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
@@ -823,10 +862,19 @@ class h5xs():
             if self.transMode==trans_mode.external: # transField should be set/validated already
                 trans_data = self.fh5[f'{s}/{self.transStream}/data/{self.transField}'][...]
                 ts = self.fh5[f'{s}/{self.transStream}/timestamps/{self.transField}'][...]
-                if interpolate:  ## smoothing really
-                    spl = UnivariateSpline(ts, gaussian_filter(trans_data, gf_sigma))
-                    ts0 = self.fh5[f'{s}/primary/timestamps/{list(self.det_name.values())[0]}'][...]
-                    trans_data = spl(ts0)
+                if self.transStream!="primary": # fly scanning, assume that 
+                    if trigger is None:
+                        raise Exception("the motor that triggers data collection must be specified.")
+                    if trigger not in self.fh5[f'{s}/primary/timestamps'].keys():
+                        raise Exception(f"timestamp data for {trigger} cannot be found.")
+                    trigger_ts = self.fh5[f'{s}/primary/timestamps/{trigger}'][...]
+                    dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+                    if trigger_ts.shape != dshape:
+                        raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
+                # smoothing/interpolating
+                spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
+                ts0 = trigger_ts.flatten()
+                trans_data = spl(ts0)
         
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():
@@ -1098,7 +1146,7 @@ class h5xs():
             
             s = dset["%s" % self.det_name[self.detectors[0].extension]].shape
             if len(s)==3 or len(s)==4:
-                n_total_frames = s[0]
+                n_total_frames = s[-3]  # fast axis
             else:
                 raise Exception("don't know how to handle shape:", )
             if n_total_frames<N*N/2:
@@ -1136,17 +1184,17 @@ class h5xs():
                                                         detectors, self.qgrid, reft, save_1d, save_merged)) 
                         results[sn][fr1] = data                
                 else: # len(s)==4
-                    for j in range(s[1]):
+                    for j in range(s[0]):  # slow axis
                         images = {}
                         for det in detectors:
                             gn = f'{self.det_name[det.extension]}'
-                            images[det.extension] = dset[gn][i*c_size:i*c_size+nframes, j]
+                            images[det.extension] = dset[gn][j, i*c_size:i*c_size+nframes]
                         if N>1: # multi-processing, need to keep track of total number of active processes
-                            job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size+j*s[0], debug,
+                            job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size+j*s[1], debug,
                                                                  detectors, self.qgrid, reft, save_1d, save_merged)])
                             jobs.append(job)
                         else: # serial processing
-                            [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size+j*s[0], debug, 
+                            [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size+j*s[1], debug, 
                                                             detectors, self.qgrid, reft, save_1d, save_merged)) 
                             results[sn][fr1] = data                
 

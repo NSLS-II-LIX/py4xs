@@ -619,7 +619,7 @@ def calculate(ds0, ds1):
     diff_coef = np.sum(np.abs(np.subtract(ds0, ds1)))  # How different the datasets are
     return diff_coef            
             
-def filter_by_similarity(datasets, similarity_threshold=0.5):
+def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
     
     if len(datasets)==1:
         return datasets,None
@@ -649,7 +649,8 @@ def filter_by_similarity(datasets, similarity_threshold=0.5):
 
     # No valid candidate, return all the data
     if np.array_equal(number_of_simil_per_column, np.ones(number_of_datasets)):
-        print("No dataset with similarity level below threshold. Returning everything.")
+        if debug is True:
+            print("No dataset with similarity level below threshold. Returning everything.")
         return datasets, []
 
     best_datasets_column = np.argmax(number_of_simil_per_column)
@@ -763,7 +764,7 @@ def average(fns, detectors, qgrid, reft=-1, plot_data=False, save1d=0, ax=None, 
                          ax, qmax, qmin, fix_scale, debug=debug)
     t1 = time.time()
     if filter_datasets:
-        ss, invalids = filter_by_similarity(ss, similarity_threshold=similarity_threshold)
+        ss, invalids = filter_by_similarity(ss, similarity_threshold=similarity_threshold, debug=debug)
         # TODO: Insert warning/exception when the number of datasets discarded is high.
         # TODO: Define the % of discarded to result in a error.
         if debug!='quiet':
@@ -887,12 +888,16 @@ def estimate_scaling_factor(d1s, d1b,
             #elif std1<std0:
             #    std0 = std1
             if sp1>sp0+s_thresh:
+                if debug:
+                    print(f"span exceeded threshold: {sp1}, {sp0}+{s_thresh}")
                 break
             # assume that data*q should have a lower bound
             # this should work better on the smoothed data
             td1 = (md1sm-md1bm*sc1)*mq
             q_Imin = mq[td1.argmin()]
             if q_Imin>1.7:  # under the water peak, indication of over-subtraction
+                if debug:
+                    print(f"qxI min under water peak: q={q_Imin:.3f}")
                 break
             sc = sc1
             if debug:

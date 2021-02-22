@@ -862,7 +862,8 @@ class h5xs():
             if self.transMode==trans_mode.external: # transField should be set/validated already
                 trans_data = self.fh5[f'{s}/{self.transStream}/data/{self.transField}'][...]
                 ts = self.fh5[f'{s}/{self.transStream}/timestamps/{self.transField}'][...]
-                if self.transStream!="primary": # fly scanning, assume that 
+                if self.transStream!="primary": 
+                    # fly scanning, triggers are either from 
                     if trigger is None:
                         raise Exception("the motor that triggers data collection must be specified.")
                     if trigger not in self.fh5[f'{s}/primary/timestamps'].keys():
@@ -871,10 +872,10 @@ class h5xs():
                     dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
                     if trigger_ts.shape != dshape:
                         raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
-                # smoothing/interpolating
-                spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
-                ts0 = trigger_ts.flatten()
-                trans_data = spl(ts0)
+                    # smoothing/interpolating
+                    spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
+                    ts0 = trigger_ts.flatten()
+                    trans_data = spl(ts0)
         
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():

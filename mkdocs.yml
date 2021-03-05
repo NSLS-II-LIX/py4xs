@@ -25,11 +25,5 @@ nav:
   - Data visualization: show_data.ipynb 
   - Data processing workflow: mapping.ipynb
 
-#plugins:
-#  - mkdocs-jupyter:
-#      include_source: false
-#      execute: true
-
-
 plugins:
   - mknotebooks

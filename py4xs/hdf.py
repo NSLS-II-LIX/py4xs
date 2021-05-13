@@ -85,10 +85,15 @@ def unpack_d1(data, qgrid, label, trans_value):
         ret.data = data[0]
         ret.err = data[1]
         ret.label = label
-        ret.trans = trans_value
-        ret.transMode = trans_mode.external
+        ret.set_trans(trans_mode.external, trans_value)  # TODO: save transMode of d1s when packing 
         return ret
 
+def pack_d2(data):
+    pass
+
+def unpack_d2(data):
+    pass
+    
 def merge_d1s(d1s, detectors, save_merged=False, debug=False):
     """ utility function to merge 1D data sets, using functions under slnxs 
         d1s should contain data corresponding to detectors
@@ -656,7 +661,7 @@ class h5xs():
         gs = fig.add_gridspec(2,2)
 
         fig.add_subplot(gs[:, 0])
-        plt.semilogy(d2.qphi_data.xc, dch1)
+        plt.semilogy(d2.qphi_data.xc, dch1, color)
         plt.semilogy(d2.qphi_data.xc, dch2)        
         
         fig.add_subplot(gs[1, 1])
@@ -843,14 +848,14 @@ class h5xs():
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
             
-    def set_trans(self, sn=None, transMode=None, trigger=None, gf_sigma=5): 
+    def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=5): 
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
             the trans value for all processed 1d data are saved as attrubutes of the dataset
         """
-        if transMode is not None:
-            self.transMode = transMode
+        assert(isinstance(transMode, trans_mode))
+        self.transMode = transMode
         if self.transMode==None:
             raise Exception("a valid transmited intensity mode must be specified.")
         
@@ -883,9 +888,9 @@ class h5xs():
             t_values = []
             for i in range(len(self.d1s[s]['merged'])):
                 if self.transMode==trans_mode.external:
-                    self.d1s[s]['merged'][i].set_trans(trans_data[i], transMode=self.transMode)
+                    self.d1s[s]['merged'][i].set_trans(self.transMode, trans_data[i])
                 else:
-                    self.d1s[s]['merged'][i].set_trans(transMode=self.transMode)
+                    self.d1s[s]['merged'][i].set_trans(self.transMode)
                 t_values.append(self.d1s[s]['merged'][i].trans)
             if 'averaged' not in self.d1s[s].keys():
                 continue

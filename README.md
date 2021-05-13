@@ -116,3 +116,6 @@ use pyFAI-calib2 for h5exp.recalibrate()
 new methods under h5xs: get_d1(), verify_frn()
 corrected data sequence in h5xs.d1s
 
+2021-05:
+allow Data1d to have both trans_w (water) and trans_e (external)
+the attribute trans is set based on the transMode

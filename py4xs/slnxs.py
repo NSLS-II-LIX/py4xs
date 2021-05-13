@@ -49,6 +49,7 @@ TRANS_MODE = trans_mode.from_waxs
 # this is the minimum intensity to be used for trans calculations
 WAXS_THRESH = 10
 
+
 # this is the scaling factor for indivudual curves that belong to the same sample
 # they are offset for clarity in the plots
 VOFFSET = 1.5
@@ -69,13 +70,16 @@ def get_font_size(size_index):
     return i-3,font_size_list[i]
         
 class Data1d:
-    def __init__(self, trandMode=None):
+    def __init__(self, transMode=None):
         self.comments = ""
         self.label = "data"
         self.overlaps = []
         self.raw_data = {}
         self.timestamp = None
-        self.trans = 0
+        self.trans_w = -1
+        self.trans_e = -1
+        self.trans = -1
+        self.transMode = transMode
         
     def load_from_2D(self, image, exp_para, qgrid, pre_process=None, 
                      mask=None, save_ave=False, debug=False, label=None):
@@ -123,18 +127,22 @@ class Data1d:
             self.save(image + ".ave", debug=debug)     
         
 
-    def set_trans(self, trans=-1, ref_trans=-1, transMode=None, 
+    def set_trans(self, transMode, trans=-1, ref_trans=-1,
+                  calc_water_peak=False,
                   q_start=1.85, q_end=2.15, debug=False):
         """
         normalize intensity, from trans to ref_trans
-        trans can be either from the beam center or water scattering
+        trans can be either from the beam center/beam stop or water scattering
+        sometimes the data may require both measures of transmitted intensity
+        
         this operation should be performed after SAXS/WAXS merge, because
-        1. SAXS and WAXS should have the same trans
-        2. if trans_mode is TRNAS_FROM_WAXS, the trans value needs to be calculated from WAXS data
+          1. SAXS and WAXS should have the same trans
+          2. if trans_mode is TRNAS_FROM_WAXS, the trans value needs to be calculated from WAXS data
+        
         """
-        if transMode is not None:
-            self.transMode = transMode
-        if self.transMode == trans_mode.from_waxs:
+        assert(isinstance(transMode, trans_mode))
+        self.transMode = transMode
+        if self.transMode==trans_mode.from_waxs or calc_water_peak:
             # get trans for the near the maximum in the WAXS data
             # for solution scattering, hopefully this reflect the intensity of water scattering
             idx = (self.qgrid > q_start) & (self.qgrid < q_end)  # & (self.data>0.5*np.max(self.data))
@@ -149,23 +157,24 @@ class Data1d:
             if (self.data[idx]<WAXS_THRESH).all() and debug!='quiet':
                 print("the data points for trans calculation are below WAXS_THRESH: ", 
                       np.max(self.data[idx]), WAXS_THRESH)                
-            self.trans = np.sum(self.data[idx])
+            self.trans_w = np.sum(self.data[idx])
+            if self.transMode==trans_mode.from_waxs:
+                self.trans = self.trans_w 
             qavg = np.average(self.qgrid[idx])
-            if self.trans<1.0:
-                print('caluclated trans is %f, setting it artifically to WAXS_THRESH.' % self.trans)
-                self.trans = WAXS_THRESH
+            if self.trans_w<1.0:
+                print(f'caluclated trans is {self.trans_w}, setting it artifically to WAXS_THRESH.')
+                self.trans_w = WAXS_THRESH
             if debug==True:
                 print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg
-        elif self.transMode == trans_mode.external:
-            if trans > 0:
-                self.comments += "# transmitted beam intensity is defined externally: %f"%trans
+        if self.transMode==trans_mode.external or trans>=0:
+            if trans<0:
+                print(f"Warning: {trans} is not a valid value for transmitted intensity.")
+                trans = 0
+            self.comments += f"# transmitted beam intensity given externally: {trans}"
+            self.trans_e = trans
+            if self.transMode==trans_mode.external:
                 self.trans = trans
-            elif self.trans<0:
-                print("trans_mode is TRANS_EXTERNAL but a valid trans value is not provided")
-                raise Exception()
-        else:
-            raise Exception("invalid transmode: ", self.tMode)
 
         self.comments += ": %f \n" % self.trans
         if debug==True:
@@ -173,11 +182,11 @@ class Data1d:
 
         if ref_trans > 0:
             self.comments += "# scattering intensity normalized to ref_trans = %f \n" % ref_trans
-            self.data *= ref_trans / self.trans
-            self.err *= ref_trans / self.trans
+            self.data *= ref_trans/self.trans
+            self.err *= ref_trans/self.trans
             for ov in self.overlaps:
-                ov['raw_data1'] *= ref_trans / self.trans
-                ov['raw_data2'] *= ref_trans / self.trans
+                ov['raw_data1'] *= ref_trans/self.trans
+                ov['raw_data2'] *= ref_trans/self.trans
             self.trans = ref_trans
             if debug==True:
                 print("normalized to %f" % ref_trans)
@@ -730,7 +739,7 @@ def merge_detectors(fns, detectors, qgrid, reft=-1, plot_data=False, save_ave=Fa
         s0.data[idx] /= c_tot[idx]
         s0.err[idx] /= c_tot[idx]
         s0.transMode = transMode
-        s0.set_trans(trans=trans, ref_trans=reft, transMode=transMode, debug=debug)
+        s0.set_trans(transMode, trans=trans, ref_trans=reft, debug=debug)
         s0.label = label
         s0.comments = comments # .replace("# ", "## ")
 

@@ -127,9 +127,8 @@ class Data1d:
             self.save(image + ".ave", debug=debug)     
         
 
-    def set_trans(self, transMode, trans=-1, ref_trans=-1,
-                  calc_water_peak=False,
-                  q_start=1.85, q_end=2.15, debug=False):
+    def set_trans(self, transMode=None, trans=-1, ref_trans=-1,
+                  calc_water_peak=False, q_start=1.85, q_end=2.15, debug=False):
         """
         normalize intensity, from trans to ref_trans
         trans can be either from the beam center/beam stop or water scattering
@@ -140,8 +139,11 @@ class Data1d:
           2. if trans_mode is TRNAS_FROM_WAXS, the trans value needs to be calculated from WAXS data
         
         """
-        assert(isinstance(transMode, trans_mode))
-        self.transMode = transMode
+        if transMode is None and self.transMode is not None:
+            transMode = self.transMode
+        else:
+            assert(isinstance(transMode, trans_mode))
+            self.transMode = transMode
         if self.transMode==trans_mode.from_waxs or calc_water_peak:
             # get trans for the near the maximum in the WAXS data
             # for solution scattering, hopefully this reflect the intensity of water scattering
@@ -167,26 +169,33 @@ class Data1d:
             if debug==True:
                 print("using data near the high q end (q~%f)" % qavg, end=' ')
             self.comments += "# transmitted beam intensity from WAXS (q~%.2f)" % qavg
-        if self.transMode==trans_mode.external or trans>=0:
-            if trans<0:
-                print(f"Warning: {trans} is not a valid value for transmitted intensity.")
-                trans = 0
+        if self.transMode==trans_mode.external and trans>=0: 
+            # if the trans value is specified, by definition transMode should be external
+            # if trans=-1, it is not meant to be the value to be set
+            #if trans<0:
+            #    print(f"Warning: {trans} is not a valid value for transmitted intensity.")
+            #    trans = 0
             self.comments += f"# transmitted beam intensity given externally: {trans}"
             self.trans_e = trans
-            if self.transMode==trans_mode.external:
-                self.trans = trans
+            self.trans = trans
+            #if self.transMode==trans_mode.external:
+            #    self.trans = trans
 
         self.comments += ": %f \n" % self.trans
         if debug==True:
             print("trans for %s set to %f" % (self.label, self.trans))
 
         if ref_trans > 0:
+            if self.trans<0:
+                print(f"cannot normalize intensity since data1d does not have a valid trans value: {self.trans}")
             self.comments += "# scattering intensity normalized to ref_trans = %f \n" % ref_trans
             self.data *= ref_trans/self.trans
             self.err *= ref_trans/self.trans
             for ov in self.overlaps:
                 ov['raw_data1'] *= ref_trans/self.trans
                 ov['raw_data2'] *= ref_trans/self.trans
+            self.trans_w *= ref_trans/self.trans
+            self.trans_e *= ref_trans/self.trans
             self.trans = ref_trans
             if debug==True:
                 print("normalized to %f" % ref_trans)

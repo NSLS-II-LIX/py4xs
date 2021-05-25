@@ -317,7 +317,7 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)
     
-    def recalibrate(self, fn_std, energy=-1, use_recalib=False,
+    def recalibrate(self, fn_std, energy=-1, e_range=[5, 20], use_recalib=False,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
                     bkg={}):
         """ fn_std should be a h5 file that contains AgBH pattern
@@ -328,11 +328,13 @@ class h5exp():
         dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
         uname = os.getenv("USER")
         sn = dstd.samples[0]
-        if energy>5. and energy<20.:
+        if energy>=e_range[0] and energy<=e_range[1]:
             wl = 2.*np.pi*1.973/energy
             for det in self.detectors:
                 det.exp_para.wavelength = wl
-                
+        elif energy>0:
+            raise Exception(f"energy should be between {e_range[0]} and {e_range[1]} (keV): {energy}")
+        
         for det in self.detectors:
             print(f"processing detector {det.extension} ...")    
             ep = det.exp_para
@@ -437,8 +439,8 @@ class h5xs():
         self.samples = []
         self.attrs = {}
         # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
-        self.transField = None  
-        self.transStream = None  
+        self.transField = ''  
+        self.transStream = ''  
 
         self.fn = fn
         self.save_d1 = save_d1
@@ -579,18 +581,43 @@ class h5xs():
         
         return md_str
     
+    def header(self, sn):
+        if not sn in self.samples:
+            raise Exception(f"{sn} is not a valie sample.")
+        if "start" in self.fh5[sn].attrs:
+            return json.loads(self.fh5[sn].attrs['start'])
+        return None
+    
     def list_samples(self, quiet=False):
         self.samples = lsh5(self.fh5, top_only=True, silent=True)
         if not quiet:
             print(self.samples)
     
     def verify_frn(self, sn, frn, flatten=False):
+        """ simply translate between a scaler index and a multi-dimensional index based on scan shape
+            this became more complicated when areadetector saves data as hdf
+            sshape and dshape are no longer the same
+            not taking care of snaking here
+        """
+        header = self.header(sn)
+        if 'shape' in header.keys():
+            sshape = header['shape']
+            #snaking = header['snaking']
+        elif 'num_points' in header.keys():
+            sshape = [header["num_points"]]
+            #snaking = False
+        else:
+            raise Exception("don't kno how to handler the header", header)
         dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+    
         if frn is None:
             frn = 0
         if hasattr(frn, '__iter__'): # tuple or list or np array
-            if len(frn)!=len(dshape):
-                raise Exception(f"invalid frame number {frn}, must contain {len(dshape)-2} element(s).")
+            if len(frn)==1:
+                frn = frn[0]
+            elif len(frn)!=len(sshape):
+                raise Exception(f"invalid frame number {frn}, must contain {len(sshape)} element(s).")
+                
         if isinstance(frn, int): # translate to the right shape
             if flatten:
                 return frn
@@ -604,7 +631,7 @@ class h5xs():
             gs = 1 # fastest axis, increasing the index by 1 = next frame
             for i in reversed(range(len(frn))):
                 frn1+=gs*frn[i]
-                gs*=dshape[i]
+                gs*=sshape[i]
             return frn1
         return frn
     
@@ -848,7 +875,7 @@ class h5xs():
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
             
-    def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=5): 
+    def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=5, **kwargs): 
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
@@ -865,6 +892,7 @@ class h5xs():
             samples = [sn]
         for s in samples:
             if self.transMode==trans_mode.external: # transField should be set/validated already
+                assert(self.transField!='')
                 trans_data = self.fh5[f'{s}/{self.transStream}/data/{self.transField}'][...]
                 ts = self.fh5[f'{s}/{self.transStream}/timestamps/{self.transField}'][...]
                 if self.transStream!="primary": 
@@ -888,9 +916,9 @@ class h5xs():
             t_values = []
             for i in range(len(self.d1s[s]['merged'])):
                 if self.transMode==trans_mode.external:
-                    self.d1s[s]['merged'][i].set_trans(self.transMode, trans_data[i])
+                    self.d1s[s]['merged'][i].set_trans(self.transMode, trans_data[i], **kwargs)
                 else:
-                    self.d1s[s]['merged'][i].set_trans(self.transMode)
+                    self.d1s[s]['merged'][i].set_trans(self.transMode, **kwargs)
                 t_values.append(self.d1s[s]['merged'][i].trans)
             if 'averaged' not in self.d1s[s].keys():
                 continue

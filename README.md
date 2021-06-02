@@ -119,4 +119,4 @@ corrected data sequence in h5xs.d1s
 2021-05:
 allow Data1d to have both trans_w (water) and trans_e (external)
 the attribute trans is set based on the transMode
-
+added h5xs.header(), revised h5xs.set_trans()

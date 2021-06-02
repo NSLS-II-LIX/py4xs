@@ -592,31 +592,42 @@ class Data1d:
         ax.set_ylabel("$P(r)$", fontsize=get_font_size(i_fs)[1])
         # plt.subplots_adjust(bottom=0.15)
 
-    def save(self, fn, nz=True, save_comments=False, debug=False, footer=None):
+    def save(self, fn, nz=True, scale_wabs=-1,
+             save_comments=False, debug=False, footer=None):
         """
         should save all the relevant information, such as scaling, merging, averaging
         save data points with non-zero intensity only if nz==1
         """
-        qidi = np.vstack((self.qgrid, self.data, self.err))
+        if scale_wabs>0:
+            assert(self.trans_w>0)
+            scale_wabs /= self.trans_w
+            qidi = np.vstack((self.qgrid, self.data*scale_wabs, self.err*scale_wabs))
+        else:
+            qidi = np.vstack((self.qgrid, self.data, self.err))
         if nz:
             qidi = qidi[:, self.data != 0]
         if debug==True:
             print("saving file: %s, nz=%d" % (fn, nz))
-        np.savetxt(fn, qidi.T, "%12.5f")
+        np.savetxt(fn, qidi.T, "%8.4f   %8.3e   %8.3e")
         if save_comments or footer is not None:
             ff = open(fn, "a")
             if save_comments:
                 ff.write(self.comments)
+                if scale_wabs>0:
+                    ff.write("# converted to abs scale by applying a scaling factor of {scale_wabs:.2e}\n")
             elif footer is not None:
                 ff.write(footer)
             ff.close()
 
-    def plot(self, ax=None, scale=1., fontsize='large'):
+    def plot(self, ax=None, scale=1., fontsize='large', scale_wabs=-1):
         i_fs = get_font_size(fontsize)[0]
         if ax is None:
             plt.figure()
             plt.subplots_adjust(bottom=0.15)
             ax = plt.gca()
+        if scale_wabs>0:
+            assert(self.trans_w>0)
+            scale *= scale_wabs/self.trans_w
         ax.set_xlabel("$q (\AA^{-1})$", fontsize=get_font_size(i_fs)[1])
         ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
         ax.set_xscale('log')

@@ -319,7 +319,7 @@ class h5exp():
     
     def recalibrate(self, fn_std, energy=-1, e_range=[5, 20], use_recalib=False,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
-                    bkg={}):
+                    bkg={}, temp_file_location="/tmp"):
         """ fn_std should be a h5 file that contains AgBH pattern
             use the specified energy (keV) if the value is valid
             detector type
@@ -338,7 +338,7 @@ class h5exp():
         for det in self.detectors:
             print(f"processing detector {det.extension} ...")    
             ep = det.exp_para
-            data_file = f"/tmp/{uname}{det.extension}.cbf"
+            data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
             img = dstd.fh5["%s/primary/data/%s" % (sn, dstd.det_name[det.extension])][0]
 
             # this would work better if the detector geometry specification 

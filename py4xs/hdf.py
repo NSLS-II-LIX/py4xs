@@ -765,7 +765,7 @@ class h5xs():
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
                       fig_type="qxy", apply_sym=False, fix_gap=False,
-                      logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
             fig_type should be either "qxy" or "qphi"
@@ -790,7 +790,7 @@ class h5xs():
 
         xyqmaps = []
         for dn in d2s.keys():   
-            if showMask:
+            if useMask:
                 mask = d2s[dn].exp.mask
             else:
                 mask = None
@@ -813,7 +813,7 @@ class h5xs():
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, interp_method='linear',
-                       logScale=True, showMask=False, clim=(0.1,14000), showRef=True, cmap=None):
+                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None):
         d2s = self.get_d2(sn=sn, frn=frn)
         if ax is None:
             plt.figure()
@@ -838,7 +838,7 @@ class h5xs():
 
         dms = []
         for dn in d2s.keys():   
-            if showMask:
+            if useMask:
                 mask = d2s[dn].exp.mask
             else:
                 mask = None

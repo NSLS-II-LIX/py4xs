@@ -264,6 +264,8 @@ class Data1d:
                 raise Exception("\n1D sets cannot be averaged: qgrid mismatch")
 
             d0.trans += d1.trans
+            d0.trans_w += d1.trans_w
+            d0.trans_e += d1.trans_e
             if weighted:
                 er2 = (d1.err/wt[i])**2
                 d0.err += 1/er2
@@ -288,6 +290,8 @@ class Data1d:
             d0.label = common_name(d0.label, d1.label)
 
         d0.trans /= n
+        d0.trans_w /= n
+        d0.trans_e /= n
         if weighted:
             d0.data /= d0.err
             d0.err = 1./np.sqrt(d0.err)
@@ -402,6 +406,10 @@ class Data1d:
         self.data *= sc
         self.err *= sc
         self.trans *= sc
+        if self.trans_w>0:
+            self.trans_w *= sc
+        if self.trans_e>0:
+            self.trans_e *= sc
         self.comments += "# data is scaled by %f.\n" % sc
         if len(self.overlaps) != 0:
             for ov in self.overlaps:
@@ -499,7 +507,8 @@ class Data1d:
         self.comments += " scaled by %f\n" % sc
         self.comments += d1.comments.replace("# ", "## ")
 
-    def plot_Guinier(self, qs=0, qe=10, rg=15, fix_qe=False, ax=None, no_plot=False, fontsize="large"):
+    def plot_Guinier(self, qs=0, qe=10, rg=15, fix_qe=False, scale_wabs=-1,
+                     ax=None, no_plot=False, fontsize="large"):
         """ do Gunier plot, estimate Rg automatically
         qs specify the lower end of the q-range to perform the fit in
         rg is the optinal initial estimate
@@ -509,12 +518,17 @@ class Data1d:
         i_fs = get_font_size(fontsize)[0]
         # print self.data
 
+        scale = 1.0
+        if scale_wabs>0:
+            assert(self.trans_w>0)
+            scale *= scale_wabs/self.trans_w
+
         if no_plot==False:
             if ax is None:
                 ax = plt.gca()
             ax.set_xscale('linear')
             ax.set_yscale('log')
-            ax.errorbar(self.qgrid[idx] ** 2, self.data[idx], self.err[idx])
+            ax.errorbar(self.qgrid[idx]**2, self.data[idx]*scale, self.err[idx]*scale)
 
         cnt = 0
         t = self.qgrid[self.data > 0][0]
@@ -540,10 +554,11 @@ class Data1d:
         n1 = len(self.qgrid[self.qgrid<qs])
         n2 = len(self.qgrid)-len(self.qgrid[self.qgrid>qe])
         fit_range = [n1,n2]
+        i0*=scale
         
         if no_plot==False and rg>0.1:
             #ax.tick_params(axis='y', labelleft=False)    
-            ax.plot([td[0, 0], td[0, -1]], [td[1, 0], td[1, -1]], "ro")
+            ax.plot([td[0, 0], td[0, -1]], [td[1, 0]*scale, td[1, -1]*scale], "ro")
             ax.plot(self.qgrid**2, i0*np.exp(-(self.qgrid*rg)**2/3))
             ax.set_ylabel("$I$", fontsize=get_font_size(i_fs)[1])
             ax.set_xlabel("$q^2 (\AA^{-2})$", fontsize=get_font_size(i_fs)[1])

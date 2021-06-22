@@ -1028,7 +1028,7 @@ class h5xs():
                 for d1 in self.d1s[sn]['merged']:
                     self.attrs[sn]['selected'].append(d1 in d1keep)
             else:
-                if  selection==None:
+                if selection is None:
                     # if there is an error, run with filter_data=True
                     selection = self.attrs[sn]['selected']
                 else:

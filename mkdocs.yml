@@ -23,6 +23,7 @@ nav:
 - Examples: 
   - The basics: Data2D_demo.ipynb
   - Data visualization: show_data.ipynb 
+  - Grazing incidence: GID.ipynb
   - Data processing workflow: mapping.ipynb
 
 plugins:

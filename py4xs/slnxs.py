@@ -496,10 +496,11 @@ class Data1d:
             print("merged set re-named %s." % self.label)
 
         if len(self.qgrid[idx]) > 0:
-            self.data[idx] = (self.data[idx] + d1.data[idx]) / 2
-            # this won't work well if the merging data are mis-matched before bkg subtraction
-            # but match well after bkg subtraction
-            self.err[idx] = (self.err[idx] + d1.err[idx]) / 2
+            # averaging using 1/err^2 as weight, maximum likelihood estimator 
+            w1 = 1./(self.err[idx]*self.err[idx]) 
+            w2 = 1./(d1.err[idx]*d1.err[idx]) 
+            self.data[idx] = (w1*self.data[idx] + w2*d1.data[idx]) / (w1+w2)
+            self.err[idx] = np.sqrt((w1/(w1+w2)*self.err[idx])**2 + (w2/(w1+w2)*d1.err[idx])**2)
         self.data[self.qgrid >= qmax] = d1.data[self.qgrid >= qmax]
         self.err[self.qgrid >= qmax] = d1.err[self.qgrid >= qmax]
 

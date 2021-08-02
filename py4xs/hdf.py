@@ -242,9 +242,11 @@ def proc_d1merge(args):
         for det in detectors:
             dt = Data1d()
             label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
-            dt.load_from_2D(images[det.extension][i], 
-                            det.exp_para, qgrid, det.pre_process, det.exp_para.mask,
+            dt.load_from_2D(images[det.extension][i], det.exp_para, qgrid, 
+                            pre_process=det.pre_process, flat_cor=det.flat, mask=det.exp_para.mask,
                             save_ave=False, debug=debug, label=label)
+            if det.dark is not None:
+                dt.data -= det.dark
             dt.scale(sc[det.extension])
             ret[det.extension].append(dt)
     
@@ -422,6 +424,18 @@ class h5exp():
             ep.init_coordinates()
 
         self.save_detectors()
+
+def find_field(fh5, fieldName):
+    tstream = {}
+    samples = lsh5(fh5, top_only=True, silent=True)
+    for sn in samples:
+        for stream in list(fh5[f"{sn}"]):
+            if not 'data' in list(fh5[f"{sn}/{stream}"]):
+                continue
+            if fieldName in list(fh5[f"{sn}/{stream}/data"]):
+                tstream[sn] = stream
+                break
+    return tstream
         
 class h5xs():
     """ Scattering data in transmission geometry
@@ -440,7 +454,7 @@ class h5xs():
         self.attrs = {}
         # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
         self.transField = ''  
-        self.transStream = ''  
+        self.transStream = {}  
 
         self.fn = fn
         self.save_d1 = save_d1
@@ -453,7 +467,7 @@ class h5xs():
         self.list_samples(quiet=True)
 
         # find out what are the fields corresponding to the 2D detectors
-        # at LiX there are two possibilities
+        # at LiX there are two possibilities; assume all samples have have data stored in the same fileds
         sn = self.samples[0]
         streams = list(self.fh5[f"{sn}"])
         data_fields = {}
@@ -474,27 +488,32 @@ class h5xs():
         if self.det_name is None:
             print('fields in the h5 file: ', data_fields)
             raise Exception("Could not find the data corresponding to the detectors.")
+
+        # transStream is more complicated
+        # different samples may store the data in different streams 
         if transField=='': 
             if 'trans' in self.fh5.attrs:
                 tf = self.fh5.attrs['trans'].split(',')
-                if len(tf)<3:  # in earlier code, transStream is not recorded
-                    [v, self.transField] = tf
-                else: 
-                    [v, self.transField, self.transStream] = tf
+                # transMove, transField, transStream 
+                # but transStream is not always recorded
+                v, self.transField = tf[:2]
                 self.transMode = trans_mode(int(v))
+                self.transStream = find_field(self.fh5, self.transField)
                 return
             else:
                 self.transMode = trans_mode.from_waxs
                 self.transField = ''
-                self.transStream = ''
-        elif transField not in list(data_fields.keys()):
-            print("invalid field for transmitted intensity: ", transField)
-            raise Exception()
+                self.transStream = {}
         else:
+            try:
+                self.transStream = find_field(self.fh5, transField)
+            except:
+                print("invalid field for transmitted intensity: ", transField)
+                raise Exception()
             self.transField = transField
-            self.transStream = data_fields[transField]
             self.transMode = trans_mode.external
-        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField, self.transStream])
+            
+        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
         self.fh5.flush()
             
     def save_detectors(self):
@@ -875,11 +894,19 @@ class h5xs():
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
             
-    def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=5, **kwargs): 
+    def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
             the trans value for all processed 1d data are saved as attrubutes of the dataset
+            
+            when em2 is used as a monitor, a trigger must be provided to find the corresponding monitor value
+            in fly scans, this should be a motor name
+            for solution scattering, use "sol" as trigger, also need to specify 
+            
+            the timestamps on the trigger and em2 may not be synced, dt0 provides a correction to the trigger timestamp
+            if plot_trigger=True and sn is not None, will generate a plot for verification
+            
         """
         assert(isinstance(transMode, trans_mode))
         self.transMode = transMode
@@ -887,28 +914,45 @@ class h5xs():
             raise Exception("a valid transmited intensity mode must be specified.")
         
         if sn is None:
+            if plot_trigger:
+                plot_trigger = False           # plot for a single sample only
             samples = self.samples
         else:
             samples = [sn]
         for s in samples:
             if self.transMode==trans_mode.external: # transField should be set/validated already
                 assert(self.transField!='')
-                trans_data = self.fh5[f'{s}/{self.transStream}/data/{self.transField}'][...]
-                ts = self.fh5[f'{s}/{self.transStream}/timestamps/{self.transField}'][...]
-                if self.transStream!="primary": 
-                    # fly scanning, triggers are either from 
+                trans_data = self.fh5[f'{s}/{self.transStream[s]}/data/{self.transField}'][...]
+                ts = self.fh5[f'{s}/{self.transStream[s]}/timestamps/{self.transField}'][...]
+                if self.transStream[s]!="primary": 
+                    # fly scanning, trigger must be a motor or "sol"  
                     if trigger is None:
                         raise Exception("the motor that triggers data collection must be specified.")
-                    if trigger not in self.fh5[f'{s}/primary/timestamps'].keys():
+                    elif trigger=="sol":
+                        trigger_ts = self.fh5[f'{s}/primary/time'][...]-dt0    # this is a single value, end of exposures??
+                        dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[0]   # length of the time sequence
+                        if len(trigger_ts)<dshape:
+                            md = self.header(s)['pilatus']
+                            if 'exposure_time' in md.keys():
+                                exp=md['exposure_time']
+                            trigger_ts = trigger_ts[0]+np.arange(dshape)*exp    
+                    elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
+                        trigger_ts = self.fh5[f'{s}/primary/timestamps/{trigger}'][...]-dt0
+                        dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+                        if trigger_ts.shape != dshape:
+                            raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
+                    else:
                         raise Exception(f"timestamp data for {trigger} cannot be found.")
-                    trigger_ts = self.fh5[f'{s}/primary/timestamps/{trigger}'][...]
-                    dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
-                    if trigger_ts.shape != dshape:
-                        raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
+                    
                     # smoothing/interpolating
                     spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
                     ts0 = trigger_ts.flatten()
-                    trans_data = spl(ts0)
+                    trans_data1 = spl(ts0)
+                    if plot_trigger:
+                        plt.figure()
+                        plt.plot(ts, trans_data)
+                        plt.plot(ts0, trans_data1, "o")
+                    trans_data = trans_data1
         
             # these are the datasets that needs updated trans values
             if 'merged' not in self.d1s[s].keys():

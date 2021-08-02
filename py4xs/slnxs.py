@@ -81,7 +81,7 @@ class Data1d:
         self.trans = -1
         self.transMode = transMode
         
-    def load_from_2D(self, image, exp_para, qgrid, pre_process=None, 
+    def load_from_2D(self, image, exp_para, qgrid, pre_process=None, flat_cor=None,
                      mask=None, save_ave=False, debug=False, label=None):
         """
         image: a filename, or a Data2d instance, or a numpy array
@@ -106,20 +106,16 @@ class Data1d:
         if label is not None:
             self.label = label
             
-        # deal with things like dark current, flat field, and dezinger corrections on the 2D data
+        # place holder for pre-processing, to deal with things like 
+        # dark current, flat field, and dezinger corrections on the 2D data
         if pre_process is not None:
             pre_process(d2.data)
         
-        #if self.transMode == trans_mode.from_beam_center:
-        #    # get trans from beam center
-        #    self.roi = d2.data.val(exp_para.bm_ctr_x-BEAM_SIZE_hW, 
-        #                           exp_para.bm_ctr_x+BEAM_SIZE_hW,
-        #                           exp_para.bm_ctr_y-BEAM_SIZE_hH,
-        #                           exp_para.bm_ctr_y+BEAM_SIZE_hH, mask)
+        cor_factor = exp_para.FSA*exp_para.FPol
+        if flat_cor is not None:
+            cor_factor *= flat_cor    # for rescuing data with incorrect flat field at the time of collection
+        self.data,self.err = d2.conv_Iq(qgrid, mask, cor_factor = cor_factor)  
 
-        self.data,self.err = d2.conv_Iq(qgrid, mask,
-                                        cor_factor = exp_para.FSA*exp_para.FPol)
-                                        #cor_factor = exp_para.FPol)  
         if isinstance(image, np.ndarray):
             del d2      # d2 is only used temporarily
         

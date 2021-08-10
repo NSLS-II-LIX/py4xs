@@ -227,7 +227,7 @@ def proc_line_profile(queue, images, sn, nframes, detectors, qphi_range, debug, 
 def proc_d1merge(args):
     """ utility function to perfrom azimuthal average and merge detectors
     """
-    images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_1d,save_merged = args
+    images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_1d,save_merged,dtype = args
     ret = {'merged': []}
     sc = {}
     
@@ -244,7 +244,7 @@ def proc_d1merge(args):
             label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
             dt.load_from_2D(images[det.extension][i], det.exp_para, qgrid, 
                             pre_process=det.pre_process, flat_cor=det.flat, mask=det.exp_para.mask,
-                            save_ave=False, debug=debug, label=label)
+                            save_ave=False, debug=debug, label=label, dtype=dtype)
             if det.dark is not None:
                 dt.data -= det.dark
             dt.scale(sc[det.extension])
@@ -662,14 +662,14 @@ class h5xs():
         frn = self.verify_frn(sn, frn, flatten=True)
         return self.d1s[sn][group][frn]    
             
-    def get_d2(self, sn=None, det_ext=None, frn=None):
+    def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None):
         if sn is None:
             sn = self.samples[0]
         d2s = {}
         for det in self.detectors:
             dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])]
             frn = self.verify_frn(sn, frn)
-            d2 = Data2d(dset[tuple(frn)], exp=det.exp_para)
+            d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 
             d2s[det.extension] = d2
         if not det_ext:
@@ -763,10 +763,10 @@ class h5xs():
         
     def show_data(self, sn=None, det_ext='_SAXS', frn=None, ax=None,
                   logScale=True, showMask=False, mask_alpha=0.1, 
-                  clim=(0.1,14000), showRef=["AgBH", "r:"], cmap=None):
+                  clim=(0.1,14000), showRef=["AgBH", "r:"], cmap=None, dtype=None):
         """ display frame #frn of the data under det for sample sn
         """
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -784,12 +784,12 @@ class h5xs():
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
                       fig_type="qxy", apply_sym=False, fix_gap=False,
-                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None):
+                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None, dtype=None):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
             fig_type should be either "qxy" or "qphi"
         """
-        d2s = self.get_d2(sn=sn, frn=frn)
+        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -832,8 +832,8 @@ class h5xs():
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, interp_method='linear',
-                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None):
-        d2s = self.get_d2(sn=sn, frn=frn)
+                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None, dtype=None):
+        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -1193,7 +1193,7 @@ class h5xs():
                                               footer=self.md_string(sn))
                 
     def load_data(self, update_only=False, detectors=None,
-           reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0):
+           reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0, dtype=None):
         """ assume multiple samples, parallel-process by sample
             use Pool to limit the number of processes; 
             access h5 group directly in the worker process
@@ -1255,11 +1255,11 @@ class h5xs():
 
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
                         job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
-                                                             detectors, self.qgrid, reft, save_1d, save_merged)])
+                                                             detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
                         jobs.append(job)
                     else: # serial processing
                         [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug, 
-                                                        detectors, self.qgrid, reft, save_1d, save_merged)) 
+                                                        detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
                         results[sn][fr1] = data                
                 else: # len(s)==4
                     for j in range(s[0]):  # slow axis
@@ -1269,11 +1269,11 @@ class h5xs():
                             images[det.extension] = dset[gn][j, i*c_size:i*c_size+nframes]
                         if N>1: # multi-processing, need to keep track of total number of active processes
                             job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size+j*s[1], debug,
-                                                                 detectors, self.qgrid, reft, save_1d, save_merged)])
+                                                                 detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
                             jobs.append(job)
                         else: # serial processing
                             [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size+j*s[1], debug, 
-                                                            detectors, self.qgrid, reft, save_1d, save_merged)) 
+                                                            detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
                             results[sn][fr1] = data                
 
         if N>1:             

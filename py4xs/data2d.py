@@ -202,7 +202,7 @@ class Data2d:
         stores the scattering pattern itself, 
     """
 
-    def __init__(self, img, timestamp=None, uid='', exp=None, label=''):
+    def __init__(self, img, timestamp=None, uid='', exp=None, label='', dtype=None):
         """ read 2D scattering pattern
             img can be either a filename (rely on Fabio to deal with the file format) or a numpy array 
         """
@@ -217,7 +217,7 @@ class Data2d:
         
         if isinstance(img, str):
             f = fabio.open(img)
-            self.im = f.data
+            self.im = np.asarray(f.data)
             self.label = os.path.basename(img)
             # get other useful information from the header
             # cbf header 
@@ -237,6 +237,9 @@ class Data2d:
         else:
             raise Exception('Not sure how to create Data2d from img ...')
 
+        if dtype is not None:
+            self.im = np.asarray(self.im, dtype=dtype)
+            
         # self.im always stores the original image
         # self.data store the array data after the flip operation
         if exp is not None:
@@ -269,7 +272,7 @@ class Data2d:
             if flip<0, do a mirror operation first
             the absolute value of flip is the number of 90-deg rotations
         """  
-        self.data.d = np.asarray(self.im).copy()
+        self.data.d = self.im.copy()
         if flip == 0:
             return
         if flip<0:

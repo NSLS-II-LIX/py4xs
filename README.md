@@ -124,4 +124,4 @@ added h5xs.header(), revised h5xs.set_trans()
 2021-08:
 possibility to correct for flat field 
 deal with transmission values in solution scattering data in the monitor stream
-
+option to impose dtype on Data2d

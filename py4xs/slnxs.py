@@ -82,7 +82,7 @@ class Data1d:
         self.transMode = transMode
         
     def load_from_2D(self, image, exp_para, qgrid, pre_process=None, flat_cor=None,
-                     mask=None, save_ave=False, debug=False, label=None):
+                     mask=None, save_ave=False, debug=False, label=None, dtype=None):
         """
         image: a filename, or a Data2d instance, or a numpy array
         qgrid: for the 1D data
@@ -98,7 +98,7 @@ class Data1d:
         if isinstance(image, Data2d):
             d2 = image
         else:
-            d2 = Data2d(image, exp=exp_para)
+            d2 = Data2d(image, exp=exp_para, dtype=dtype)
             self.timestamp = d2.timestamp
             self.label = d2.label
             self.timestamp = d2.timestamp

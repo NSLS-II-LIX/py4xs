@@ -707,7 +707,7 @@ class h5xs():
         gs = fig.add_gridspec(2,2)
 
         fig.add_subplot(gs[:, 0])
-        plt.semilogy(d2.qphi_data.xc, dch1, color)
+        plt.semilogy(d2.qphi_data.xc, dch1)
         plt.semilogy(d2.qphi_data.xc, dch2)        
         
         fig.add_subplot(gs[1, 1])

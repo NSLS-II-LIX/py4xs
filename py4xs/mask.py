@@ -44,7 +44,7 @@ class Mask:
         self.map[idx] = 1
         self.map[~idx] = 0
 
-    def fix_dead_pixels(self, d2, max_value=2097151):
+    def fix_bad_pixels(self, d2, min_value=0, max_value=2097151):
         """ this is for dealing with dead pixels on Pilatus detectors
             fabio reads the value of -2 as a positive number
             the Pilatus pixels are 20-bit counters, the maximum value should be 2^21-1 = 2097151
@@ -52,7 +52,8 @@ class Mask:
         if d2.data.d.shape != self.map.shape:
             print("mismatched data and mask shapes.")
             return
-        self.map[d2.data.d>max_vlaue] = True
+        self.map[d2.data.d>max_value] = True
+        self.map[d2.data.d<min_value] = True
   
     def invert(self):
         """ invert the mask

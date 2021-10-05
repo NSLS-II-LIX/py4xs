@@ -19,6 +19,7 @@ from itertools import combinations
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
+from scipy.integrate import simpson
 
 def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
     """ list the content of a HDF5 file
@@ -56,6 +57,19 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
+def integrate_mon(em, ts, ts0, exp):
+    """ integrate monitor counts
+        monitor counts are given by em with timestamps ts
+        ts0 is the timestamps on the exposures, with duration of exp
+    """
+    ffe = interp1d(ts, em)
+    em0 = []
+    for t in ts0:
+        tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))
+        ee = ffe(tt)
+        em0.append(simpson(ee, tt))
+    return np.asarray(em0)/exp
+    
 def pack_d1(data, ret_trans=True):
     """ utility function to creat a list of [intensity, error] from a Data1d object 
         or from a list of Data1s objects
@@ -899,23 +913,26 @@ class h5xs():
             the trans values directly from the raw data (water peak intensity or monitor counts)
             but this value is changed if the data is scaled
             the trans value for all processed 1d data are saved as attrubutes of the dataset
-            
+
             when em2 is used as a monitor, a trigger must be provided to find the corresponding monitor value
             in fly scans, this should be a motor name
-            for solution scattering, use "sol" as trigger, also need to specify 
-            
+            for solution scattering, use "sol" as trigger
+
             the timestamps on the trigger and em2 may not be synced, dt0 provides a correction to the trigger timestamp
             if plot_trigger=True and sn is not None, will generate a plot for verification
             
+            dt0 for sol trigger should be finite but minimal, ~0.05?
+
         """
         assert(isinstance(transMode, trans_mode))
         self.transMode = transMode
         if self.transMode==None:
             raise Exception("a valid transmited intensity mode must be specified.")
-        
+
         if sn is None:
             if plot_trigger:
                 plot_trigger = False           # plot for a single sample only
+                print("Disabling plot_trigger since no sample name is specified.")
             samples = self.samples
         else:
             samples = [sn]
@@ -929,44 +946,60 @@ class h5xs():
                     if trigger is None:
                         raise Exception("the motor that triggers data collection must be specified.")
                     elif trigger=="sol":
-                        trigger_ts = self.fh5[f'{s}/primary/time'][...]-dt0    # this is a single value, end of exposures??
-                        dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[0]   # length of the time sequence
-                        if len(trigger_ts)<dshape:
-                            md = self.header(s)['pilatus']
-                            if 'exposure_time' in md.keys():
-                                exp=md['exposure_time']
-                            trigger_ts = trigger_ts[0]+np.arange(dshape)*exp    
+                        # in this case the monitors are read more frequently than detector exposures
+                        # integrate monitor counts based  
+                        dn = list(self.det_name.values())[0]
+                        # expect a finite but minimal offset in time since all come from the same IOC server
+                        ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...]-dt0    
+                        dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
+                        md = self.header(s)['pilatus']
+                        if 'exposure_time' in md.keys():
+                            exp=md['exposure_time']
+                        if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
+                            ts0 = ts0[0]+np.arange(dshape)*exp    
+                        trans_data1 = integrate_mon(trans_data, ts, ts0, exp)
                     elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
-                        trigger_ts = self.fh5[f'{s}/primary/timestamps/{trigger}'][...]-dt0
+                        # intepolate instead of integrate, with filtering, less accurate
+                        trigger_ts = sef.fh5[f'{s}/primary/timestamps/{trigger}'][...]-dt0
                         dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
                         if trigger_ts.shape != dshape:
                             raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
+                        spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
+                        ts0 = trigger_ts.flatten()
+                        trans_data1 = spl(ts0)
                     else:
                         raise Exception(f"timestamp data for {trigger} cannot be found.")
-                    
+
                     # smoothing/interpolating
-                    spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
-                    ts0 = trigger_ts.flatten()
-                    trans_data1 = spl(ts0)
                     if plot_trigger:
                         plt.figure()
                         plt.plot(ts, trans_data)
                         plt.plot(ts0, trans_data1, "o")
                     trans_data = trans_data1
-        
+
             # these are the datasets that needs updated trans values
-            if 'merged' not in self.d1s[s].keys():
-                continue
+            # also need to rescale merged data, in case it's been scale, e.g. during normalization
+            grps = list(set(self.d1s[s].keys()) & set(det_model.keys()))
+            grp0 = grps[0]
+            if "merged" in self.d1s[s].keys():
+                grps += ["merged"]
+            if len(grps)==0:
+                return
+
             t_values = []
-            for i in range(len(self.d1s[s]['merged'])):
-                if self.transMode==trans_mode.external:
-                    self.d1s[s]['merged'][i].set_trans(self.transMode, trans_data[i], **kwargs)
-                else:
-                    self.d1s[s]['merged'][i].set_trans(self.transMode, **kwargs)
-                t_values.append(self.d1s[s]['merged'][i].trans)
-            if 'averaged' not in self.d1s[s].keys():
-                continue
-            self.d1s[s]['averaged'].trans = np.average(t_values)
+            for i in range(len(self.d1s[s][grp0])):
+                if "merged" in grps:
+                    idx = (self.d1s[s][grp0][i].data>0)
+                    sc0 = np.sum(self.d1s[s][grp0][i].data[idx])/np.sum(self.d1s[s]["merged"][i].data[idx])
+                    self.d1s[s]["merged"][i].scale(sc0)
+                for grp in grps:
+                    if self.transMode==trans_mode.external:
+                        self.d1s[s][grp][i].set_trans(self.transMode, trans_data[i], **kwargs)
+                    else:
+                        self.d1s[s][grp][i].set_trans(self.transMode, **kwargs)
+                t_values.append(self.d1s[s][grp0][i].trans)
+            if 'averaged' in self.d1s[s].keys():
+                self.d1s[s]['averaged'].trans = np.average(t_values)
     
     def load_d1s(self, sn=None):
         """ load the processed 1d data saved in the hdf5 file into memory 

@@ -16,6 +16,49 @@ class DataType(Enum):
     q = 4
     xyq = 5      # Cartesian version of qphi
     
+
+def get_bin_edges(grid):
+    """ find the bin edges that correspond to the desired data grid
+        the average of neghboring bin edges reproduces the position in the grid 
+    """
+    v0 = grid[0]-(grid[1]-grid[0])/2
+    edges = [v0]
+    for i in range(len(grid)):
+        v1 = grid[i]*2 - v0
+        edges.append(v1)
+        v0 = v1
+    return np.asarray(edges)
+
+def grid_labels(qgrid, N=3):
+    dq = qgrid[1]-qgrid[0]
+    gpindex = [0]
+    gpvalues = [qgrid[0]]
+    gplabels = []
+
+    for i in range(1,len(qgrid)-1):
+        dq1 = qgrid[i+1]-qgrid[i]
+        if np.fabs(dq1-dq)/dq>0.01:
+            dq = dq1
+            gpindex.append(i)
+            prec = int(-np.log(dq)/np.log(10))+1
+            gpvalues.append(qgrid[i])
+    gpindex.append(len(qgrid)-1)
+    gpvalues.append(qgrid[-1])
+
+    if len(gpvalues)<3:
+        gpindex = np.linspace(1, len(qgrid), N, dtype=np.int)-1
+        gpvalues = qgrid[gpindex]
+    
+    for v in gpvalues:
+        if np.fabs(v)>=10 or np.fabs(v)<1e-4:
+            gplabels.append(f"{v:.0f}")
+        else:
+            prec = 1-int(np.log(np.fabs(v))/np.log(10))
+            gplabels.append(f"{v:.{prec}f}".rstrip('0'))
+    
+    return gpindex,gpvalues,gplabels
+
+
 class MatrixWithCoords:
     # 2D data with coordinates
     d = None
@@ -31,7 +74,30 @@ class MatrixWithCoords:
         
         return ret
     
-    def conv(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det):
+    def merge(self, ds):
+        """ merge a list of MatrixWithCoord together
+            the datatype should be DataType.qphi
+        """
+        for d in ds:
+            if not (np.array_equal(self.xc, d.xc) and np.array_equal(self.yc, d.yc)):
+                raise Exception("data to be merged are not compatible.")
+        
+        avg = self.copy()
+        wt = np.zeros(self.d.shape)
+        avg.d = np.zeros(self.d.shape)
+        idx = None
+        for d in [self]+ds:
+            idx = ~np.isnan(d.d)
+            avg.d[idx] += d.d[idx]
+            wt[idx] += 1
+
+        idx = (wt>0)
+        avg.d[idx] /= wt[idx]
+        avg.d[~idx] = np.nan
+
+        return avg
+    
+    def conv0(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det):
         """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
             returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
             Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
@@ -39,7 +105,7 @@ class MatrixWithCoords:
         """
         ret = MatrixWithCoords()
         ret.datatype = datatype
-        
+
         # correction factor is applied by dividing its value
         # should be called like this conv(...., cor_factor=exp.FSA)
         data = self.d/cor_factor
@@ -51,7 +117,12 @@ class MatrixWithCoords:
             xc1 = xc1[~(mask.map)].flatten()
             yc1 = yc1[~(mask.map)].flatten()
             data = data[~(mask.map)].flatten()
-        
+
+        if hasattr(Nx1, '__iter__'): # tuple or list or np array
+            Nx1 = get_bin_edges(Nx1)
+        if hasattr(Ny1, '__iter__'): # tuple or list or np array
+            Ny1 = get_bin_edges(Ny1)
+
         (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
                                                 bins=(Nx1, Ny1), weights=data)
         (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
@@ -63,8 +134,91 @@ class MatrixWithCoords:
         ret.d = np.fliplr(v_map/c_map).T
         ret.xc = (x_edges[:-1] + x_edges[1:])/2
         ret.yc = (y_edges[:-1] + y_edges[1:])/2
-        
         return ret
+
+    def conv(self, Nx1, Ny1, xc1, yc1, mask=None, interpolate=None, cor_factor=1, datatype=DataType.det):
+        """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
+            returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
+            Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
+            datatype is used to describe the type of the 2D data (detector image, qr-qz map, q-phi map)
+        """
+        ret = MatrixWithCoords()
+        ret.datatype = datatype
+
+        # correction factor is applied by dividing its value
+        # should be called like this conv(...., cor_factor=exp.FSA)
+        data = self.d/cor_factor
+        if mask is None:
+            xc1 = xc1.flatten()
+            yc1 = yc1.flatten()
+            data = data.flatten()
+        else:
+            xc1 = xc1[~(mask.map)].flatten()
+            yc1 = yc1[~(mask.map)].flatten()
+            data = data[~(mask.map)].flatten()
+
+        if hasattr(Nx1, '__iter__'): # tuple or list or np array
+            Nx1 = get_bin_edges(Nx1)
+        if hasattr(Ny1, '__iter__'): # tuple or list or np array
+            Ny1 = get_bin_edges(Ny1)
+
+        (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                bins=(Nx1, Ny1), weights=data)
+        (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                bins=(Nx1, Ny1), weights=np.ones(len(data)))
+        (xc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                bins=(Nx1, Ny1), weights=xc1)
+        (yc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                bins=(Nx1, Ny1), weights=yc1)
+
+        idx = (c_map<=0) # no data
+        c_map[idx] = 1.
+        v_map[idx] = np.nan
+        xc_map[idx] = np.nan
+        yc_map[idx] = np.nan
+
+        ret.xc = (x_edges[:-1] + x_edges[1:])/2
+        ret.yc = (y_edges[:-1] + y_edges[1:])/2
+
+        v_map /= c_map
+        xc_map /= c_map
+        yc_map /= c_map
+        v1_map = np.zeros_like(v_map)
+
+        # re-evaluate based on the actual coordinates instead of the expected
+        # unable to do it in 2D
+        # default is "x" for q in q-phi conversion
+        if interpolate=='x': 
+            for i in range(len(ret.yc)):
+                v_map[:,i] = np.interp(ret.xc, xc_map[:,i], v_map[:,i])
+        elif interpolate=='y':
+            for i in range(len(ret.xc)):
+                v_map[i,:] = np.interp(ret.yc, yc_map[i,:], v_map[i,:])
+
+        ret.d = np.fliplr(v_map).T
+        return ret
+
+    def plot(self, ax=None, logScale=False, **kwargs):
+        if ax is None:
+            plt.figure()
+            ax = plt.gca()
+
+        if logScale:
+            ax.imshow(np.log(self.d), aspect='auto', **kwargs)
+        else:
+            ax.imshow(self.d, aspect='auto', **kwargs)
+
+        axx = ax.twiny()
+        gpindex,gpvalues,gplabels = grid_labels(self.xc)
+        axx.set_xticks(gpindex)
+        axx.set_xticklabels(gplabels)
+
+        axy = ax.twinx()
+        gpindex,gpvalues,gplabels = grid_labels(self.yc)
+        axy.set_yticks(gpindex)
+        axy.set_yticklabels(gplabels)
+
+        axy.format_coord = ax.format_coord #make_format(ax2, ax1)
 
     def roi(self, x1, x2, y1, y2, mask=None):
         """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
@@ -190,11 +344,6 @@ class MatrixWithCoords:
         else:
             ret = copy.deepcopy(self)
             ret.d = self.d - dbkg.d*scale_factor
-    
-    def merge(self, datalist):
-        """ merge with the list of data given, not necessarily having the same coordinates
-        """
-        pass 
 
 
 class Data2d:

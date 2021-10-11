@@ -197,7 +197,7 @@ class Data1d:
                 print("normalized to %f" % ref_trans)
 
 
-    def avg(self, dsets, weighted=False, qmax_for_weight=0.3, 
+    def avg(self, dsets, weighted=True, qmax_for_weight=0.3, 
             plot_data=False, ax=None, debug=False, fontsize='large'):
         """
         dsets is a collection of Data1d

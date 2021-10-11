@@ -119,16 +119,23 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
     d_min = np.zeros(s0.qgrid.shape)+1.e32
     e_tot = np.zeros(s0.qgrid.shape)
     c_tot = np.zeros(s0.qgrid.shape)
+    w_tot = np.zeros(s0.qgrid.shape)
     label = None
     comments = ""
                 
     for d1 in d1s:        
         # empty part of the data is nan
         idx = ~np.isnan(d1.data)
-        d_tot[idx] += d1.data[idx]
-        e_tot[idx] += d1.err[idx]
+        # simple averaging
+        #d_tot[idx] += d1.data[idx]
+        #e_tot[idx] += d1.err[idx]
         c_tot[idx] += 1
-
+        # average using 1/sigma as weight
+        wt = 1/d1.err[idx]**2
+        d_tot[idx] += wt*d1.data[idx]
+        e_tot[idx] += d1.err[idx]**2*wt**2
+        w_tot[idx] += wt
+        
         idx1 = (np.ma.fix_invalid(d1.data, fill_value=-1)>d_max).data
         d_max[idx1] = d1.data[idx1]
         idx2 = (np.ma.fix_invalid(d1.data, fill_value=1e32)<d_min).data
@@ -139,15 +146,18 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
             label = d1.label
         else:
             label = common_name(label, d1.label)
-        
-    s0.data = d_tot
-    s0.err = e_tot
+    
+    # simple averaging
+    #s0.data[idx] /= c_tot[idx]
+    #s0.err[idx] /= np.sqrt(c_tot[idx])
+    # averaging by weight
+    s0.data = d_tot/w_tot
+    s0.err = np.sqrt(e_tot)/w_tot
     idx = (c_tot>1)
     s0.overlaps.append({'q_overlap': s0.qgrid[idx],
                         'raw_data1': d_max[idx],
                         'raw_data2': d_min[idx]})
-    s0.data[idx] /= c_tot[idx]
-    s0.err[idx] /= np.sqrt(c_tot[idx])
+    
     s0.label = label
     s0.comments = comments # .replace("# ", "## ")
     if save_merged:

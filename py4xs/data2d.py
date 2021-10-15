@@ -64,6 +64,7 @@ class MatrixWithCoords:
     d = None
     xc = None
     yc = None 
+    err = None
     datatype = None
     
     def copy(self):
@@ -71,6 +72,7 @@ class MatrixWithCoords:
         ret.xc = self.xc
         ret.yc = self.yc
         ret.d = np.copy(self.d)
+        ret.err = self.err
         
         return ret
     
@@ -136,7 +138,8 @@ class MatrixWithCoords:
         ret.yc = (y_edges[:-1] + y_edges[1:])/2
         return ret
 
-    def conv(self, Nx1, Ny1, xc1, yc1, mask=None, interpolate=None, cor_factor=1, datatype=DataType.det):
+    def conv(self, Nx1, Ny1, xc1, yc1, mask=None, interpolate=None, cor_factor=1, 
+             inc_stat_err=False, datatype=DataType.det):
         """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
             returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
             Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
@@ -162,17 +165,24 @@ class MatrixWithCoords:
         if hasattr(Ny1, '__iter__'): # tuple or list or np array
             Ny1 = get_bin_edges(Ny1)
 
+        if inc_stat_err:
+            dw = 1/np.sqrt(data)**2
+            (e_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                    bins=(Nx1, Ny1), weights=dw)
+        else:
+            dw = np.ones(len(data))
+
         (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=data)
-        (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=np.ones(len(data)))
+                                                bins=(Nx1, Ny1), weights=data*dw)
+        (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+                                                bins=(Nx1, Ny1), weights=dw)
         (xc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
                                                 bins=(Nx1, Ny1), weights=xc1)
         (yc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
                                                 bins=(Nx1, Ny1), weights=yc1)
 
-        idx = (c_map<=0) # no data
-        c_map[idx] = 1.
+        idx = (w_map<=0) # no data
+        w_map[idx] = 1.
         v_map[idx] = np.nan
         xc_map[idx] = np.nan
         yc_map[idx] = np.nan
@@ -180,11 +190,15 @@ class MatrixWithCoords:
         ret.xc = (x_edges[:-1] + x_edges[1:])/2
         ret.yc = (y_edges[:-1] + y_edges[1:])/2
 
-        v_map /= c_map
-        xc_map /= c_map
-        yc_map /= c_map
+        v_map /= w_map
+        xc_map /= w_map
+        yc_map /= w_map
         v1_map = np.zeros_like(v_map)
 
+        if inc_stat_err:
+            e_map[idx] = np.nan
+            ret.err = np.fliplr(np.sqrt(e_map)/w_map).T
+        
         # re-evaluate based on the actual coordinates instead of the expected
         # unable to do it in 2D
         # default is "x" for q in q-phi conversion

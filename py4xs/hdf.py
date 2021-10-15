@@ -102,10 +102,46 @@ def unpack_d1(data, qgrid, label, trans_value):
         ret.set_trans(trans_mode.external, trans_value)  # TODO: save transMode of d1s when packing 
         return ret
 
-def pack_d2(data):
-    pass
+save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
+                                      "unique": ["data", "err", "trans"]},
+               "py4xs.data2d.MatrixWithCoords": {"shared": ["xc", "yc"], 
+                                                 "unique": ["d", "err"]},
+              }
+    
+def pack(sn, data_key):
+    """ this is for packing processed data, which should be stored under h5xs.proc_data as a dictionary
+        the key is the name/identifier of the processed data, e.g. "qphi", "azi_avg"
+        pack_data() saves the data into the h5 file under the group processed/{data_key}
+        
+        processed data could be arrays of numbers, Data1d, or MatrixWithCoords
+    """
+    # figure out the group name first
+    grp = fh5[sn+'/processed']
+    g0 = lsh5(grp, top_only=True, silent=True)[0]
+    
+    
+    data = self.proc_data[data_key]
+    if isinstance(data, np.ndarray):
+        # save directly, no other information necessary
+        pass
+    
+    if not isinstance(data, list):
+        d0 = data
+        data = [d0]
+    else:
+        d0 = data[0]
+    if not data.__class__ in save_fields.keys():
+        raise Exception(f"don't know how to pack {data}") 
+    
+    for k in save_fields:
+        grp = fh5[sn+'/processed']
+        g0 = lsh5(grp, top_only=True, silent=True)[0]
+        if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
+            # new size for the data
+            del fh5[sn+'/processed']
+            grp = fh5[sn].create_group("processed")        
 
-def unpack_d2(data):
+def unpack(data, adict):
     pass
     
 def merge_d1s(d1s, detectors, save_merged=False, debug=False):
@@ -472,7 +508,9 @@ class h5xs():
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
         """
+        self.d0s = {}
         self.d1s = {}
+        self.d2s = {}
         self.detectors = None
         self.samples = []
         self.attrs = {}
@@ -951,6 +989,11 @@ class h5xs():
                 assert(self.transField!='')
                 trans_data = self.fh5[f'{s}/{self.transStream[s]}/data/{self.transField}'][...]
                 ts = self.fh5[f'{s}/{self.transStream[s]}/timestamps/{self.transField}'][...]
+                # needed to integrate monitor counts
+                if "pilatus" in self.header(s).keys():
+                    md = self.header(s)['pilatus']
+                    if 'exposure_time' in md.keys():
+                        exp=md['exposure_time']
                 if self.transStream[s]!="primary": 
                     # fly scanning, trigger must be a motor or "sol"  
                     if trigger is None:
@@ -962,30 +1005,33 @@ class h5xs():
                         # expect a finite but minimal offset in time since all come from the same IOC server
                         ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...]-dt0    
                         dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
-                        md = self.header(s)['pilatus']
-                        if 'exposure_time' in md.keys():
-                            exp=md['exposure_time']
                         if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
                             ts0 = ts0[0]+np.arange(dshape)*exp    
-                        trans_data1 = integrate_mon(trans_data, ts, ts0, exp)
                     elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
                         # intepolate instead of integrate, with filtering, less accurate
                         trigger_ts = sef.fh5[f'{s}/primary/timestamps/{trigger}'][...]-dt0
                         dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
                         if trigger_ts.shape != dshape:
                             raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
-                        spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
-                        ts0 = trigger_ts.flatten()
-                        trans_data1 = spl(ts0)
+                        # this makes use of smoothing, found to be unreliable
+                        #spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
+                        #ts0 = trigger_ts.flatten()
+                        #trans_data1 = spl(ts0)
                     else:
                         raise Exception(f"timestamp data for {trigger} cannot be found.")
 
-                    # smoothing/interpolating
+                    # the proper method is to integrate
+                    trans_data1 = integrate_mon(trans_data, ts, ts0, exp)
+
                     if plot_trigger:
                         plt.figure()
                         plt.plot(ts, trans_data)
                         plt.plot(ts0, trans_data1, "o")
                     trans_data = trans_data1
+                
+                if not sn in self.d0s.keys():
+                    self.d0s[s] = {}
+                self.d0s[s]["trans"] = trans_data
 
             # these are the datasets that needs updated trans values
             # also need to rescale merged data, in case it's been scale, e.g. during normalization
@@ -1031,17 +1077,21 @@ class h5xs():
             return
         
         if sn not in list(self.attrs.keys()):
-            self.d1s[sn] = {}
+            self.d0s[sn] = {}    # these are attributes extracted from each data point
+            self.d1s[sn] = {}    # 1d scattering data, of the type data1d
+            self.d2s[sn] = {}    # 2d data, of the type MatrixWithCorrds
             self.attrs[sn] = {}
         grp = fh5[sn+'/processed']
         for k in list(grp.attrs.keys()):
             self.attrs[sn][k] = grp.attrs[k]   
+        # initially only handles 1d data
         for k in lsh5(grp, top_only=True, silent=True):
             if 'trans' in grp[k].attrs.keys():
                 tvs = grp[k].attrs['trans']
             else:
                 tvs = 0
             self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, tvs)   
+            
 
     def save_d1s(self, sn=None, debug=False):
         """

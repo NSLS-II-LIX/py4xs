@@ -3,6 +3,38 @@ import matplotlib.colors as mc
 from functools import reduce
 import subprocess
 
+
+def calc_avg(dat:list, err:list, method="simple"):
+    """ both dat and err should be lists of numpy arrays, corresponding to data and error bar
+        calculate weighted average the data and the corresponding error 
+        use 1/err^2 as the weight
+        
+        TODO: need to weed out nan in dat, treat as zero-weight
+    """
+    if not method in ["simple", "err_weighted"]:
+        raise Exception("method must be either simple or err_weighted.")
+    
+    da = np.zeros_like(dat[0])
+    ea = np.zeros_like(dat[0])
+    
+    if method=="err_weighted":
+        for i in range(len(dat)):
+            wt = 1./err[i]**2
+            da += wt*dat[i]
+            ea += wt
+        da /= ea
+        ea = 1./np.sqrt(ea)
+    else:
+        ct = 0
+        for i in range(len(dat)):
+            da += wt*dat[i]
+            ea += wt*err[i]
+            ct += 1
+        da /= ct
+        ea = ea/ct/np.sqrt(ct)        
+
+    return da,ea
+
 def max_len(d1a, d1b, return_all=False):
     """ perform a Cormap-like pairwise comparison between 2 arrays
         if return_all is True, return a sequence of True/False base on the compasion of 
@@ -109,7 +141,7 @@ def cmap_map(function, cmap):
     return mc.LinearSegmentedColormap('colormap', cdict, 1024)
 
 
-def smooth(x,half_window_len=11,window='hanning'):
+def smooth(x, half_window_len=11, window='hanning'):
     """smooth the data using a window with requested size.
     revised from numpy cookbook, https://scipy-cookbook.readthedocs.io/items/SignalSmooth.html
     

@@ -3,6 +3,7 @@ import fabio
 import datetime,os,copy
 from py4xs.mask import Mask
 from py4xs.local import ExpPara
+from py4xs.utils import calc_avg
 import pylab as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
@@ -63,7 +64,9 @@ class MatrixWithCoords:
     # 2D data with coordinates
     d = None
     xc = None
+    xc_label = None
     yc = None 
+    yc_label = None
     err = None
     datatype = None
     
@@ -87,15 +90,19 @@ class MatrixWithCoords:
         avg = self.copy()
         wt = np.zeros(self.d.shape)
         avg.d = np.zeros(self.d.shape)
+        avg.err = np.zeros(self.d.shape)
         idx = None
         for d in [self]+ds:
             idx = ~np.isnan(d.d)
             avg.d[idx] += d.d[idx]
+            avg.err[idx] += d.err[idx]
             wt[idx] += 1
 
         idx = (wt>0)
         avg.d[idx] /= wt[idx]
+        avg.err[idx] /= wt[idx]
         avg.d[~idx] = np.nan
+        avg.err[~idx] = np.nan
 
         return avg
     
@@ -165,52 +172,52 @@ class MatrixWithCoords:
         if hasattr(Ny1, '__iter__'): # tuple or list or np array
             Ny1 = get_bin_edges(Ny1)
 
+        (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=np.ones(len(data)))
+        (xc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=xc1)
+        (yc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=yc1)
+        cidx = (c_map>0)
+
         if inc_stat_err:
-            dw = 1/np.sqrt(data)**2
-            (e_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                    bins=(Nx1, Ny1), weights=dw)
+            dw = np.zeros_like(data)
+            idx = (data!=0)
+            dw[idx] = 1./data[idx]
+            (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*dw)
+            (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=dw)
+            idx = (w_map>0)
+            v_map[idx] /= w_map[idx]
+            v_map[~idx] = np.nan
+            e_map[idx] = 1./np.sqrt(w_map[idx])
         else:
-            dw = np.ones(len(data))
-
-        (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=data*dw)
-        (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=dw)
-        (xc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=xc1)
-        (yc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=yc1)
-
-        idx = (w_map<=0) # no data
-        w_map[idx] = 1.
-        v_map[idx] = np.nan
-        xc_map[idx] = np.nan
-        yc_map[idx] = np.nan
+            (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data)
+            (v2_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*data)
+            v_map[cidx] /= c_map[cidx]
+            v_map[~cidx] = np.nan
+            v2_map[cidx] /= c_map[cidx]
+            e_map = np.sqrt(v2_map-v_map*v_map)
 
         ret.xc = (x_edges[:-1] + x_edges[1:])/2
         ret.yc = (y_edges[:-1] + y_edges[1:])/2
 
-        v_map /= w_map
-        xc_map /= w_map
-        yc_map /= w_map
-        v1_map = np.zeros_like(v_map)
+        xc_map[cidx] /= c_map[cidx]
+        yc_map[cidx] /= c_map[cidx]
 
-        if inc_stat_err:
-            e_map[idx] = np.nan
-            ret.err = np.fliplr(np.sqrt(e_map)/w_map).T
-        
+        ret.err = np.fliplr(e_map).T
+
         # re-evaluate based on the actual coordinates instead of the expected
         # unable to do it in 2D
         # default is "x" for q in q-phi conversion
         if interpolate=='x': 
             for i in range(len(ret.yc)):
-                v_map[:,i] = np.interp(ret.xc, xc_map[:,i], v_map[:,i])
+                idx = np.isnan(v_map[:,i])
+                if (len(v_map[:,i][~idx])>2):
+                    v_map[:,i][~idx] = np.interp(ret.xc[~idx], xc_map[:,i][~idx], v_map[:,i][~idx])
         elif interpolate=='y':
             for i in range(len(ret.xc)):
-                v_map[i,:] = np.interp(ret.yc, yc_map[i,:], v_map[i,:])
+                idx = np.isnan(v_map[i,:])
+                if (len(v_map[i,:][~idx])>2):
+                    v_map[i,:][~idx] = np.interp(ret.yc[~idx], yc_map[i,:][~idx], v_map[i,:][~idx])
 
         ret.d = np.fliplr(v_map).T
-        return ret
 
     def plot(self, ax=None, logScale=False, **kwargs):
         if ax is None:
@@ -337,17 +344,24 @@ class MatrixWithCoords:
             # the index is stored with 
             return np.flipud(dd)
 
-    def average(self, datalist):
+    def average(self, datalist:list, weighted=False):
         """ average with the list of data given
             all data must have the same coordinates and datatype
         """
-        ret = copy.deepcopy(self)
         for d in datalist:
             if not np.array_equal(ret.xc, d.xc) or not np.array_equal(ret.xc, d.xc) or ret.datatype!=d.datatype:
-                raise Exception("attempted average between imcompatiple data.")
-            ret.d += d.d
-        ret.d /= (len(datalist)+1)
-        
+                raise Exception("attempted average between incompatiple data.")
+            if weighted and d.err is None:
+                raise Exception("weighted average requires error bars for each dataset.")
+
+        ret = copy.deepcopy(self)
+        dat = [d.d for d in [self]+datalist]
+        if weighted:
+            err = [d.err for d in [self]+datalist]
+            calc_avg(dat, err, "")
+        else: 
+            calc_avg(dat)
+            
         return ret
     
     def bkg_cor(self, dbkg, scale_factor=1.0, in_place=True):
@@ -355,9 +369,13 @@ class MatrixWithCoords:
             raise Exception("attempted background subtraction using imcompatiple data.")
         if in_place:
             self.d -= np.asarray(dbkg.d*scale_factor, dtype=self.d.dtype)
+            if self.err and dbkg.err:
+                self.err += dbkg.err*scale_factor
         else:
             ret = copy.deepcopy(self)
             ret.d = self.d - dbkg.d*scale_factor
+            if self.err and dbkg.err:
+                ret.err = self.err + dbkg.err*scale_factor
 
 
 class Data2d:

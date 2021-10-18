@@ -16,24 +16,34 @@ def calc_avg(dat:list, err:list, method="simple"):
     
     da = np.zeros_like(dat[0])
     ea = np.zeros_like(dat[0])
+    wt = np.zeros_like(dat[0])
     
     if method=="err_weighted":
         for i in range(len(dat)):
-            wt = 1./err[i]**2
-            da += wt*dat[i]
-            ea += wt
-        da /= ea
-        ea = 1./np.sqrt(ea)
+            idx = (err[i]>0)
+            wt[~idx] = 0 
+            wt[idx] = 1./err[i][idx]**2
+            da[idx] += wt[idx]*dat[i][idx]
+            ea[idx] += wt[idx]
+        idx = (ea>0)
+        da[idx] /= ea[idx]
+        ea[idx] = 1./np.sqrt(ea[idx])
     else:
-        ct = 0
         for i in range(len(dat)):
-            da += wt*dat[i]
-            ea += wt*err[i]
-            ct += 1
-        da /= ct
-        ea = ea/ct/np.sqrt(ct)        
+            idx = ~np.isnan(dat[i])
+            da[idx] += dat[i][idx]
+            if len(err)>0:
+                ea[idx] += err[i][idx]
+            wt[idx] += 1.
+        idx = (wt>0)
+        da[idx] /= wt[idx]
+        if len(err)>0:
+            ea[idx] = ea[idx]/wt[idx]/np.sqrt(wt[idx])        
+        else: 
+            ea = None
 
     return da,ea
+
 
 def max_len(d1a, d1b, return_all=False):
     """ perform a Cormap-like pairwise comparison between 2 arrays

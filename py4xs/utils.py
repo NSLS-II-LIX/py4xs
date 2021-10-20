@@ -8,17 +8,17 @@ def calc_avg(dat:list, err:list, method="simple"):
     """ both dat and err should be lists of numpy arrays, corresponding to data and error bar
         calculate weighted average the data and the corresponding error 
         use 1/err^2 as the weight
-        
-        TODO: need to weed out nan in dat, treat as zero-weight
     """
     if not method in ["simple", "err_weighted"]:
-        raise Exception("method must be either simple or err_weighted.")
+        raise Exception("method must be either 'simple' or 'err_weighted'.")
     
     da = np.zeros_like(dat[0])
     ea = np.zeros_like(dat[0])
     wt = np.zeros_like(dat[0])
     
     if method=="err_weighted":
+        if len(err)==0:
+            raise Exception("error bars required for err_weighted average.")
         for i in range(len(dat)):
             idx = (err[i]>0)
             wt[~idx] = 0 

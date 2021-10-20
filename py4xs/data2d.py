@@ -74,6 +74,8 @@ class MatrixWithCoords:
         ret = MatrixWithCoords()
         ret.xc = self.xc
         ret.yc = self.yc
+        ret.xc_label = self.xc_label
+        ret.yc_label = self.yc_label
         ret.d = np.copy(self.d)
         ret.err = self.err
         
@@ -81,7 +83,6 @@ class MatrixWithCoords:
     
     def merge(self, ds):
         """ merge a list of MatrixWithCoord together
-            the datatype should be DataType.qphi
         """
         for d in ds:
             if not (np.array_equal(self.xc, d.xc) and np.array_equal(self.yc, d.yc)):
@@ -146,11 +147,13 @@ class MatrixWithCoords:
         return ret
 
     def conv(self, Nx1, Ny1, xc1, yc1, mask=None, interpolate=None, cor_factor=1, 
-             inc_stat_err=False, datatype=DataType.det):
+             inc_stat_err=False, datatype=DataType.det, err_thresh=1e-5):
         """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
             returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
             Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
             datatype is used to describe the type of the 2D data (detector image, qr-qz map, q-phi map)
+            
+            err_thresh is used to weed out some outliers
         """
         ret = MatrixWithCoords()
         ret.datatype = datatype
@@ -165,7 +168,7 @@ class MatrixWithCoords:
         else:
             xc1 = xc1[~(mask.map)].flatten()
             yc1 = yc1[~(mask.map)].flatten()
-            data = data[~(mask.map)].flatten()
+            data = data[~(mask.map)].flatten()            
 
         if hasattr(Nx1, '__iter__'): # tuple or list or np array
             Nx1 = get_bin_edges(Nx1)
@@ -179,14 +182,23 @@ class MatrixWithCoords:
 
         if inc_stat_err:
             dw = np.zeros_like(data)
-            idx = (data!=0)
+            idx = (data!=0)    # to avoid the divergent weight for zero intensity
             dw[idx] = 1./data[idx]
+            counted = np.zeros(len(data))
+            counted[idx] = 1.
             (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*dw)
             (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=dw)
+            (c1_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=counted)   # we are skipping the zero intensity pixels
             idx = (w_map>0)
             v_map[idx] /= w_map[idx]
             v_map[~idx] = np.nan
+            e_map = np.zeros_like(v_map)
             e_map[idx] = 1./np.sqrt(w_map[idx])
+            e_map[~idx] = np.nan
+            # scale data based on how many pixels are counted vs should have been counted
+            scl = np.sqrt(c_map[idx]/c1_map[idx])
+            v_map[idx] /= scl
+            e_map[idx] /= scl
         else:
             (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data)
             (v2_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*data)
@@ -218,6 +230,10 @@ class MatrixWithCoords:
                     v_map[i,:][~idx] = np.interp(ret.yc[~idx], yc_map[i,:][~idx], v_map[i,:][~idx])
 
         ret.d = np.fliplr(v_map).T
+        idx = (ret.d==0) | (ret.err<err_thresh)
+        ret.d[idx] = np.nan
+        ret.err[idx] = np.nan
+        return ret
 
     def plot(self, ax=None, logScale=False, **kwargs):
         if ax is None:
@@ -228,17 +244,23 @@ class MatrixWithCoords:
             ax.imshow(np.log(self.d), aspect='auto', **kwargs)
         else:
             ax.imshow(self.d, aspect='auto', **kwargs)
+        ax.set_xlabel('ix')
+        ax.set_ylabel('iy')
 
         axx = ax.twiny()
         gpindex,gpvalues,gplabels = grid_labels(self.xc)
         axx.set_xticks(gpindex)
         axx.set_xticklabels(gplabels)
+        if self.xc_label:
+            axx.set_xlabel(self.xc_label)
 
         axy = ax.twinx()
         gpindex,gpvalues,gplabels = grid_labels(self.yc)
         axy.set_yticks(gpindex)
         axy.set_yticklabels(gplabels)
-
+        if self.yc_label:
+            axy.set_ylabel(self.yc_label)
+            
         axy.format_coord = ax.format_coord #make_format(ax2, ax1)
 
     def roi(self, x1, x2, y1, y2, mask=None):
@@ -315,34 +337,33 @@ class MatrixWithCoords:
         
         return ret
     
-    def flatten(self, axis=0):
-        """ collapse the matrix into an array 
-            along x coordinates if axis=0, along y coordinates if axis=1
+    def flatten(self, axis='x', method='err_weighted'):
+        """ collapse the matrix onto the specified axis and turn it into an array 
         """
-        cor = np.ones(self.d.shape)
-        data = np.copy(self.d)
+        if not axis in ['x', 'y']:
+            raise Exception(f"unkown axis for flattening data: {axis}")
+        if not method in ['simple', 'err_weighted']:
+            raise Exception(f"unknow method for averaging: {method}")
+        if method=="err_weighted" and self.err is None:
+            raise Exception(f"err_weighted averaging requires error bar data.")
+    
+        dat = []
+        err = []
+        if axis=='x':
+            for i in range(len(self.yc)):
+                dat.append(self.d[i,:])
+                if self.err is not None:
+                    err.append(self.err[i,:])
+        if axis=='y':
+            for i in range(len(self.xc)):
+                dat.append(self.d[:,i])
+                if self.err is not None:
+                    err.append(self.err[:,i])
+        if self.err is None:
+            err = None
+        dd,ee = calc_avg(dat, err, method=method)
         
-        idx = np.isnan(data)
-        cor[idx] = 0
-        data[idx] = 0
-        
-        if axis!=0 and axis!=1:
-            raise Exception("unkown axis for flattening data.")
-        
-        # exclude blank portion of the data
-        dcor = np.sum(cor, axis=axis)
-        dd = np.sum(data, axis=axis)
-        idx = (dcor<=0)
-        dcor[idx] = 1.
-        dd[idx] =np.nan
-        dd /= dcor
-
-        if axis==0:
-            return dd 
-        elif axis==1:
-            # the data is always stored with the upper left corner first in the memory
-            # the index is stored with 
-            return np.flipud(dd)
+        return dd,ee
 
     def average(self, datalist:list, weighted=False):
         """ average with the list of data given

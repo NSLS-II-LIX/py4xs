@@ -103,8 +103,8 @@ def unpack_d1(data, qgrid, label, trans_value):
         return ret
 
 save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
-                                      "unique": ["data", "err", "trans"]},
-               "py4xs.data2d.MatrixWithCoords": {"shared": ["xc", "yc"], 
+                                      "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
+               "py4xs.data2d.MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], 
                                                  "unique": ["d", "err"]},
               }
     
@@ -113,10 +113,32 @@ def pack(sn, data_key):
         the key is the name/identifier of the processed data, e.g. "qphi", "azi_avg"
         pack_data() saves the data into the h5 file under the group processed/{data_key}
         
-        processed data could be arrays of numbers, Data1d, or MatrixWithCoords
+        h5xs.proc_data[data_key] could be an instance or list of numpy arrays, Data1d, or MatrixWithCoords
+        
+        
     """
-    # figure out the group name first
-    grp = fh5[sn+'/processed']
+    fh5 = self.fh5
+    # make sure the processed group exisits
+    if not "processed" in list(fh5[sn].keys()):
+        grp = fh5[sn].create_group("processed")
+    else:
+        grp = fh5[f"{sn}/processed']
+    
+    # if the data group exists
+    if not data_key in list(grp.keys()):
+        grp = grp.create_group(data_key)
+    else:
+        grp = grp[data_key]
+        g0 = lsh5(grp, top_only=True, silent=True)[0]
+        
+
+    # under the group, save the "unique" fields as datasets, and "shared" fields as attrubutes
+    # for np.ndarray, save data as "data"
+    if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
+        # new size for the data
+        del fh5[sn+'/processed']
+                
+    grp = fh5[f"{sn}/processed']
     g0 = lsh5(grp, top_only=True, silent=True)[0]
     
     

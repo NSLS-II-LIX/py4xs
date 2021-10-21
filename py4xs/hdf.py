@@ -101,70 +101,7 @@ def unpack_d1(data, qgrid, label, trans_value):
         ret.label = label
         ret.set_trans(trans_mode.external, trans_value)  # TODO: save transMode of d1s when packing 
         return ret
-
-save_fields = {"py4xs.slnxs.Data1d": {"shared": ['qgrid', "transMode"],
-                                      "unique": ["data", "err", "trans", "trans_e", "trans_w"]},
-               "py4xs.data2d.MatrixWithCoords": {"shared": ["xc", "yc", "xc_label", "yc_label"], 
-                                                 "unique": ["d", "err"]},
-              }
     
-def pack(sn, data_key):
-    """ this is for packing processed data, which should be stored under h5xs.proc_data as a dictionary
-        the key is the name/identifier of the processed data, e.g. "qphi", "azi_avg"
-        pack_data() saves the data into the h5 file under the group processed/{data_key}
-        
-        h5xs.proc_data[data_key] could be an instance or list of numpy arrays, Data1d, or MatrixWithCoords
-        
-        
-    """
-    fh5 = self.fh5
-    # make sure the processed group exisits
-    if not "processed" in list(fh5[sn].keys()):
-        grp = fh5[sn].create_group("processed")
-    else:
-        grp = fh5[f"{sn}/processed']
-    
-    # if the data group exists
-    if not data_key in list(grp.keys()):
-        grp = grp.create_group(data_key)
-    else:
-        grp = grp[data_key]
-        g0 = lsh5(grp, top_only=True, silent=True)[0]
-        
-
-    # under the group, save the "unique" fields as datasets, and "shared" fields as attrubutes
-    # for np.ndarray, save data as "data"
-    if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
-        # new size for the data
-        del fh5[sn+'/processed']
-                
-    grp = fh5[f"{sn}/processed']
-    g0 = lsh5(grp, top_only=True, silent=True)[0]
-    
-    
-    data = self.proc_data[data_key]
-    if isinstance(data, np.ndarray):
-        # save directly, no other information necessary
-        pass
-    
-    if not isinstance(data, list):
-        d0 = data
-        data = [d0]
-    else:
-        d0 = data[0]
-    if not data.__class__ in save_fields.keys():
-        raise Exception(f"don't know how to pack {data}") 
-    
-    for k in save_fields:
-        grp = fh5[sn+'/processed']
-        g0 = lsh5(grp, top_only=True, silent=True)[0]
-        if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
-            # new size for the data
-            del fh5[sn+'/processed']
-            grp = fh5[sn].create_group("processed")        
-
-def unpack(data, adict):
-    pass
     
 def merge_d1s(d1s, detectors, save_merged=False, debug=False):
     """ utility function to merge 1D data sets, using functions under slnxs 

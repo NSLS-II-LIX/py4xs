@@ -276,7 +276,11 @@ class MatrixWithCoords:
 
         ret.xc = self.xc[xidx]
         ret.yc = self.yc[yidx]
+        ret.xc_label = self.xc_label
+        ret.yc_label = self.yc_label
         ret.d = np.asarray(self.d[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
+        if self.err is not None:
+            ret.err = np.asarray(self.err[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
         
         if mask is not None:
             idx = mask.map[t1*t2].reshape((len(ret.yc),len(ret.xc)))

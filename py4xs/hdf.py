@@ -11,7 +11,7 @@ import multiprocessing as mp
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.local import det_names,det_model,beamline_name    # e.g. "_SAXS": "pil1M_image"
+from py4xs.local import det_names,det_model,beamline_name,transmitted_monitor_field   
 from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
 from py4xs.utils import run
 from itertools import combinations
@@ -462,7 +462,7 @@ class h5xs():
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
     """    
-    def __init__(self, fn, exp_setup=None, transField='', save_d1=True):
+    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file

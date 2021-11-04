@@ -23,3 +23,7 @@ beamline_name = "# LiX (16-ID), NSLS-II"
 det_model = {"_SAXS": "Pilatus3X 1M",
               "_WAXS1": "Pilatus3X 300K",
               "_WAXS2": "Pilatus3X 900K"}
+
+incident_monitor_field = "em1_sum_all_mean_value"
+transmitted_monitor_field = "em2_sum_all_mean_value"
+

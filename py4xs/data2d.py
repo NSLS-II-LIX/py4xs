@@ -46,7 +46,7 @@ def grid_labels(qgrid, N=3):
     gpindex.append(len(qgrid)-1)
     gpvalues.append(qgrid[-1])
 
-    if len(gpvalues)<3:
+    if len(gpvalues)>3:
         gpindex = np.linspace(1, len(qgrid), N, dtype=np.int)-1
         gpvalues = qgrid[gpindex]
     
@@ -81,31 +81,107 @@ class MatrixWithCoords:
         
         return ret
     
+    def expand(self, coord, axis):
+        """ extend x or y coordinates, as specified by axis and the new coordinates, so that dissimilar
+            datasets can be merged to produce a larger dataset
+        """
+        if axis=='x':
+            shape = (len(self.yc),len(coord))
+            d = np.full(shape, np.nan)
+            if self.err is not None:
+                err = np.full(shape, np.nan)
+            else:
+                err = None
+            for i in range(len(self.xc)):
+                i0 = np.where(coord==self.xc[i])[0][0]
+                d[:,i0] = self.d[:,i]
+                if err is not None:
+                    err[:,i0] = self.err[:,i]
+        elif axis=='y':
+            shape = (len(coord),len(self.xc))
+            d = np.full(shape, np.nan)
+            if self.err is not None:
+                err = np.full(shape, np.nan)
+            else:
+                err = None
+            for i in range(len(self.yc)):
+                i0 = np.where(coord==self.yc[i])[0][0]
+                d[i0,:] = self.d[i,:]
+                if err is not None:
+                    err[i0,] = self.err[i,:]
+        else:
+            raise Exception(f"invalid axis: {axis}")
+
+        return d,err
+
     def merge(self, ds):
         """ merge a list of MatrixWithCoord together
+            all objects must have the same coordinates at least in one dimension
+
+            since it is difficult to check whether the coordinates are the identical (prec),
+            assume they are the same as long as the length are the same
         """
+        common_x = True
+        common_y = True
         for d in ds:
-            if not (np.array_equal(self.xc, d.xc) and np.array_equal(self.yc, d.yc)):
-                raise Exception("data to be merged are not compatible.")
+            #if not np.array_equal(self.xc, d.xc):
+            if len(self.xc)!=len(d.xc):
+                common_x = False
+            if self.xc_label!=d.xc_label:
+                raise Exception("data to be merged have different x_labels.")
+            #if not np.array_equal(self.yc, d.yc):
+            if len(self.yc)!=len(d.yc):
+                common_y = False
+            if self.yc_label!=d.yc_label:
+                raise Exception("data to be merged have different x_labels.")
+
+        if not common_x and not common_y:
+            raise Exception("data to be merged are not compatible.")
         
-        avg = self.copy()
-        wt = np.zeros(self.d.shape)
-        avg.d = np.zeros(self.d.shape)
-        avg.err = np.zeros(self.d.shape)
+        ret = MatrixWithCoords()
+        ret.xc = self.xc
+        ret.yc = self.yc
+        if not common_x:
+            ret.xc = np.unique(np.hstack([d.xc for d in [self]+ds]))
+        elif not common_y:
+            ret.yc = np.unique(np.hstack([d.yc for d in [self]+ds]))
+        ret.xc_label = self.xc_label
+        ret.yc_label = self.yc_label
+        shape = (len(ret.yc),len(ret.xc))
+        
+        #print(common_x,common_y,len(ret.xc),len(ret.yc),shape)
+        
+        wt = np.zeros(shape)
+        ret.d = np.zeros(shape)
+        if self.err is not None:
+            ret.err = np.zeros(shape)
+        else:
+            ret.err = None
+        
         idx = None
         for d in [self]+ds:
-            idx = ~np.isnan(d.d)
-            avg.d[idx] += d.d[idx]
-            avg.err[idx] += d.err[idx]
+            # expand data if necessary
+            if not common_x:
+                dd,err = d.expand(ret.xc, "x")
+            elif not common_y:
+                dd,err = d.expand(ret.yc, "y")
+            else:
+                dd = d.d
+                err = d.err
+            idx = ~np.isnan(dd)
+            ret.d[idx] += dd[idx]
+            if ret.err is not None:
+                ret.err[idx] += err[idx]
             wt[idx] += 1
 
         idx = (wt>0)
-        avg.d[idx] /= wt[idx]
-        avg.err[idx] /= wt[idx]
-        avg.d[~idx] = np.nan
-        avg.err[~idx] = np.nan
+        ret.d[idx] /= wt[idx]
+        ret.d[~idx] = np.nan
+        if err is not None:
+            ret.err[idx] /= wt[idx]
+            ret.err[~idx] = np.nan
 
-        return avg
+        return ret
     
     def conv0(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det):
         """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel

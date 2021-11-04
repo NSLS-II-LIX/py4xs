@@ -51,80 +51,81 @@ handling of transmitted beam intensity;
 first attempt to support scanning data 
 
 2018-11:
-slnxs bug fix; moved some functions from h5sol_HT to h5xs
+slnxs bug fix; moved some functions from h5sol_HT to h5xs;
 
 2019-02:
 uniform creation of data2d from either a filename or a numpy array;
 h5exp for storing experimental configuration (no data);
-export x-ray scattering chromatogram
+export x-ray scattering chromatogram;
 
 2019-03:
-add SVD background subtraction to h5sol_HPLC
-return calculated chromtogram as data
+add SVD background subtraction to h5sol_HPLC;
+return calculated chromtogram as data;
 
 2019-04:
-delete existing "processed" data group when the length of qgrid changes
-add mask items from code rather than from a file
-error bar calculation in Data1d.avg()
+delete existing "processed" data group when the length of qgrid changes;
+add mask items from code rather than from a file;
+error bar calculation in Data1d.avg();
 
 2019-05:
-added notebooks.py to define data processing notebook GUIs
+added notebooks.py to define data processing notebook GUIs;
 
 2019-09:
-meta data footer in exported 1D scattering profile
+meta data footer in exported 1D scattering profile;
 
 2019-10:
-functions in h5sol_HT to compare samples and change buffer
+functions in h5sol_HT to compare samples and change buffer;
 
 2019-11:
-fixed bug in bin_subtracted_frames(); added ATSAS report to HPLC GUI
+fixed bug in bin_subtracted_frames(); added ATSAS report to HPLC GUI;
 handles em as monitor for transmission intensity;
-create new h5 file with links to multiple files; update display_data_h5xs()
+create new h5 file with links to multiple files; update display_data_h5xs();
 
 2020-01:
-fixed tick lables in HPLC 2D plot
+fixed tick lables in HPLC 2D plot;
 
 2020-02:
-refined conv_Iq() to improve accuracy
-functions to help generate mask from the data
-h5xs.load_data() now work for scattering data store in 2D arrays
+refined conv_Iq() to improve accuracy;
+functions to help generate mask from the data;
+h5xs.load_data() now work for scattering data store in 2D arrays;
 
 2020-03:
-implemented cormap-equivalent pair-wise comparison
-added check_bm_center() function in hdf
+implemented cormap-equivalent pair-wise comparison;
+added check_bm_center() function in hdf;
 
 2020-04:
-added estimate_scaling_factor() for buffer subtraction
-assume default flow rate with older HPLC data
-revised ATSAS support functions; paralellized modelling using Dask
+added estimate_scaling_factor() for buffer subtraction;
+assume default flow rate with older HPLC data;
+revised ATSAS support functions; paralellized modelling using Dask;
 
 2020-05:
-revised h5xs.check_bm_center()
-added h5exp.recalibrate()
-incorporate estimate_scaling_dactor() into h5solHT.process()
+revised h5xs.check_bm_center();
+added h5exp.recalibrate();
+incorporate estimate_scaling_dactor() into h5solHT.process();
 
 2020-12:
-revised handling of transField in h5xs
-revised h5xs.load_data()
-added h5xs.show_data_qxy() and show_data_qphi()
+revised handling of transField in h5xs;
+revised h5xs.load_data();
+added h5xs.show_data_qxy() and show_data_qphi();
 
 2021-01:
-revised 2d data plotting; possible to display arbitrary reference rings
-use pyFAI-calib2 for h5exp.recalibrate()
+revised 2d data plotting; possible to display arbitrary reference rings;
+use pyFAI-calib2 for h5exp.recalibrate();
 
 2021-02:
-new methods under h5xs: get_d1(), verify_frn()
-corrected data sequence in h5xs.d1s
+new methods under h5xs: get_d1(), verify_frn();
+corrected data sequence in h5xs.d1s;
 
 2021-05:
-allow Data1d to have both trans_w (water) and trans_e (external)
-the attribute trans is set based on the transMode
-added h5xs.header(), revised h5xs.set_trans()
+allow Data1d to have both trans_w (water) and trans_e (external);
+the attribute trans is set based on the transMode;
+added h5xs.header(), revised h5xs.set_trans();
 
 2021-08:
-possibility to correct for flat field 
-deal with transmission values in solution scattering data in the monitor stream
-option to impose dtype on Data2d
+possibility to correct for flat field;
+deal with transmission values in solution scattering data in the monitor stream;
+option to impose dtype on Data2d;
 
 2021-10:
-revised h5xs.set_trans() to better handle solution scattering normalization
+revised h5xs.set_trans() to better handle solution scattering normalization;
+

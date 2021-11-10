@@ -11,7 +11,7 @@ import multiprocessing as mp
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.local import det_names,det_model,beamline_name,transmitted_monitor_field   
+from py4xs.local import det_names,det_model,beamline_name,incident_monitor_field,transmitted_monitor_field
 from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
 from py4xs.utils import run
 from itertools import combinations
@@ -57,10 +57,13 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
+
 def integrate_mon(em, ts, ts0, exp):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
         ts0 is the timestamps on the exposures, with duration of exp
+        
+        assume ts and ts0 are 1d arrays
     """
     ffe = interp1d(ts, em)
     em0 = []
@@ -69,7 +72,28 @@ def integrate_mon(em, ts, ts0, exp):
         ee = ffe(tt)
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
+
+
+def get_monitor_counts(grp, fieldName):
+    """ look under a data group (grp) that belong to a specific sample, find the stream that contains fieldName
+        caluclate the monitor counts based on the given timestamps (ts) and exposure time
+    """
+    strn = None
+    for stream in list(grp):
+        if not 'data' in list(grp[stream]):
+            continue
+        if fieldName in list(grp[stream]["data"]):
+            strn = stream
+            break
+    if strn is None:
+        raise Exeption(f"could not find the stream that contains {fieldName}.")
     
+    data = grp[strn]["data"][fieldName][...]
+    ts = grp[strn]["timestamps"][fieldName][...]
+
+    return strn,ts,data
+
+
 def pack_d1(data, ret_trans=True):
     """ utility function to creat a list of [intensity, error] from a Data1d object 
         or from a list of Data1s objects
@@ -462,7 +486,7 @@ class h5xs():
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
     """    
-    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True):
+    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True, read_only=False):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
@@ -479,7 +503,10 @@ class h5xs():
 
         self.fn = fn
         self.save_d1 = save_d1
-        self.fh5 = h5py.File(self.fn, "r+")   # file must exist
+        if read_only:
+            self.fh5 = h5py.File(self.fn, "r")   # file must exist
+        else:
+            self.fh5 = h5py.File(self.fn, "r+")   # file must exist
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -501,11 +528,14 @@ class h5xs():
         # these are the detectors that are present in the data
         d_dn = [d.extension for d in self.detectors]
         for det_name in det_names:
-            for k in set(det_name.keys()).difference(d_dn):
-                del det_name[k]
-            if set(det_name.values()).issubset(data_fields.keys()):
-                self.det_name = det_name
+            dn = copy.copy(det_name)
+            for k,v in det_name.items():
+                if not k in d_dn or not v in data_fields.keys():
+                    del dn[k]
+            if len(dn.keys())>0:
+                self.det_name = dn
                 break
+                
         if self.det_name is None:
             print('fields in the h5 file: ', data_fields)
             raise Exception("Could not find the data corresponding to the detectors.")
@@ -914,6 +944,99 @@ class h5xs():
 
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
+    def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
+                force_synch=-0.25, force_synch_trig=0, debug=False, plot_trigger=False, **kwargs): 
+        """ calculate the monitor counts for each data point
+            1. if the monitors are read together with the detectors 
+            2. if the monitors are used asynchronously, monitor values would need to be integated 
+               based on timestampls; a trigger must be provided 
+                2a: in fly scans, this should be a motor name
+                2b: for solution scattering, use "sol" as trigger
+
+            the timestamps on the trigger and em1/em2 may not be synced, dt0 provides a correction 
+            to the trigger timestamp
+            
+            if plot_trigger=True and a single sample is named as sn, generate a plot for verification
+
+            timestamps on em1 appear to be way off, ntpd not running
+            if force_synch is non-zero, use first em2 timestamp + force_synch as start of em1 
+        """
+        if sn is None or isinstance(sn, list):
+            if plot_trigger:
+                plot_trigger = False           # plot for a single sample only
+                print("Disabling plot_trigger since not a single sample name is specified.")
+            samples = self.samples
+        else:
+            samples = [sn]
+           
+        for s in samples:
+            if "pilatus" in self.header(s).keys():
+                md = self.header(s)['pilatus']
+                if 'exposure_time' in md.keys():
+                    exp=md['exposure_time']
+
+            if trigger is None:
+                #raise Exception("the motor that triggers data collection must be specified.")
+                print("monitors are used as detectors.")
+            elif trigger=="sol":
+                dn = list(self.det_name.values())[0]
+                # expect a finite but minimal offset in time since all come from the same IOC server
+                ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...].flatten()
+                dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
+                if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
+                    ts0 = ts0[0]+np.arange(dshape)*exp    
+            elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
+                ts0 = self.fh5[f'{s}/primary/timestamps/{trigger}'][...].flatten()
+                dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+                if len(dshape)>1:
+                    if len(dshape)>2:
+                        raise Exception(f"Don't know how to handle data shape {dshape}")
+                    dshape = dshape[0]*dshape[1]
+                else:
+                    dshape = dshape[0]
+                if len(ts0) != dshape:
+                    raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
+                if len(ts0)>1: # expect the monitor data to be 1D
+                    ts0 = ts0.flatten()
+            else:
+                raise Exception(f"timestamp data for {trigger} cannot be found.")
+
+            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor_field)
+            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor_field)
+            if force_synch!=0: # timestamps between em1/em2 
+                ts1 = ts1-ts1[0]+ts2[0]+force_synch
+
+            if strn=="primary":
+                trans_data0 = trans_data
+                incid_data0 = incid_data
+            else:
+                try:
+                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp)
+                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp)                
+                except:
+                    t0 = np.min(ts2)
+                    print(f"time series likely misaligned:")
+                    print(f"trans mon: {np.min(ts2)-t0} ~ {np.max(ts2)-t0}")
+                    print(f"incid mon: {np.min(ts1)-t0} ~ {np.max(ts1)-t0}")
+                    print(f"detector: start={ts0-t0}, force_synch={force_synch_trig}, exp = {exp}")
+                    raise
+
+                if plot_trigger:
+                    plt.figure()
+                    plt.plot(ts2, trans_data/np.max(trans_data))
+                    plt.plot(ts0+force_synch_trig, trans_data0/np.max(trans_data), "o")
+                    plt.plot(ts1, incid_data/np.max(incid_data))
+                    plt.plot(ts0+force_synch_trig, incid_data0/np.max(incid_data), "o")
+                    
+            if not hasattr(self, "d0s"):
+                self.d0s = {}
+            if not sn in self.d0s.keys():
+                self.d0s[s] = {}
+            self.d0s[s]["transmitted"] = trans_data0
+            self.d0s[s]["incident"] = incid_data0
+            transmission = trans_data0/incid_data0
+            transmission /= np.nanmean(transmission)
+            self.d0s[s]["transmission"] = transmission
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data
@@ -946,52 +1069,12 @@ class h5xs():
         for s in samples:
             if self.transMode==trans_mode.external: # transField should be set/validated already
                 assert(self.transField!='')
-                trans_data = self.fh5[f'{s}/{self.transStream[s]}/data/{self.transField}'][...]
-                ts = self.fh5[f'{s}/{self.transStream[s]}/timestamps/{self.transField}'][...]
-                # needed to integrate monitor counts
-                if "pilatus" in self.header(s).keys():
-                    md = self.header(s)['pilatus']
-                    if 'exposure_time' in md.keys():
-                        exp=md['exposure_time']
-                if self.transStream[s]!="primary": 
-                    # fly scanning, trigger must be a motor or "sol"  
-                    if trigger is None:
-                        raise Exception("the motor that triggers data collection must be specified.")
-                    elif trigger=="sol":
-                        # in this case the monitors are read more frequently than detector exposures
-                        # integrate monitor counts based  
-                        dn = list(self.det_name.values())[0]
-                        # expect a finite but minimal offset in time since all come from the same IOC server
-                        ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...]-dt0    
-                        dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
-                        if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
-                            ts0 = ts0[0]+np.arange(dshape)*exp    
-                    elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
-                        # intepolate instead of integrate, with filtering, less accurate
-                        trigger_ts = sef.fh5[f'{s}/primary/timestamps/{trigger}'][...]-dt0
-                        dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
-                        if trigger_ts.shape != dshape:
-                            raise Exception(f"mistached timestamp length: {len(trigger_ts)} vs {dshape}")
-                        # this makes use of smoothing, found to be unreliable
-                        #spl = uspline(ts, gaussian_filter(trans_data, gf_sigma))
-                        #ts0 = trigger_ts.flatten()
-                        #trans_data1 = spl(ts0)
-                    else:
-                        raise Exception(f"timestamp data for {trigger} cannot be found.")
-
-                    # the proper method is to integrate
-                    trans_data1 = integrate_mon(trans_data, ts, ts0, exp)
-
-                    if plot_trigger:
-                        plt.figure()
-                        plt.plot(ts, trans_data)
-                        plt.plot(ts0, trans_data1, "o")
-                    trans_data = trans_data1
+                try:
+                    trans_data = self.d0s[s]["transmitted"]
+                except:
+                    print("run get_mon() first!")
+                    raise
                 
-                if not sn in self.d0s.keys():
-                    self.d0s[s] = {}
-                self.d0s[s]["trans"] = trans_data
-
             # these are the datasets that needs updated trans values
             # also need to rescale merged data, in case it's been scale, e.g. during normalization
             grps = list(set(self.d1s[s].keys()) & set(det_model.keys()))

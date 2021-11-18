@@ -1072,9 +1072,10 @@ class h5xs():
                 try:
                     trans_data = self.d0s[s]["transmitted"]
                 except:
-                    print("run get_mon() first!")
-                    raise
-                
+                    print("attempting to run get_mon() first ...")
+                    self.get_mon(sn=s, trigger=trigger)
+                    trans_data = self.d0s[s]["transmitted"]
+
             # these are the datasets that needs updated trans values
             # also need to rescale merged data, in case it's been scale, e.g. during normalization
             grps = list(set(self.d1s[s].keys()) & set(det_model.keys()))

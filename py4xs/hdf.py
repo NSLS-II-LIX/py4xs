@@ -58,13 +58,16 @@ def create_linked_files(fn, fnlist):
     ff.close()
 
 
-def integrate_mon(em, ts, ts0, exp):
+def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
         ts0 is the timestamps on the exposures, with duration of exp
         
         assume ts and ts0 are 1d arrays
     """
+    if extend_mon_stream and ts[-1]<ts0[-1]+exp*1.5:
+        em = np.append(em, em[-1])
+        ts = np.append(ts, ts0[-1]+exp*1.5)
     ffe = interp1d(ts, em)
     em0 = []
     for t in ts0:
@@ -511,7 +514,8 @@ class h5xs():
             self.qgrid = self.read_detectors()
         else:
             self.detectors, self.qgrid = exp_setup
-            self.save_detectors()
+            if not read_only:
+                self.save_detectors()
         self.list_samples(quiet=True)
 
         # find out what are the fields corresponding to the 2D detectors
@@ -564,8 +568,9 @@ class h5xs():
             self.transField = transField
             self.transMode = trans_mode.external
             
-        self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
-        self.fh5.flush()
+        if not read_only:
+            self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
+            self.fh5.flush()
             
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -945,7 +950,8 @@ class h5xs():
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
-                force_synch=-0.25, force_synch_trig=0, debug=False, plot_trigger=False, **kwargs): 
+                force_synch=-0.25, force_synch_trig=0, extend_mon_stream=True,
+                debug=False, plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
             2. if the monitors are used asynchronously, monitor values would need to be integated 
@@ -960,6 +966,10 @@ class h5xs():
 
             timestamps on em1 appear to be way off, ntpd not running
             if force_synch is non-zero, use first em2 timestamp + force_synch as start of em1 
+            
+            in some cases, the monitor stream appears to end before data collection is complete
+            if extend_mon_stream=True, repeat the last mon data point until the timestamp covers
+            the range of the trigger
         """
         if sn is None or isinstance(sn, list):
             if plot_trigger:
@@ -1011,8 +1021,8 @@ class h5xs():
                 incid_data0 = incid_data
             else:
                 try:
-                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp)
-                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp)                
+                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream)
+                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream)                
                 except:
                     t0 = np.min(ts2)
                     print(f"time series likely misaligned:")

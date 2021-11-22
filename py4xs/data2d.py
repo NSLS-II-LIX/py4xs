@@ -48,7 +48,7 @@ def grid_labels(qgrid, N=3):
 
     if len(gpvalues)>3:
         gpindex = np.linspace(1, len(qgrid), N, dtype=np.int)-1
-        gpvalues = qgrid[gpindex]
+        gpvalues = [qgrid[k] for k in gpindex]
     
     for v in gpvalues:
         if np.fabs(v)>=10 or np.fabs(v)<1e-4:

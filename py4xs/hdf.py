@@ -471,9 +471,12 @@ class h5exp():
 
         self.save_detectors()
 
-def find_field(fh5, fieldName):
+def find_field(fh5, fieldName, sname=None):
     tstream = {}
-    samples = lsh5(fh5, top_only=True, silent=True)
+    if sname is None:
+        samples = lsh5(fh5, top_only=True, silent=True)
+    else:
+        samples = [sname]
     for sn in samples:
         for stream in list(fh5[f"{sn}"]):
             if not 'data' in list(fh5[f"{sn}/{stream}"]):
@@ -481,7 +484,10 @@ def find_field(fh5, fieldName):
             if fieldName in list(fh5[f"{sn}/{stream}/data"]):
                 tstream[sn] = stream
                 break
-    return tstream
+    if sname is None:
+        return tstream
+    
+    return tstream[sname] 
         
 class h5xs():
     """ Scattering data in transmission geometry
@@ -489,7 +495,8 @@ class h5xs():
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
     """    
-    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True, read_only=False):
+    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True, 
+                 have_raw_data=True, read_only=False):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
@@ -505,7 +512,6 @@ class h5xs():
         self.transStream = {}  
 
         self.fn = fn
-        self.save_d1 = save_d1
         if read_only:
             self.fh5 = h5py.File(self.fn, "r")   # file must exist
         else:
@@ -518,59 +524,61 @@ class h5xs():
                 self.save_detectors()
         self.list_samples(quiet=True)
 
-        # find out what are the fields corresponding to the 2D detectors
-        # at LiX there are two possibilities; assume all samples have have data stored in the same fileds
-        sn = self.samples[0]
-        streams = list(self.fh5[f"{sn}"])
-        data_fields = {}
-        for stnm in streams:
-            if 'data' in self.fh5[f"{sn}/{stnm}"].keys(): 
-                for tf in list(self.fh5[f"{sn}/{stnm}/data"]):
-                    data_fields[tf] = stnm
+        if have_raw_data:
+            # find out what are the fields corresponding to the 2D detectors
+            # at LiX there are two possibilities; assume all samples have have data stored in the same fileds
+            self.save_d1 = save_d1
+            sn = self.samples[0]
+            streams = list(self.fh5[f"{sn}"])
+            data_fields = {}
+            for stnm in streams:
+                if 'data' in self.fh5[f"{sn}/{stnm}"].keys(): 
+                    for tf in list(self.fh5[f"{sn}/{stnm}/data"]):
+                        data_fields[tf] = stnm
         
-        self.det_name = None
-        # these are the detectors that are present in the data
-        d_dn = [d.extension for d in self.detectors]
-        for det_name in det_names:
-            dn = copy.copy(det_name)
-            for k,v in det_name.items():
-                if not k in d_dn or not v in data_fields.keys():
-                    del dn[k]
-            if len(dn.keys())>0:
-                self.det_name = dn
-                break
-                
-        if self.det_name is None:
-            print('fields in the h5 file: ', data_fields)
-            raise Exception("Could not find the data corresponding to the detectors.")
+            self.det_name = None
+            # these are the detectors that are present in the data
+            d_dn = [d.extension for d in self.detectors]
+            for det_name in det_names:
+                dn = copy.copy(det_name)
+                for k,v in det_name.items():
+                    if not k in d_dn or not v in data_fields.keys():
+                        del dn[k]
+                if len(dn.keys())>0:
+                    self.det_name = dn
+                    break
 
-        # transStream is more complicated
-        # different samples may store the data in different streams 
-        if transField=='': 
-            if 'trans' in self.fh5.attrs:
-                tf = self.fh5.attrs['trans'].split(',')
-                # transMove, transField, transStream 
-                # but transStream is not always recorded
-                v, self.transField = tf[:2]
-                self.transMode = trans_mode(int(v))
-                self.transStream = find_field(self.fh5, self.transField)
-                return
+            if self.det_name is None:
+                print('fields in the h5 file: ', data_fields)
+                raise Exception("Could not find the data corresponding to the detectors.")
+
+            # transStream is more complicated
+            # different samples may store the data in different streams 
+            if transField=='': 
+                if 'trans' in self.fh5.attrs:
+                    tf = self.fh5.attrs['trans'].split(',')
+                    # transMove, transField, transStream 
+                    # but transStream is not always recorded
+                    v, self.transField = tf[:2]
+                    self.transMode = trans_mode(int(v))
+                    self.transStream = find_field(self.fh5, self.transField)
+                    return
+                else:
+                    self.transMode = trans_mode.from_waxs
+                    self.transField = ''
+                    self.transStream = {}
             else:
-                self.transMode = trans_mode.from_waxs
-                self.transField = ''
-                self.transStream = {}
-        else:
-            try:
-                self.transStream = find_field(self.fh5, transField)
-            except:
-                print("invalid field for transmitted intensity: ", transField)
-                raise Exception()
-            self.transField = transField
-            self.transMode = trans_mode.external
-            
-        if not read_only:
-            self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
-            self.fh5.flush()
+                try:
+                    self.transStream = find_field(self.fh5, transField)
+                except:
+                    print("invalid field for transmitted intensity: ", transField)
+                    raise Exception()
+                self.transField = transField
+                self.transMode = trans_mode.external
+
+            if not read_only:
+                self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
+                self.fh5.flush()
             
     def save_detectors(self):
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -584,6 +592,13 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
+    def dset(self, dsname, data_type="data", sn=None):
+        assert (data_type in ["data", "timestamps"])
+        if sn is None:
+            sn = self.samples[0]
+        strm = find_field(self.fh5, dsname, sn)
+        return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"]
+    
     def md_dict(self, sn, md_keys=[]):
         """ create the meta data to be recorded in ascii data files
             from the detector_config (attribute of the h5xs object) 
@@ -723,7 +738,10 @@ class h5xs():
             sn = self.samples[0]
         d2s = {}
         for det in self.detectors:
-            dset = self.fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])]
+            try:
+                dset = self.fh5[f"{sn}/primary/data/{self.det_name[det.extension]}"]
+            except:
+                continue
             frn = self.verify_frn(sn, frn)
             d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 

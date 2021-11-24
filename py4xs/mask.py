@@ -1,6 +1,6 @@
 from PIL import Image, ImageDraw, ImageChops
 import numpy as np
-import fabio
+import fabio,os
 
 class Mask:
     """ a bit map to determine whehter a pixel should be included in
@@ -21,7 +21,7 @@ class Mask:
         self.read_file(self.maskfile)
 
     def read_file(self, filename):
-        self.maskfile = filename
+        self.maskfile = os.path.realpath(filename)
         self.clear()
         for line in open(filename):
             fields = line.strip().split()
@@ -31,7 +31,7 @@ class Mask:
             if stype in ['h', 'c', 'r', 'f', 'p']:
                 para = [float(t) for t in fields[1:]]
                 self.add_item(stype, para)
-                
+    
     def read_from_8bit_tif(self, filename):
         """ convert the specified image file into a bitmap and use as mask
             all 0 value pixels will be blocked

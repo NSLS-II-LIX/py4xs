@@ -30,35 +30,47 @@ def get_bin_edges(grid):
         v0 = v1
     return np.asarray(edges)
 
-def grid_labels(qgrid, N=3):
-    dq = qgrid[1]-qgrid[0]
-    gpindex = [0]
-    gpvalues = [qgrid[0]]
-    gplabels = []
+def round_by_stepsize(v, ss):
+    prec = -int(np.floor(np.log(np.fabs(ss))/np.log(10)))
+    return f"{v:.{prec}f}".rstrip('0')
 
-    for i in range(1,len(qgrid)-1):
-        dq1 = qgrid[i+1]-qgrid[i]
-        if np.fabs(dq1-dq)/dq>0.01:
-            dq = dq1
-            gpindex.append(i)
-            prec = int(-np.log(dq)/np.log(10))+1
-            gpvalues.append(qgrid[i])
-    gpindex.append(len(qgrid)-1)
-    gpvalues.append(qgrid[-1])
-
-    if len(gpvalues)>3:
-        gpindex = np.linspace(1, len(qgrid), N, dtype=np.int)-1
-        gpvalues = [qgrid[k] for k in gpindex]
+def grid_labels(grid, N=3, step_tol=0.2):
+    dd = np.diff(grid)
+    tt = []
+    td = []
+    glist = []
+    for i in range(len(dd)):
+        if len(tt)>0: 
+            if dd[i]-tt[-1]>step_tol*dd[i]:
+                glist.append([np.mean(tt), td])
+                tt = []  
+                td = []
+        tt.append(dd[i])
+        td.append(grid[i])
+    td.append(grid[i+1])
+    glist.append([np.mean(tt), td])
     
-    for v in gpvalues:
-        if np.fabs(v)>=10 or np.fabs(v)<1e-4:
-            gplabels.append(f"{v:.0f}")
-        else:
-            prec = 1-int(np.log(np.fabs(v))/np.log(10))
-            gplabels.append(f"{v:.{prec}f}".rstrip('0'))
+    if len(glist)==1: # single step size
+        ss = glist[0][0]
+        gpindex = np.linspace(1, len(grid), N, dtype=np.int)-1
+        gpvalues = [grid[k] for k in gpindex]
+        gplabels = [round_by_stepsize(gp,ss) for gp in gpvalues]
+    else:
+        gpindex = []
+        gpvalues = []
+        gplabels = []
+        i = 0
+        glist
+        for [ss, gp] in glist: 
+            gpindex.append(i)
+            gpvalues.append(gp[0])
+            gplabels.append(round_by_stepsize(gp[0],ss))
+            i += len(gp)
+        gpindex.append(i)
+        gpvalues.append(gp[-1])
+        gplabels.append(round_by_stepsize(gp[-1],ss))
     
     return gpindex,gpvalues,gplabels
-
 
 class MatrixWithCoords:
     # 2D data with coordinates
@@ -81,7 +93,7 @@ class MatrixWithCoords:
         
         return ret
     
-    def expand(self, coord, axis):
+    def expand(self, coord, axis, in_place=True):
         """ extend x or y coordinates, as specified by axis and the new coordinates, so that dissimilar
             datasets can be merged to produce a larger dataset
         """
@@ -97,6 +109,8 @@ class MatrixWithCoords:
                 d[:,i0] = self.d[:,i]
                 if err is not None:
                     err[:,i0] = self.err[:,i]
+            if in_place:
+                self.xc = coord
         elif axis=='y':
             shape = (len(coord),len(self.xc))
             d = np.full(shape, np.nan)
@@ -109,11 +123,17 @@ class MatrixWithCoords:
                 d[i0,:] = self.d[i,:]
                 if err is not None:
                     err[i0,] = self.err[i,:]
+            if in_place:
+                self.yc = coord
         else:
             raise Exception(f"invalid axis: {axis}")
+        
+        if not in_place:
+            return d,err
 
-        return d,err
-
+        self.d = d
+        self.err = err
+        
     def merge(self, ds):
         """ merge a list of MatrixWithCoord together
             all objects must have the same coordinates at least in one dimension
@@ -124,27 +144,12 @@ class MatrixWithCoords:
         common_x = True
         common_y = True
         for d in ds:
-            #if not np.array_equal(self.xc, d.xc):
-            if len(self.xc)!=len(d.xc):
-                common_x = False
-            if self.xc_label!=d.xc_label:
-                raise Exception("data to be merged have different x_labels.")
-            #if not np.array_equal(self.yc, d.yc):
-            if len(self.yc)!=len(d.yc):
-                common_y = False
-            if self.yc_label!=d.yc_label:
+            if self.xc_label!=d.xc_label or self.yc_label!=d.yc_label:
                 raise Exception("data to be merged have different x_labels.")
 
-        if not common_x and not common_y:
-            raise Exception("data to be merged are not compatible.")
-        
         ret = MatrixWithCoords()
-        ret.xc = self.xc
-        ret.yc = self.yc
-        if not common_x:
-            ret.xc = np.unique(np.hstack([d.xc for d in [self]+ds]))
-        elif not common_y:
-            ret.yc = np.unique(np.hstack([d.yc for d in [self]+ds]))
+        ret.xc = np.unique(np.array([m.xc for m in [self]+ds]).flatten())
+        ret.yc = np.unique(np.array([m.yc for m in [self]+ds]).flatten())
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
         shape = (len(ret.yc),len(ret.xc))
@@ -161,23 +166,21 @@ class MatrixWithCoords:
         idx = None
         for d in [self]+ds:
             # expand data if necessary
-            if not common_x:
-                dd,err = d.expand(ret.xc, "x")
-            elif not common_y:
-                dd,err = d.expand(ret.yc, "y")
-            else:
-                dd = d.d
-                err = d.err
-            idx = ~np.isnan(dd)
-            ret.d[idx] += dd[idx]
+            t = copy.copy(d)
+            if len(ret.xc)!=len(d.xc):
+                t.expand(ret.xc, "x")
+            if len(ret.yc)!=len(d.yc):
+                t.expand(ret.yc, "y")
+            idx = ~np.isnan(t.d)
+            ret.d[idx] += t.d[idx]
             if ret.err is not None:
-                ret.err[idx] += err[idx]
+                ret.err[idx] += t.err[idx]
             wt[idx] += 1
 
         idx = (wt>0)
         ret.d[idx] /= wt[idx]
         ret.d[~idx] = np.nan
-        if err is not None:
+        if ret.err is not None:
             ret.err[idx] /= wt[idx]
             ret.err[~idx] = np.nan
 
@@ -823,6 +826,8 @@ class Axes2dPlot:
         else: # unknown standard
             return 
         self.mark_coords(q_std, [], sym, DataType.q)
+        if self.exp and self.datatype==DataType.det:
+            self.mark_points([self.exp.bm_ctr_x], [self.exp.bm_ctr_y], datatype=DataType.det)
     
     # simply plot the x,y coordinates
     def mark_line(self, xv, yv, fmt="r-"):

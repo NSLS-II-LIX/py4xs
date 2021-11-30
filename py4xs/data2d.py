@@ -31,7 +31,9 @@ def get_bin_edges(grid):
     return np.asarray(edges)
 
 def round_by_stepsize(v, ss):
-    prec = -int(np.floor(np.log(np.fabs(ss))/np.log(10)))
+    prec = -int(np.floor(np.log10(np.fabs(ss))))
+    if prec<1:
+        prec = 1
     return f"{v:.{prec}f}".rstrip('0')
 
 def grid_labels(grid, N=3, step_tol=0.2):
@@ -148,8 +150,8 @@ class MatrixWithCoords:
                 raise Exception("data to be merged have different x_labels.")
 
         ret = MatrixWithCoords()
-        ret.xc = np.unique(np.array([m.xc for m in [self]+ds]).flatten())
-        ret.yc = np.unique(np.array([m.yc for m in [self]+ds]).flatten())
+        ret.xc = np.unique(np.hstack([m.xc for m in [self]+ds]).flatten())
+        ret.yc = np.unique(np.hstack([m.yc for m in [self]+ds]).flatten())
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
         shape = (len(ret.yc),len(ret.xc))
@@ -267,7 +269,8 @@ class MatrixWithCoords:
             counted[idx] = 1.
             (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*dw)
             (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=dw)
-            (c1_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=counted)   # we are skipping the zero intensity pixels
+            # we are skipping the zero intensity pixels
+            (c1_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=counted)   
             idx = (w_map>0)
             v_map[idx] /= w_map[idx]
             v_map[~idx] = np.nan
@@ -487,7 +490,7 @@ class Data2d:
         stores the scattering pattern itself, 
     """
 
-    def __init__(self, img, timestamp=None, uid='', exp=None, label='', dtype=None):
+    def __init__(self, img, timestamp=None, uid='', exp=None, label='', dtype=None, flat=None):
         """ read 2D scattering pattern
             img can be either a filename (rely on Fabio to deal with the file format) or a numpy array 
         """

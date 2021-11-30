@@ -414,7 +414,7 @@ class Data1d:
                 
         return self
 
-    def merge(self, d1, qmax=-1, qmin=-1, fix_scale=-1, debug=False):
+    def merge(self, d1, qmax=-1, qmin=-1, fix_scale=-1, debug=False, create_new=False):
         """
         combine the data in self and d1
         scale d1 intensity to match self

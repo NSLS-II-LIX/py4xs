@@ -857,8 +857,9 @@ class h5xs():
         plt.show() 
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
-                      fig_type="qxy", apply_sym=False, fix_gap=False,
-                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None, dtype=None):
+                      fig_type="qxy", apply_sym=False, fix_gap=False, bkg=None,
+                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
+                      aspect='auto', cmap=None, dtype=None, colorbar=False):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
             fig_type should be either "qxy" or "qphi"
@@ -882,31 +883,46 @@ class h5xs():
         yqgrid = np.arange(start=yqmin, stop=yqmax+dq, step=dq)        
 
         xyqmaps = []
-        for dn in d2s.keys():   
+        for det in self.detectors:
+            dn = det.extension
             if useMask:
                 mask = d2s[dn].exp.mask
             else:
                 mask = None
-            mp = d2s[dn].data.conv(xqgrid, yqgrid, 
-                                   d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
-                                   mask=mask)
-            mp.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
-            xyqmaps.append(mp.d)
+            
+            cor_factor = d2s[dn].exp.FSA*d2s[dn].exp.FPol
+            if det.flat is not None:
+                cor_factor = det.flat*cor_factor
+            dm = d2s[dn].data.conv(xqgrid, yqgrid, d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
+                                   mask=mask, cor_factor=cor_factor)
+            
+            if bkg is not None:
+                if dn in bkg.keys():
+                    dbkg = Data2d(bkg[dn], exp=det.exp_para)
+                    dm_b = dbkg.data.conv(xqgrid, yqgrid, d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
+                                          mask=mask, cor_factor=cor_factor)
+                    dm.d -= dm_b.d    
+            
+            dm.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
+            xyqmaps.append(dm.d)
+        
         xyqmap = merge(xyqmaps)
-
         if logScale:
-            plt.imshow(np.log(xyqmap), extent=(xqmin, xqmax, yqmin, yqmax))
-            plt.clim(np.log(clim))
+            im = ax.imshow(np.log(xyqmap), extent=(xqmin, xqmax, yqmin, yqmax), aspect=aspect, cmap=cmap)
+            im.set_clim(np.log(clim))
         else:
-            plt.imshow(xyqmap, extent=(xqmin, xqmax, yqmin, yqmax))
-            plt.clim(clim)
+            im = ax.imshow(xyqmap, extent=(xqmin, xqmax, yqmin, yqmax), aspect=aspect, cmap=cmap)
+            im.set_clim(clim)
 
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+        if colorbar:
+            plt.colorbar(im)
 
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, interp_method='linear',
-                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, cmap=None, dtype=None):
+                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
+                       aspect="auto", cmap=None, dtype=None, colorbar=False):
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
@@ -930,20 +946,37 @@ class h5xs():
         phi_grid = np.linspace(-180., 180, Nphi)
 
         dms = []
-        for dn in d2s.keys():   
+        for det in self.detectors:
+            dn = det.extension
+            if not dn in d2s.keys():
+                continue
             if useMask:
                 mask = d2s[dn].exp.mask
             else:
                 mask = None
+            
+            cor_factor = d2s[dn].exp.FSA*d2s[dn].exp.FPol
+            if det.flat is not None:
+                cor_factor = det.flat*cor_factor
+                
             # since the q/phi grids are specified, use the MatrixWithCoord.conv() function
             # the grid specifies edges of the bin for histogramming
             # the phi value in exp_para may not always be in the range of (-180, 180)
-            dm = d2s[dn].data.conv(q_grid, phi_grid, 
-                                   d2s[dn].exp.Q, 
+            dm = d2s[dn].data.conv(q_grid, phi_grid, d2s[dn].exp.Q, 
                                    fix_angular_range(d2s[dn].exp.Phi),
+                                   cor_factor=cor_factor,
                                    mask=mask, datatype=DataType.qphi)
+            
+            if bkg is not None:
+                if dn in bkg.keys():
+                    dbkg = Data2d(bkg[dn], exp=det.exp_para)
+                    dm_b = dbkg.data.conv(q_grid, phi_grid, d2s[dn].exp.Q,
+                                          fix_angular_range(d2s[dn].exp.Phi),
+                                          cor_factor=cor_factor,
+                                          mask=mask, datatype=DataType.qphi)
+                    dm.d -= dm_b.d    
 
-            d1 = dm.d*(d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
+            d1 = dm.d/det.fix_scale
             if apply_symmetry:
                 Np = int(Nphi/2)
                 d2 = np.vstack([d1[Np:,:], d1[:Np,:]])
@@ -956,16 +989,18 @@ class h5xs():
                 interp_d2(d1, method=interp_method)
 
             dms.append(d1)
-
+        
         qphimap = merge(dms)
         if logScale:
-            plt.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect="auto")
-            plt.clim(np.log(clim))
+            im = ax.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
+            im.set_clim(np.log(clim))
         else:
-            plt.imshow(qphiqmap, extent=(qmin, qmax, -180, 180), aspect="auto")
-            plt.clim(clim)
+            im = ax.imshow(qphiqmap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
+            im.set_clim(clim)
 
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+        if colorbar:
+            plt.colorbar(im)
 
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
                 force_synch=-0.25, force_synch_trig=0, extend_mon_stream=True,

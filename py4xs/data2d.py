@@ -648,7 +648,9 @@ class Data2d:
         qq[idx1] /= norm[idx1]
         Iq[idx1] /= norm[idx1]
         Iq2[idx1] /= norm[idx1]
-        dI = np.sqrt(Iq2-Iq*Iq)
+        dI = Iq2-Iq*Iq
+        dI[dI<0] = 0  # sometimes get runtime warnings
+        dI = np.sqrt(dI)
         dI[idx1] /= np.sqrt(norm[idx1])
         qq[~idx1] = np.nan
         Iq[~idx1] = np.nan

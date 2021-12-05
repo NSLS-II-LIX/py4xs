@@ -57,7 +57,6 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
-
 def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
@@ -75,7 +74,6 @@ def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
         ee = ffe(tt)
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
-
 
 def get_monitor_counts(grp, fieldName):
     """ look under a data group (grp) that belong to a specific sample, find the stream that contains fieldName
@@ -95,6 +93,11 @@ def get_monitor_counts(grp, fieldName):
     ts = grp[strn]["timestamps"][fieldName][...]
 
     return strn,ts,data
+
+
+
+
+
 
 
 def pack_d1(data, ret_trans=True):
@@ -1032,25 +1035,30 @@ class h5xs():
         else:
             samples = [sn]
            
-        for s in samples:
-            if "pilatus" in self.header(s).keys():
-                md = self.header(s)['pilatus']
+        for sn in samples:
+            if "pilatus" in self.header(sn).keys():
+                md = self.header(sn)['pilatus']
                 if 'exposure_time' in md.keys():
                     exp=md['exposure_time']
 
-            if trigger is None:
-                #raise Exception("the motor that triggers data collection must be specified.")
+            # expect trans and incid monitor data to be in the same stream
+            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor_field)
+            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor_field)
+            if force_synch!=0: # timestamps between em1/em2 
+                ts1 = ts1-ts1[0]+ts2[0]+force_synch
+                
+            if strn=="primary":
                 print("monitors are used as detectors.")
-            elif trigger=="sol":
+            elif trigger=="sol" or trigger is None:
                 dn = list(self.det_name.values())[0]
                 # expect a finite but minimal offset in time since all come from the same IOC server
-                ts0 = self.fh5[f'{s}/primary/timestamps/{dn}'][...].flatten()
-                dshape = self.fh5[f"{s}/primary/data/{dn}"].shape[0]   # length of the time sequence
+                ts0 = self.fh5[f'{sn}/primary/timestamps/{dn}'][...].flatten()
+                dshape = self.fh5[f"{sn}/primary/data/{dn}"].shape[0]   # length of the time sequence
                 if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
                     ts0 = ts0[0]+np.arange(dshape)*exp    
-            elif trigger in self.fh5[f'{s}/primary/timestamps'].keys():
-                ts0 = self.fh5[f'{s}/primary/timestamps/{trigger}'][...].flatten()
-                dshape = self.fh5[f"{s}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+            elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
+                ts0 = self.fh5[f'{sn}/primary/timestamps/{trigger}'][...].flatten()
+                dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
                 if len(dshape)>1:
                     if len(dshape)>2:
                         raise Exception(f"Don't know how to handle data shape {dshape}")
@@ -1063,11 +1071,6 @@ class h5xs():
                     ts0 = ts0.flatten()
             else:
                 raise Exception(f"timestamp data for {trigger} cannot be found.")
-
-            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor_field)
-            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor_field)
-            if force_synch!=0: # timestamps between em1/em2 
-                ts1 = ts1-ts1[0]+ts2[0]+force_synch
 
             if strn=="primary":
                 trans_data0 = trans_data
@@ -1094,12 +1097,12 @@ class h5xs():
             if not hasattr(self, "d0s"):
                 self.d0s = {}
             if not sn in self.d0s.keys():
-                self.d0s[s] = {}
-            self.d0s[s]["transmitted"] = trans_data0
-            self.d0s[s]["incident"] = incid_data0
+                self.d0s[sn] = {}
+            self.d0s[sn]["transmitted"] = trans_data0
+            self.d0s[sn]["incident"] = incid_data0
             transmission = trans_data0/incid_data0
             transmission /= np.nanmean(transmission)
-            self.d0s[s]["transmission"] = transmission
+            self.d0s[sn]["transmission"] = transmission
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data

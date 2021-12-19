@@ -323,9 +323,9 @@ class MatrixWithCoords:
             ax = plt.gca()
 
         if logScale:
-            ax.imshow(np.log(self.d), aspect='auto', **kwargs)
+            ax.imshow(np.log(self.d), **kwargs)
         else:
-            ax.imshow(self.d, aspect='auto', **kwargs)
+            ax.imshow(self.d, **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
 

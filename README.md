@@ -129,3 +129,6 @@ option to impose dtype on Data2d;
 2021-10:
 revised h5xs.set_trans() to better handle solution scattering normalization;
 
+2022-01:
+cleaning up after work on lixtools.scanning
+

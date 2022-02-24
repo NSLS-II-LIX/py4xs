@@ -11,7 +11,7 @@ import multiprocessing as mp
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.local import det_names,det_model,beamline_name,incident_monitor_field,transmitted_monitor_field
+from py4xs.local import det_names,det_model,beamline_name,incident_monitor,transmitted_monitor
 from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
 from py4xs.utils import run
 from itertools import combinations
@@ -75,7 +75,7 @@ def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
 
-def get_monitor_counts(grp, fieldName):
+def get_monitor_counts(grp, monitorName):
     """ look under a data group (grp) that belong to a specific sample, find the stream that contains fieldName
         caluclate the monitor counts based on the given timestamps (ts) and exposure time
     """
@@ -83,21 +83,29 @@ def get_monitor_counts(grp, fieldName):
     for stream in list(grp):
         if not 'data' in list(grp[stream]):
             continue
-        if fieldName in list(grp[stream]["data"]):
-            strn = stream
-            break
+        for fieldName in list(grp[stream]["data"]):
+            if monitorName in fieldName:
+                strn = stream
+                data = grp[strn]["data"][fieldName][...]
+                ts = grp[strn]["timestamps"][fieldName][...]
+                break
     if strn is None:
-        raise Exeption(f"could not find the stream that contains {fieldName}.")
+        raise Exception(f"could not find the stream that contains {monitorName}.")
+
+    # in the case of timeseries data, the time stamps need to be lengthened
+    n = int(len(data)/len(ts))
+    if n>1:
+        data = np.reshape(data, [-1, len(ts)])
+        # may need to skip the first readback from the circular buffer
+        if ts[0]==ts[1]:
+            ts = ts[1:]
+            data = data[1:, :]
+        data = data.flatten()
+        dt = np.average(np.diff(ts))
+        # assuming that the time stamp correspond to the time of read
+        ts = np.linspace(ts[0]-dt, ts[-1], len(data))
     
-    data = grp[strn]["data"][fieldName][...]
-    ts = grp[strn]["timestamps"][fieldName][...]
-
     return strn,ts,data
-
-
-
-
-
 
 
 def pack_d1(data, ret_trans=True):
@@ -498,7 +506,7 @@ class h5xs():
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
     """    
-    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor_field, save_d1=True, 
+    def __init__(self, fn, exp_setup=None, transField=transmitted_monitor, save_d1=True, 
                  have_raw_data=True, read_only=False):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
@@ -998,7 +1006,7 @@ class h5xs():
             im = ax.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
             im.set_clim(np.log(clim))
         else:
-            im = ax.imshow(qphiqmap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
+            im = ax.imshow(qphimap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
             im.set_clim(clim)
 
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
@@ -1042,8 +1050,8 @@ class h5xs():
                     exp=md['exposure_time']
 
             # expect trans and incid monitor data to be in the same stream
-            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor_field)
-            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor_field)
+            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor)
+            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor)
             if force_synch!=0: # timestamps between em1/em2 
                 ts1 = ts1-ts1[0]+ts2[0]+force_synch
                 

@@ -252,17 +252,18 @@ def interp_d2(d2, method="spline", param=0.05):
             continue
         idx1 = np.where(idx)[0]
         # only need to refill the values that are currently nan
-        idx2 = np.copy(idx)
-        idx2[:idx1[0]] = True
-        idx2[idx1[-1]:] = True
-        if method=="linear":
-            d2[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
-        elif method=="spline":
-            fs = uspline(xx1[idx], yy1[idx])
-            fs.set_smoothing_factor(param)
-            d2[k,~idx2] = fs(xx1[~idx2])
-        else:
-            raise Exception(f"unknown method for intepolation: {method}")
+        if len(idx1)>1:
+            idx2 = np.copy(idx)
+            idx2[:idx1[0]] = True
+            idx2[idx1[-1]:] = True
+            if method=="linear":
+                d2[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
+            elif method=="spline":
+                fs = uspline(xx1[idx], yy1[idx])
+                fs.set_smoothing_factor(param)
+                d2[k,~idx2] = fs(xx1[~idx2])
+            else:
+                raise Exception(f"unknown method for intepolation: {method}")
 
 
 def proc_2d(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
@@ -865,7 +866,9 @@ class h5xs():
             pax.mark_standard(*showRef)
         ax.set_title(f"frame #{d2.md['frame #']}")
         pax.capture_mouse()
-        plt.show() 
+        
+        return d2
+        #plt.show() 
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
                       fig_type="qxy", apply_sym=False, fix_gap=False, bkg=None,
@@ -928,6 +931,12 @@ class h5xs():
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
         if colorbar:
             plt.colorbar(im)
+        
+        dm = MatrixWithCoords()
+        dm.xc = xqgrid
+        dm.xc = yqgrid
+        dm.d = xyqmap
+        return dm
 
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
@@ -939,20 +948,25 @@ class h5xs():
             plt.figure()
             ax = plt.gca()
 
-        qmax = np.max([d.exp_para.Q.max() for d in self.detectors]) 
-        qmin = np.min([d.exp_para.Q.min() for d in self.detectors]) 
-        # keep 2 significant digits only for the step_size
-        dq = (qmax-qmin)/Nq
-        n = int(np.floor(np.log10(dq)))
-        sc = np.power(10., n)
-        dq = np.around(dq/sc, 1)*sc
+        if isinstance(Nq, int):
+            qmax = np.max([d.exp_para.Q.max() for d in self.detectors]) 
+            qmin = np.min([d.exp_para.Q.min() for d in self.detectors]) 
+            # keep 2 significant digits only for the step_size
+            dq = (qmax-qmin)/Nq
+            n = int(np.floor(np.log10(dq)))
+            sc = np.power(10., n)
+            dq = np.around(dq/sc, 1)*sc
 
-        qmax = dq*np.ceil(qmax/dq)
-        qmin = dq*np.floor(qmin/dq)
-        Nq = int((qmax-qmin)/dq+1)
+            qmax = dq*np.ceil(qmax/dq)
+            qmin = dq*np.floor(qmin/dq)
+            Nq = int((qmax-qmin)/dq+1)
 
-        q_grid = np.linspace(qmin, qmax, Nq) 
-
+            q_grid = np.linspace(qmin, qmax, Nq) 
+        else:
+            q_grid=Nq
+            qmin = q_grid[0]
+            qmax = q_grid[-1]
+            
         Nphi = 2*int(Nphi/2)+1
         phi_grid = np.linspace(-180., 180, Nphi)
 
@@ -1002,17 +1016,25 @@ class h5xs():
             dms.append(d1)
         
         qphimap = merge(dms)
-        if logScale:
-            im = ax.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
-            im.set_clim(np.log(clim))
-        else:
-            im = ax.imshow(qphimap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
-            im.set_clim(clim)
+            
+        dm = MatrixWithCoords()
+        dm.xc = q_grid
+        dm.yc = phi_grid
+        dm.d = qphimap
 
+        dm.plot(ax=ax, logScale=logScale, clim=clim)
+        #if logScale:
+        #    im = ax.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
+        #    im.set_clim(np.log(clim))
+        #else:
+        #    im = ax.imshow(qphimap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
+        #    im.set_clim(clim)
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
         if colorbar:
             plt.colorbar(im)
-
+        
+        return dm
+    
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
                 force_synch=-0.25, force_synch_trig=0, extend_mon_stream=True,
                 debug=False, plot_trigger=False, **kwargs): 

@@ -317,33 +317,36 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
 
         if logScale:
-            ax.imshow(np.log(self.d), **kwargs)
+            if "clim" in kwargs.keys():
+                kwargs["clim"] = np.log(kwargs["clim"])
+            ax.imshow(np.log(self.d), aspect=aspect, **kwargs)
         else:
-            ax.imshow(self.d, **kwargs)
+            ax.imshow(self.d, aspect=aspect, **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
 
-        axx = ax.twiny()
-        gpindex,gpvalues,gplabels = grid_labels(self.xc)
-        axx.set_xticks(gpindex)
-        axx.set_xticklabels(gplabels)
-        if self.xc_label:
-            axx.set_xlabel(self.xc_label)
+        if aspect=='auto':
+            axx = ax.twiny()
+            gpindex,gpvalues,gplabels = grid_labels(self.xc)
+            axx.set_xticks(gpindex)
+            axx.set_xticklabels(gplabels)
+            if self.xc_label:
+                axx.set_xlabel(self.xc_label)
 
-        axy = ax.twinx()
-        gpindex,gpvalues,gplabels = grid_labels(self.yc)
-        axy.set_yticks(gpindex)
-        axy.set_yticklabels(gplabels)
-        if self.yc_label:
-            axy.set_ylabel(self.yc_label)
-            
-        axy.format_coord = ax.format_coord #make_format(ax2, ax1)
+            axy = ax.twinx()
+            gpindex,gpvalues,gplabels = grid_labels(self.yc)
+            axy.set_yticks(gpindex)
+            axy.set_yticklabels(gplabels)
+            if self.yc_label:
+                axy.set_ylabel(self.yc_label)
+
+            axy.format_coord = ax.format_coord #make_format(ax2, ax1)
 
     def roi(self, x1, x2, y1, y2, mask=None):
         """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
@@ -712,7 +715,7 @@ class Axes2dPlot:
 
     # best modify d2.xc/d2.yc instead of using xscale/yscale
     def plot(self, showMask=None, logScale=False, mask_alpha=0.1,
-             aspect=1., xscale=1., yscale=1.):
+             aspect='auto', xscale=1., yscale=1.):
 
         dd = np.asarray(self.d2.d, dtype=np.float)
 

@@ -870,13 +870,11 @@ class h5xs():
         return d2
         #plt.show() 
     
-    def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.006,
-                      fig_type="qxy", apply_sym=False, fix_gap=False, bkg=None,
+    def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
-                      aspect='auto', cmap=None, dtype=None, colorbar=False):
+                      aspect=1, cmap=None, dtype=None, colorbar=False):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
-            fig_type should be either "qxy" or "qphi"
         """
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
         if ax is None:
@@ -921,23 +919,20 @@ class h5xs():
             xyqmaps.append(dm.d)
         
         xyqmap = merge(xyqmaps)
-        if logScale:
-            im = ax.imshow(np.log(xyqmap), extent=(xqmin, xqmax, yqmin, yqmax), aspect=aspect, cmap=cmap)
-            im.set_clim(np.log(clim))
-        else:
-            im = ax.imshow(xyqmap, extent=(xqmin, xqmax, yqmin, yqmax), aspect=aspect, cmap=cmap)
-            im.set_clim(clim)
-
-        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
-        if colorbar:
-            plt.colorbar(im)
         
         dm = MatrixWithCoords()
         dm.xc = xqgrid
-        dm.xc = yqgrid
+        dm.xc_label = "qx"
+        dm.xc_prec = 3
+        dm.yc = yqgrid
+        dm.yc_label = "qy"
+        dm.yc_prec = 3
         dm.d = xyqmap
-        return dm
 
+        dm.plot(ax=ax, logScale=logScale, clim=clim, aspect=aspect, colorbar=colorbar)
+        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+        
+        return dm
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, interp_method='linear',
@@ -1019,20 +1014,16 @@ class h5xs():
             
         dm = MatrixWithCoords()
         dm.xc = q_grid
+        dm.xc_label = "q"
+        dm.xc_prec = 3
         dm.yc = phi_grid
+        dm.yc_label = "phi"
+        dm.yc_prec = 1
         dm.d = qphimap
 
-        dm.plot(ax=ax, logScale=logScale, clim=clim)
-        #if logScale:
-        #    im = ax.imshow(np.log(qphimap), extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
-        #    im.set_clim(np.log(clim))
-        #else:
-        #    im = ax.imshow(qphimap, extent=(qmin, qmax, -180, 180), aspect=aspect, cmap=cmap)
-        #    im.set_clim(clim)
+        dm.plot(ax=ax, logScale=logScale, clim=clim, colorbar=colorbar)
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
-        if colorbar:
-            plt.colorbar(im)
-        
+       
         return dm
     
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 

@@ -9,6 +9,7 @@ import matplotlib as mpl
 from matplotlib.colors import LogNorm
 from enum import Enum 
 from PIL import Image
+import fast_histogram as fh
 
 class DataType(Enum):
     det = 1
@@ -74,13 +75,19 @@ def grid_labels(grid, N=3, step_tol=0.2):
     
     return gpindex,gpvalues,gplabels
 
+def histogram2d(x, y, range, bins, weights):
+    return np.histogram2d(x, y, range=range, bins=bins, weights=weights)
+    #return fh.histogram2d(x, y, range=range, bins=bins, weights=weights)
+
 class MatrixWithCoords:
     # 2D data with coordinates
     d = None
     xc = None
     xc_label = None
+    xc_prec = 3
     yc = None 
     yc_label = None
+    yc_prec = 3
     err = None
     datatype = None
     
@@ -214,9 +221,9 @@ class MatrixWithCoords:
         if hasattr(Ny1, '__iter__'): # tuple or list or np array
             Ny1 = get_bin_edges(Ny1)
 
-        (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+        (v_map, x_edges, y_edges) = histogram2d(xc1, yc1,
                                                 bins=(Nx1, Ny1), weights=data)
-        (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1,
+        (c_map, x_edges, y_edges) = histogram2d(xc1, yc1,
                                                 bins=(Nx1, Ny1), weights=np.ones(len(data)))
 
         idx = (c_map<=0) # no data
@@ -253,12 +260,22 @@ class MatrixWithCoords:
 
         if hasattr(Nx1, '__iter__'): # tuple or list or np array
             Nx1 = get_bin_edges(Nx1)
+            xrange = (np.min(Nx1), np.max(Nx1))
+        else:
+            xrange = (np.min(xc1), np.max(xc1))            
         if hasattr(Ny1, '__iter__'): # tuple or list or np array
             Ny1 = get_bin_edges(Ny1)
-
-        (c_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=np.ones(len(data)))
-        (xc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=xc1)
-        (yc_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=yc1)
+            yrange = (np.min(Ny1), np.max(Ny1))
+        else:
+            yrange = (np.min(yc1), np.max(yc1))
+        xyrange = [xrange, yrange]
+        
+        (c_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                bins=(Nx1, Ny1), weights=np.ones(len(data)))
+        (xc_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                 bins=(Nx1, Ny1), weights=xc1)
+        (yc_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                 bins=(Nx1, Ny1), weights=yc1)
         cidx = (c_map>0)
 
         if inc_stat_err:
@@ -267,10 +284,13 @@ class MatrixWithCoords:
             dw[idx] = 1./data[idx]
             counted = np.zeros(len(data))
             counted[idx] = 1.
-            (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*dw)
-            (w_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=dw)
+            (v_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                    bins=(Nx1, Ny1), weights=data*dw)
+            (w_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                    bins=(Nx1, Ny1), weights=dw)
             # we are skipping the zero intensity pixels
-            (c1_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=counted)   
+            (c1_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                     bins=(Nx1, Ny1), weights=counted)   
             idx = (w_map>0)
             v_map[idx] /= w_map[idx]
             v_map[~idx] = np.nan
@@ -282,8 +302,10 @@ class MatrixWithCoords:
             v_map[idx] /= scl
             e_map[idx] /= scl
         else:
-            (v_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data)
-            (v2_map, x_edges, y_edges) = np.histogram2d(xc1, yc1, bins=(Nx1, Ny1), weights=data*data)
+            (v_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                    bins=(Nx1, Ny1), weights=data)
+            (v2_map, x_edges, y_edges) = histogram2d(xc1, yc1, range=xyrange,
+                                                     bins=(Nx1, Ny1), weights=data*data)
             v_map[cidx] /= c_map[cidx]
             v_map[~cidx] = np.nan
             v2_map[cidx] /= c_map[cidx]
@@ -317,7 +339,7 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, aspect='auto', **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -325,12 +347,13 @@ class MatrixWithCoords:
         if logScale:
             if "clim" in kwargs.keys():
                 kwargs["clim"] = np.log(kwargs["clim"])
-            ax.imshow(np.log(self.d), aspect=aspect, **kwargs)
+            im = ax.imshow(np.log(self.d), aspect=aspect, **kwargs)
         else:
-            ax.imshow(self.d, aspect=aspect, **kwargs)
+            im = ax.imshow(self.d, aspect=aspect, **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
-
+        ax.format_coord = self.format_coord
+        
         if aspect=='auto':
             axx = ax.twiny()
             gpindex,gpvalues,gplabels = grid_labels(self.xc)
@@ -346,8 +369,38 @@ class MatrixWithCoords:
             if self.yc_label:
                 axy.set_ylabel(self.yc_label)
 
-            axy.format_coord = ax.format_coord #make_format(ax2, ax1)
+            axy.format_coord = ax.format_coord #ax.format_coord #make_format(ax2, ax1)
+        
+        if colorbar:
+            plt.colorbar(im)
+        #plt.connect('button_press_event', self.mouse_press)
+        #plt.connect('button_release_event', self.mouse_release)
 
+    def format_coord(self, x, y):
+        ix = x
+        iy = len(self.yc)-y-0.8   # not sure why there is a strange offset
+        msg = f"ix={ix:.1f}, iy={iy:.1f}; "
+        
+        col = int(x+0.5)
+        row = int(iy+0.5)
+        xc0 = self.xc[col] #np.interp(col, np.arange(len(self.xc)), self.xc)
+        yc0 = np.flip(self.yc)[row] #np.interp(row, np.arange(len(self.yc)), self.yc)
+        msg += f"{self.xc_label}={xc0:.{self.xc_prec}f}, {self.yc_label}={yc0:.{self.yc_prec}f}: "
+        
+        if col>=0 and col<len(self.xc) and row>=0 and row<len(self.yc):
+            val = self.d[row][col]
+            msg += f"{val:.2f}  "
+        return msg
+        
+    #def mouse_press(self, event):
+    #    # change the mouseover meesage
+    #    self.ax.format_coord = 
+    #    return ??
+    
+    #def mouse_release(self, event):
+    #    # restore the default message
+    #    self.ax.format_coord = self.format_coord
+        
     def roi(self, x1, x2, y1, y2, mask=None):
         """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
         """
@@ -377,7 +430,7 @@ class MatrixWithCoords:
         """ return the averaged value of the data at coordinates (x0,y0), within a box of (dx, dy) 
         """
         roi = self.roi(x0-0.5*dx, x0+0.5*dx, y0-0.5*dy, y0+0.5*dy, mask=mask)
-        d = roi[~np.isnan(roi)]
+        d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
     def line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None):
@@ -412,9 +465,9 @@ class MatrixWithCoords:
             idx = mask.map | np.isnan(self.d)
         idx = ~idx.flatten()
         
-        (v_map, t_edges, n_edges) = np.histogram2d(distT[idx], distN[idx],
+        (v_map, t_edges, n_edges) = histogram2d(distT[idx], distN[idx],
                                                 bins=(bin_t, bin_n), weights=self.d.flatten()[idx])
-        (c_map, t_edges, n_edges) = np.histogram2d(distT[idx], distN[idx],
+        (c_map, t_edges, n_edges) = histogram2d(distT[idx], distN[idx],
                                                 bins=(bin_t, bin_n), weights=np.ones(len(distT[idx])))
                                                  
         ret.d = np.fliplr(v_map/c_map).T    

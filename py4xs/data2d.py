@@ -9,7 +9,7 @@ import matplotlib as mpl
 from matplotlib.colors import LogNorm
 from enum import Enum 
 from PIL import Image
-import fast_histogram as fh
+#import fast_histogram as fh
 
 class DataType(Enum):
     det = 1
@@ -30,6 +30,24 @@ def get_bin_edges(grid):
         edges.append(v1)
         v0 = v1
     return np.asarray(edges)
+
+def get_bins_range(qgrid, tol=0.01):
+    """ break down non-uniform qgrid into multiple evenly spaced ranges 
+        [[[min1, max1], N1], [[min2, max2], N2], ...]
+        there will be a gap between neighonring ranges
+    """
+    bin_range = []
+    while True:
+        qmin = qgrid[0]
+        dq = qgrid[1]-qgrid[0]
+        pq = qmin+dq*np.arange(len(qgrid))
+        N = len(qgrid[np.fabs(qgrid-pq)<dq*tol])
+        bin_range.append([[qmin-0.5*dq, qmin+(N-0.5)*dq], N])
+        if N==len(qgrid):
+            break
+        qgrid = qgrid[N:]
+        
+    return bin_range
 
 def round_by_stepsize(v, ss):
     prec = -int(np.floor(np.log10(np.fabs(ss))))

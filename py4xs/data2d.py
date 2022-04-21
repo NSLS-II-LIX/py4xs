@@ -558,6 +558,27 @@ class MatrixWithCoords:
             if self.err and dbkg.err:
                 ret.err = self.err + dbkg.err*scale_factor
 
+def flip_array(d, flip):
+    if flip == 0:
+        return d
+    df = copy.copy(d)
+    if flip<0:
+        df = np.fliplr(df)
+        flip = -flip
+    df = np.rot90(df, flip)
+        
+    return df
+
+def unflip_array(d, flip):
+    if flip==0:
+        return d
+    df = copy.copy(d)
+    df = np.rot90(df, 4-abs(flip))  # rotate -90
+    if flip<0:
+        df = np.fliplr(df)
+        
+    return df
+
 
 class Data2d:
     """ 2D scattering data class
@@ -634,14 +655,7 @@ class Data2d:
             if flip<0, do a mirror operation first
             the absolute value of flip is the number of 90-deg rotations
         """  
-        self.data.d = self.im.copy()
-        if flip == 0:
-            return
-        if flip<0:
-            self.data.d = np.fliplr(self.data.d)
-            flip = -flip
-        for _ in range(flip):
-            self.data.d = np.rot90(self.data.d)
+        self.data.d = flip_array(self.im, flip)
 
     def set_exp_para(self, exp):
         self.flip(exp.flip)

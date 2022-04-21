@@ -531,7 +531,7 @@ class h5xs():
         self.writable = False   # this is the current state of th eh5 file
 
         self.fn = fn
-        self.fh5 = h5py.File(self.fn, "r")   # file must exist; reopen for writing only when necessary
+        self.fh5 = h5py.File(self.fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -599,17 +599,22 @@ class h5xs():
                 
     def enable_write(self, writable):
         if self.read_only:
-            return
+            if not writable:
+                return
+            raise Exception(f"attempting to enable writing to a read-only h5 file ...")
         if self.writable == writable:
             return
         self.fh5.close()
         if writable:
             self.fh5 = h5py.File(self.fn, "r+")
+            #self.fh5.swmr_mode = True
         else:
-            self.fh5 = h5py.File(self.fn, "r")
+            self.fh5 = h5py.File(self.fn, "r", swmr=True)
         self.writable = writable
     
     def save_detectors(self):
+        if read_only:
+            return
         self.enable_write(True)
         dets_attr = [det.pack_dict() for det in self.detectors]
         self.fh5.attrs['detectors'] = json.dumps(dets_attr)
@@ -1288,6 +1293,9 @@ class h5xs():
         assume that the shape of the data is unchanged
         """
         
+        if read_only:
+            print("h5 file is read-only ...")
+            return
         if self.save_d1 is False:
             print("requested to save_d1s() but h5xs.save_d1 is False.")
             return

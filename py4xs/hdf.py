@@ -506,6 +506,11 @@ class h5xs():
         Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
         Data processing can be done either in series, or in parallel. Serial processing can be forced.
         
+        keep a h5 file handle for reading, self.fh5
+        re-open the file for writing only when necessary
+            save_attributes??
+            save_detectors(), save_d1s()
+        
     """    
     def __init__(self, fn, exp_setup=None, transField=transmitted_monitor, save_d1=True, 
                  have_raw_data=True, read_only=False):
@@ -521,13 +526,12 @@ class h5xs():
         self.attrs = {}
         # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
         self.transField = ''  
-        self.transStream = {}  
+        self.transStream = {} 
+        self.read_only = read_only
+        self.writable = False   # this is the current state of th eh5 file
 
         self.fn = fn
-        if read_only:
-            self.fh5 = h5py.File(self.fn, "r")   # file must exist
-        else:
-            self.fh5 = h5py.File(self.fn, "r+")   # file must exist
+        self.fh5 = h5py.File(self.fn, "r")   # file must exist; reopen for writing only when necessary
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -589,14 +593,28 @@ class h5xs():
                 self.transMode = trans_mode.external
 
             if not read_only:
+                self.enable_write(True)
                 self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
-                self.fh5.flush()
-            
+                self.enable_write(False)
+                
+    def enable_write(self, writable):
+        if self.read_only:
+            return
+        if self.writable == writable:
+            return
+        self.fh5.close()
+        if writable:
+            self.fh5 = h5py.File(self.fn, "r+")
+        else:
+            self.fh5 = h5py.File(self.fn, "r")
+        self.writable = writable
+    
     def save_detectors(self):
+        self.enable_write(True)
         dets_attr = [det.pack_dict() for det in self.detectors]
         self.fh5.attrs['detectors'] = json.dumps(dets_attr)
         self.fh5.attrs['qgrid'] = list(self.qgrid)
-        self.fh5.flush()
+        self.enable_write(False)
     
     def read_detectors(self):
         dets_attr = self.fh5.attrs['detectors']
@@ -847,11 +865,32 @@ class h5xs():
         print(f"1 data point = {dx:.2f} pixels")
         plt.show()
         
-    def show_data(self, sn=None, det_ext='_SAXS', frn=None, ax=None,
-                  logScale=True, showMask=False, mask_alpha=0.1, 
-                  clim=(0.1,14000), showRef=["AgBH", "r:"], cmap=None, dtype=None):
-        """ display frame #frn of the data under det for sample sn
+    def show_data(self, sn=None, det_ext=None, frn=None, ax=None, fig=None, aspect=1,
+                  logScale=True, showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
+                  showRef=["AgBH", "r:"], cmap=None, dtype=None):
+        """ display frame #frn of the data for sample sn and frame number frn
+            if not specified, take the first sample and/or first frame
+
+            if det_ext is None, show data from all detectors
+            otherwise show the data that correspond to the specified detector extension, e.g. "_SAXS"
+
+            when clim is 'auto', check the distribution/histogram of intensity, set limits 
+                to include only bins with number of samples greater than ch_thresh
         """
+        if det_ext is None:
+            if fig is None:
+                fig = plt.figure()
+            ndet = len(self.detectors)
+            d2s = {}
+            for i in range(ndet):
+                ext = self.detectors[i].extension
+                fig.add_subplot(1, ndet, i+1)
+                ax = plt.gca()
+                d2s[ext] = show_data(self, sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
+                                     logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
+                                     clim=clim, showRef=showRef, cmap=cmap, dtype=dtype)
+            return d2s
+
         d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
@@ -859,16 +898,35 @@ class h5xs():
         pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
         if cmap is not None:
             pax.set_color_scale(plt.get_cmap(cmap)) 
-        pax.plot(logScale=logScale, showMask=showMask, mask_alpha=mask_alpha)
+        pax.plot(logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, aspect=aspect)
+        if clim=="auto":
+            tt = d2.data.d[~d2.exp.mask.map]
+            if logScale:
+                tt = np.log(tt[tt>0])
+            else:
+                tt = tt[tt>=0]
+            vmax = np.max(tt)
+            vmin = np.min(tt)
+            for i in range(10):
+                val,bins = np.histogram(tt, range=[vmin, vmax], bins=100)
+                vidx = np.where(val>10)[0]
+                imin = vidx[0]
+                vmin = bins[imin]
+                imax = vidx[-1]
+                vmax = bins[imax+1]
+                if imax-imin>10:
+                    break
+            clim = (vmin, vmax)
+            if logScale:
+                clim = np.exp(clim)
         pax.img.set_clim(*clim)
         pax.coordinate_translation="xy2qphi"
         if showRef:
             pax.mark_standard(*showRef)
         ax.set_title(f"frame #{d2.md['frame #']}")
         pax.capture_mouse()
-        
+
         return d2
-        #plt.show() 
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
@@ -1238,16 +1296,16 @@ class h5xs():
             for sn in self.samples:
                 self.save_d1s(sn)
         
-        fh5 = self.fh5        
-        if "processed" not in list(lsh5(fh5[sn], top_only=True, silent=True)):
-            grp = fh5[sn].create_group("processed")
+        self.enable_write(True)        
+        if "processed" not in list(lsh5(self.fh5[sn], top_only=True, silent=True)):
+            grp = self.fh5[sn].create_group("processed")
         else:
-            grp = fh5[sn+'/processed']
+            grp = self.fh5[sn+'/processed']
             g0 = lsh5(grp, top_only=True, silent=True)[0]
             if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
                 # new size for the data
-                del fh5[sn+'/processed']
-                grp = fh5[sn].create_group("processed")
+                del self.fh5[sn+'/processed']
+                grp = self.fh5[sn].create_group("processed")
         
         # these attributes are not necessarily available when save_d1s() is called
         if sn in list(self.attrs.keys()):
@@ -1272,7 +1330,7 @@ class h5xs():
             if (np.asarray(tvs)>0).any(): 
                 grp[k].attrs['trans'] = tvs
                 
-        fh5.flush()
+        self.enable_write(False)
 
     def average_d1s(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data

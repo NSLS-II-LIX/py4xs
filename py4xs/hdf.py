@@ -613,7 +613,7 @@ class h5xs():
         self.writable = writable
     
     def save_detectors(self):
-        if read_only:
+        if self.read_only:
             return
         self.enable_write(True)
         dets_attr = [det.pack_dict() for det in self.detectors]
@@ -891,9 +891,9 @@ class h5xs():
                 ext = self.detectors[i].extension
                 fig.add_subplot(1, ndet, i+1)
                 ax = plt.gca()
-                d2s[ext] = show_data(self, sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
-                                     logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
-                                     clim=clim, showRef=showRef, cmap=cmap, dtype=dtype)
+                d2s[ext] = self.show_data(sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
+                                          logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
+                                          clim=clim, showRef=showRef, cmap=cmap, dtype=dtype)
             return d2s
 
         d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype)
@@ -1293,7 +1293,7 @@ class h5xs():
         assume that the shape of the data is unchanged
         """
         
-        if read_only:
+        if self.read_only:
             print("h5 file is read-only ...")
             return
         if self.save_d1 is False:

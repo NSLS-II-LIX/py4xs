@@ -119,6 +119,50 @@ class MatrixWithCoords:
         ret.err = self.err
         
         return ret
+
+    def apply_symmetry(self):
+        """ this only applies if the y coordinate is angle and covers 360deg
+        """
+        t = self.copy()
+        Np = int(len(self.yc)/2)
+        t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
+        return self.merge([t])
+
+    def fill_gap(self, method="spline", param=0.05):
+        """ 
+            for now this is interepolating in x coordinate only 
+            
+            interpolate within each row 
+            methods should be "linear" or "spline"
+
+            a better version of this should use 2d interpolation
+            but only fill in the space that is narrow enough in one direction (e.g. <5 missing data points)
+        """
+        h,w = self.d.shape
+        ret = self.copy()
+
+        xx1 = np.arange(w)
+        for k in range(h):
+            yy1 = self.d[k,:]    
+            idx = ~np.isnan(yy1)
+            if len(idx)<=10:  # too few valid data points
+                continue
+            idx1 = np.where(idx)[0]
+            # only need to refill the values that are currently nan
+            if len(idx1)>1:
+                idx2 = np.copy(idx)
+                idx2[:idx1[0]] = True
+                idx2[idx1[-1]:] = True
+                if method=="linear":
+                    ret.d[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
+                elif method=="spline":
+                    fs = uspline(xx1[idx], yy1[idx])
+                    fs.set_smoothing_factor(param)
+                    ret.d[k,~idx2] = fs(xx1[~idx2])
+                else:
+                    raise Exception(f"unknown method for intepolation: {method}")
+
+        return ret
     
     def expand(self, coord, axis, in_place=True):
         """ extend x or y coordinates, as specified by axis and the new coordinates, so that dissimilar
@@ -497,7 +541,7 @@ class MatrixWithCoords:
         
         return ret
     
-    def flatten(self, axis='x', method='err_weighted'):
+    def flatten(self, axis='x', method='simple'):
         """ collapse the matrix onto the specified axis and turn it into an array 
         """
         if not axis in ['x', 'y']:
@@ -514,13 +558,13 @@ class MatrixWithCoords:
                 dat.append(self.d[i,:])
                 if self.err is not None:
                     err.append(self.err[i,:])
-        if axis=='y':
+        if axis=='y': # the correspondence between yc and yindex is different from x
             for i in range(len(self.xc)):
-                dat.append(self.d[:,i])
+                dat.insert(0, self.d[:,i])
                 if self.err is not None:
-                    err.append(self.err[:,i])
-        if self.err is None:
-            err = None
+                    err.insert(0, self.err[:,i])
+        
+        # if err is [], calc_avg will return None as averaged err            
         dd,ee = calc_avg(dat, err, method=method)
         
         return dd,ee

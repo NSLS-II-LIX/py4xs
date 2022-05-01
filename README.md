@@ -132,3 +132,6 @@ revised h5xs.set_trans() to better handle solution scattering normalization;
 2022-01:
 cleaning up after work on lixtools.scanning
 
+2022-04:
+bug fixes in MatrixWithCorrds; reorganizing h5xs
+

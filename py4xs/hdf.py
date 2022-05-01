@@ -198,91 +198,7 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
         
     return s0
 
-
-# copied from pipeline-test: merge, fix_angular_range, interp_d2
-def merge(ds):
-    """ merge a list of MatrixWithCoord together
-        the datatype should be DataType.qphi
-    """
-    if len(ds)==1:
-        return ds[0].copy()
-    
-    wt = np.zeros(ds[0].shape)
-    avg = np.zeros(ds[0].shape)
-    idx = None
-    for d in ds:
-        if d.shape!=avg.shape:
-            raise Exception("merge: the two data sets must have the same shape: ", d.shape, avg.shape)
-        idx = ~np.isnan(d)
-        avg[idx] += d[idx]
-        wt[idx] += 1
-
-    idx = (wt>0)
-    avg[idx] /= wt[idx]
-    avg[~idx] = np.nan
-    
-    return avg
-    
-def fix_angular_range(da):
-    """ da should be a numpy array
-        return modified angular range between -180 and 180
-        assume that the angular value is not too far off to begin with
-    """
-    da1 = np.copy(da)
-    da1[da1>180] -= 360    # worse case some angles may go up to 360+delta 
-    da1[da1<-180] += 360   # this shouldn't happen
-    return da1
-
-def interp_d2(d2, method="spline", param=0.05):
-    """ d2 is a 2d array
-        interpolate within each row 
-        methods should be "linear" or "spline"
-        
-        a better version of this should use 2d interpolation
-        but only fill in the space that is narrow enough in one direction (e.g. <5 missing data points)
-        
-    """
-    h,w = d2.shape
-    
-    xx1 = np.arange(w)
-    for k in range(h):
-        yy1 = d2[k,:]    
-        idx = ~np.isnan(yy1)
-        if len(idx)<=10:  # too few valid data points
-            continue
-        idx1 = np.where(idx)[0]
-        # only need to refill the values that are currently nan
-        if len(idx1)>1:
-            idx2 = np.copy(idx)
-            idx2[:idx1[0]] = True
-            idx2[idx1[-1]:] = True
-            if method=="linear":
-                d2[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
-            elif method=="spline":
-                fs = uspline(xx1[idx], yy1[idx])
-                fs.set_smoothing_factor(param)
-                d2[k,~idx2] = fs(xx1[~idx2])
-            else:
-                raise Exception(f"unknown method for intepolation: {method}")
-
-
-def proc_2d(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
-    """ convert 2D data to q-phi map
-        may want to do this separately for SAXS and WAXS; how to specify?
-    """
-    pass
-
-def proc_make_thumnails(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
-    """ make thumbnails, specify the detector, output dataset name, color scale, etc.
-    """
-    pass
-
-def proc_line_profile(queue, images, sn, nframes, detectors, qphi_range, debug, starting_frame_no=0):
-    """ put the results in a dataset, with attributes describing where the results come from?
-    """
-    pass
-
-def proc_d1merge(args):
+def proc_merge1d(args):
     """ utility function to perfrom azimuthal average and merge detectors
     """
     images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_1d,save_merged,dtype = args
@@ -316,40 +232,6 @@ def proc_d1merge(args):
 
     return [sn, starting_frame_no, ret]
         
-def proc_sample(queue, images, sn, nframes, detectors, qgrid, reft, save_1d, save_merged, debug,
-               starting_frame_no=0, transMode=None, monitor_counts=None):
-    """ utility function to perfrom azimuthal average and merge detectors
-    """
-    ret = {'merged': []}
-    sc = {}
-    
-    for det in detectors:
-        ret[det.extension] = []
-        if det.fix_scale is not None:
-            sc[det.extension] = 1./det.fix_scale
-
-    if debug is True:
-        print("processing started: sample = %s, starting frame = #%d" % (sn, starting_frame_no))
-    for i in range(nframes):
-        for det in detectors:
-            dt = Data1d()
-            label = "%s_f%05d%s" % (sn, i+starting_frame_no, det.extension)
-            dt.load_from_2D(images[det.extension][i+starting_frame_no], 
-                            det.exp_para, qgrid, det.pre_process, det.exp_para.mask,
-                            save_ave=False, debug=debug, label=label)
-            dt.scale(sc[det.extension])
-            ret[det.extension].append(dt)
-    
-        dm = merge_d1s([ret[det.extension][i] for det in detectors], detectors, save_merged, debug)
-        ret['merged'].append(dm)
-            
-    if debug is True:
-        print("processing completed: ", sn, starting_frame_no)
-    if queue is None: # single-thread
-        return ([sn,starting_frame_no,ret])
-    else: # multi-processing    
-        queue.put([sn,starting_frame_no,ret])
-
 class h5exp():
     """ empty h5 file for exchanging exp_setup/qgrid
     """
@@ -979,18 +861,15 @@ class h5xs():
                     dm.d -= dm_b.d    
             
             dm.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
-            xyqmaps.append(dm.d)
+            xyqmaps.append(dm)
         
-        xyqmap = merge(xyqmaps)
-        
-        dm = MatrixWithCoords()
+        dm = xyqmaps[0].merge(xyqmaps[1:])
         dm.xc = xqgrid
         dm.xc_label = "qx"
         dm.xc_prec = 3
         dm.yc = yqgrid
         dm.yc_label = "qy"
         dm.yc_prec = 3
-        dm.d = xyqmap
 
         dm.plot(ax=ax, logScale=logScale, clim=clim, aspect=aspect, colorbar=colorbar)
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
@@ -998,7 +877,7 @@ class h5xs():
         return dm
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
-                       apply_symmetry=False, fill_gap=False, interp_method='linear',
+                       apply_symmetry=False, fill_gap=False, 
                        logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
                        aspect="auto", cmap=None, dtype=None, colorbar=False):
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
@@ -1041,48 +920,40 @@ class h5xs():
             cor_factor = d2s[dn].exp.FSA*d2s[dn].exp.FPol
             if det.flat is not None:
                 cor_factor = det.flat*cor_factor
-                
+            
             # since the q/phi grids are specified, use the MatrixWithCoord.conv() function
             # the grid specifies edges of the bin for histogramming
             # the phi value in exp_para may not always be in the range of (-180, 180)
-            dm = d2s[dn].data.conv(q_grid, phi_grid, d2s[dn].exp.Q, 
-                                   fix_angular_range(d2s[dn].exp.Phi),
-                                   cor_factor=cor_factor,
+            dm = d2s[dn].data.conv(q_grid, phi_grid, d2s[dn].exp.Q, d2s[dn].exp.Phi,
+                                   #fix_angular_range(d2s[dn].exp.Phi),
+                                   cor_factor=cor_factor, 
                                    mask=mask, datatype=DataType.qphi)
             
             if bkg is not None:
                 if dn in bkg.keys():
                     dbkg = Data2d(bkg[dn], exp=det.exp_para)
-                    dm_b = dbkg.data.conv(q_grid, phi_grid, d2s[dn].exp.Q,
-                                          fix_angular_range(d2s[dn].exp.Phi),
+                    dm_b = dbkg.data.conv(q_grid, phi_grid, d2s[dn].exp.Q,d2s[dn].exp.Q, d2s[dn].exp.Phi,
+                                          #fix_angular_range(d2s[dn].exp.Phi),
                                           cor_factor=cor_factor,
                                           mask=mask, datatype=DataType.qphi)
                     dm.d -= dm_b.d    
-
-            d1 = dm.d/det.fix_scale
-            if apply_symmetry:
-                Np = int(Nphi/2)
-                d2 = np.vstack([d1[Np:,:], d1[:Np,:]])
-                d1 = merge([d1,d2])
-
-            # not attempt to extrapolate into non-coveraged area in reciprocal space
-            # doing interpolation here since the non-coverage area is well defined for 
-            # a single detector, but may not be in merged data 
-            if fill_gap:
-                interp_d2(d1, method=interp_method)
-
-            dms.append(d1)
-        
-        qphimap = merge(dms)
+                    
+            dm.d /= det.fix_scale
             
-        dm = MatrixWithCoords()
+            if apply_symmetry:
+                dm = dm.apply_symmetry()
+            if fill_gap:
+                dm = dm.fill_gap(method='linear')
+
+            dms.append(dm)
+        
+        dm = dms[0].merge(dms[1:])
         dm.xc = q_grid
         dm.xc_label = "q"
         dm.xc_prec = 3
         dm.yc = phi_grid
         dm.yc_label = "phi"
         dm.yc_prec = 1
-        dm.d = qphimap
 
         dm.plot(ax=ax, logScale=logScale, clim=clim, colorbar=colorbar)
         ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
@@ -1377,7 +1248,7 @@ class h5xs():
 
         if debug is True:
             t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
+            print("done, time elapsed: %.2f sec" % (t2-t1))
             
     def plot_d1s(self, sn, ax=None, offset=1.5, fontsize="large",
                     show_overlap=False, show_subtracted=False, show_subtraction=True):
@@ -1543,11 +1414,11 @@ class h5xs():
                         images[det.extension] = dset[gn][i*c_size:i*c_size+nframes]    
 
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
-                        job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size, debug,
+                        job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size, debug,
                                                              detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
                         jobs.append(job)
                     else: # serial processing
-                        [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size, debug, 
+                        [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size, debug, 
                                                         detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
                         results[sn][fr1] = data                
                 else: # len(s)==4
@@ -1557,11 +1428,11 @@ class h5xs():
                             gn = f'{self.det_name[det.extension]}'
                             images[det.extension] = dset[gn][j, i*c_size:i*c_size+nframes]
                         if N>1: # multi-processing, need to keep track of total number of active processes
-                            job = pool.map_async(proc_d1merge, [(images, sn, nframes, i*c_size+j*s[1], debug,
+                            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1], debug,
                                                                  detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
                             jobs.append(job)
                         else: # serial processing
-                            [sn, fr1, data] = proc_d1merge((images, sn, nframes, i*c_size+j*s[1], debug, 
+                            [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1], debug, 
                                                             detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
                             results[sn][fr1] = data                
 
@@ -1590,86 +1461,3 @@ class h5xs():
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))
 
-    def load_data0(self, update_only=False, 
-                   reft=-1, save_1d=False, save_merged=False, debug=False, N=8):
-        """ assume multiple samples, parallel-process by sample
-            if update_only is true, only create 1d data for new frames (empty self.d1s)
-        """
-        if debug is True:
-            print("start processing: load_data()")
-            t1 = time.time()
-        
-        fh5 = self.fh5
-        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
-        
-        processes = []
-        queue_list = []
-        results = {}
-        for sn in self.samples:
-            if sn not in list(self.attrs.keys()):
-                self.attrs[sn] = {}
-            if 'buffer' in list(fh5[sn].attrs):
-                self.buffer_list[sn] = fh5[sn].attrs['buffer'].split('  ')
-            if update_only and sn in list(self.d1s.keys()):
-                self.load_d1s(sn)   # load processed data saved in the file
-                continue
-                                    
-            self.d1s[sn] = {}
-            results[sn] = {}
-            images = {}
-            for det in self.detectors:
-                ti = fh5["%s/primary/data/%s" % (sn, self.det_name[det.extension])][...]  # ].value
-                if len(ti.shape)>3:
-                    ti = ti.reshape(ti.shape[-3:])      # quirk of suitcase
-                images[det.extension] = ti
-            
-            n_total_frames = len(images[self.detectors[0].extension])
-            if N>1: # multi-processing
-                if n_total_frames<N*N/2:
-                    Np = 1
-                    c_size = N
-                else:
-                    Np = N
-                    c_size = int(n_total_frames/N)
-                for i in range(Np):
-                    if i==Np-1:
-                        nframes = n_total_frames - c_size*(Np-1)
-                    else:
-                        nframes = c_size
-                    que = mp.Queue()
-                    queue_list.append(que)
-                    th = mp.Process(target=proc_sample, 
-                                    args=(que, images, sn, nframes,
-                                          self.detectors, self.qgrid, reft, save_1d, save_merged, debug, i*c_size) )
-                    th.start()
-                    processes.append(th)
-            else: # serial processing
-                [sn, fr1, data] = proc_sample(None, images, sn, n_total_frames,
-                                              self.detectors, self.qgrid, reft, save_1d, save_merged, debug) 
-                self.d1s[sn] = data                
-
-        if N>1:             
-            for que in queue_list:
-                [sn, fr1, data] = que.get()
-                results[sn][fr1] = data
-                print("data received: sn=%s, fr1=%d" % (sn,fr1) )
-            for th in processes:
-                th.join()
-
-            for sn in self.samples:
-                if sn not in results.keys():
-                    continue
-                data = {}
-                frns = list(results[sn].keys())
-                frns.sort()
-                for k in results[sn][frns[0]].keys():
-                    data[k] = []
-                    for frn in frns:
-                        data[k].extend(results[sn][frn][k])
-                self.d1s[sn] = data
-        
-        self.save_d1s(debug=debug)
-        if debug is True:
-            t2 = time.time()
-            print("done, time lapsed: %.2f sec" % (t2-t1))
-            

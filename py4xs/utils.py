@@ -3,6 +3,30 @@ import matplotlib.colors as mc
 from functools import reduce
 import subprocess
 
+def get_bin_ranges_from_grid(qgrid, prec=1e-5):
+    """ convert the given qgrid, which is composed of multiple evenly spaced segments, into a sereis 
+        of bin_ranges that can be used for histogramming
+    """
+    sc = int(1./prec)
+    df = np.floor(np.diff(qgrid)*sc+0.5)
+    df = np.append(df, df[-1])
+    bin_ranges = []
+    for v in np.unique(df):
+        idx = (np.fabs(df-v)<0.1)
+        llmt = np.floor(qgrid[idx][0]*sc-v/2+0.5)*prec 
+        hlmt = np.floor(qgrid[idx][-1]*sc+v/2+0.5)*prec 
+        bin_ranges.append([[llmt, hlmt],len(df[idx])])
+    
+    return bin_ranges
+
+def get_grid_from_bin_ranges(bin_ranges):
+    """ construct a qgrid from the given bin_ranges, which should not overlap and have the format of 
+        [[[min_v, max_v], N], ...]
+    """
+    ql = [np.linspace(rn[0], rn[1], n+1) for rn,n in bin_ranges]
+    qgrid = np.hstack([(r[1:]+r[:-1])/2 for r in ql])
+    
+    return qgrid
 
 def calc_avg(dat:list, err:list, method="simple"):
     """ both dat and err should be lists of numpy arrays, corresponding to data and error bar
@@ -210,13 +234,15 @@ def smooth(x, half_window_len=11, window='hanning'):
     y=np.convolve(w/w.sum(),s,mode='valid')
     return y[half_window_len:-half_window_len]
 
-def run(cmd, path="", ignoreErrors=True, returnError=False):
+def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
     """ cmd should be a list, e.g. ["ls", "-lh"]
         path is for the cmd, not the same as cwd
     """
     cmd[0] = path+cmd[0]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
+    if debug:
+        print(out.decode(), err.decode())
     if len(err)>0 and not ignoreErrors:
         print(err.decode())
         raise Exception(err.decode())

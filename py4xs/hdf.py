@@ -7,6 +7,7 @@ import time,datetime
 import os,copy,subprocess,re
 import json,pickle,fabio
 import multiprocessing as mp
+import numbers
 
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
@@ -57,6 +58,47 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
+def synch_mon(ts0, em0, ts, em, dt="auto", Ns=8, plot=False):
+    """ revise the timestamp ts (np array) to match the monitor em to em0
+        look for the most significant change, i.e. when the shutter opens 
+        
+        if dt is a numberical value, simply add that value to ts
+        if dt is "auto", in principle both em's should see the shutter openning when the scan starts
+        
+        Ns specifies how much smoothing will be applied to the em data before synching
+    """
+    if isinstance(dt, numbers.Number):
+        ts += ts0[0]-ts[0]+dt
+        return dt
+    if dt!="auto": 
+        return 0   # don't know what to do
+    
+    ts += ts0[0]-ts[0]
+    df = np.diff(em)
+    df0 = np.diff(em0)
+    df /= np.max(df)
+    df0 /= np.max(df0)
+
+    tt = np.linspace(-Ns, Ns, 2*Ns+1)
+    smth = np.exp(-tt**2/Ns)
+    df = np.convolve(df, smth, "same")
+    df0 = np.convolve(df0, smth, "same")
+    idx = df>0.4*np.max(df)
+    idx0 = df0>0.4*np.max(df0)
+    ats = np.average(ts[1:][idx], weights=df[idx])
+    ats0 = np.average(ts0[1:][idx0], weights=df0[idx0])
+    
+    if plot:
+        plt.figure()
+        plt.plot(ts[1:][idx], df[idx])
+        plt.plot(ts0[1:][idx0], df0[idx0])
+        plt.bar([ats], [2], width=0.01)
+        plt.bar([ats0], [2], width=0.01)
+
+    dt = ats0-ats
+    ts += dt
+    return dt  
+    
 def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
@@ -413,7 +455,7 @@ class h5xs():
         self.writable = False   # this is the current state of th eh5 file
 
         self.fn = fn
-        self.fh5 = h5py.File(self.fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
+        self.fh5 = h5py.File(fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -961,22 +1003,23 @@ class h5xs():
         return dm
     
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
-                force_synch=-0.25, force_synch_trig=0, extend_mon_stream=True,
+                force_synch='auto', force_synch_trig=0, extend_mon_stream=True,
                 debug=False, plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
             2. if the monitors are used asynchronously, monitor values would need to be integated 
-               based on timestampls; a trigger must be provided 
+               based on timestamps; a trigger must be provided 
                 2a: in fly scans, this should be a motor name
                 2b: for solution scattering, use "sol" as trigger
 
             the timestamps on the trigger and em1/em2 may not be synced, dt0 provides a correction 
-            to the trigger timestamp
+            to the trigger timestamp; 
             
             if plot_trigger=True and a single sample is named as sn, generate a plot for verification
 
             timestamps on em1 appear to be way off, ntpd not running
-            if force_synch is non-zero, use first em2 timestamp + force_synch as start of em1 
+            if force_synch is non-zero, use first em2 timestamp + force_synch as start of em1
+            in principle can be synched by the shutter opening seen by the monitors when the scan starts
             
             in some cases, the monitor stream appears to end before data collection is complete
             if extend_mon_stream=True, repeat the last mon data point until the timestamp covers
@@ -999,8 +1042,8 @@ class h5xs():
             # expect trans and incid monitor data to be in the same stream
             strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor)
             strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor)
-            if force_synch!=0: # timestamps between em1/em2 
-                ts1 = ts1-ts1[0]+ts2[0]+force_synch
+            # synch em1 time stamps to em2, LiX-specific 
+            synch_mon(ts2, trans_data, ts1, incid_data, dt=force_synch)
                 
             if strn=="primary":
                 print("monitors are used as detectors.")

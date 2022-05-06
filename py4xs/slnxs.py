@@ -414,15 +414,13 @@ class Data1d:
                 
         return self
 
-    def merge(self, d1, qmax=-1, qmin=-1, fix_scale=-1, debug=False, create_new=False):
+    def merge(self, d1, debug=False, create_new=False):
         """
         combine the data in self and d1
         scale d1 intensity to match self
         self and d1 should have the same qgrid
 
-        if qmax or qmin <0
-        simply keep the WAXS data that is beyond qmax for the SAXS data
-        this is useful for utilizing WAXS to normalize intensity but keep SAXS data only
+        update 2022Apr: this function no longer scales data to match 
         """
 
         if debug==True:
@@ -431,78 +429,30 @@ class Data1d:
             print("merging data sets should have the same qgrid.")
             exit()
 
+        if debug==True:
+            print("merged set re-named %s." % self.label)
+
         # this gives the overlapping region
         idx = (self.data > 0) & (d1.data > 0)
-
         if len(self.qgrid[idx]) > 0:
-            qmin0 = min(d1.qgrid[idx])
-            qmax0 = max(self.qgrid[idx])
-            # merge SAXS/WAXS based on intensity in the overlapping region
-            if qmax0 < qmax:
-                qmax = qmax0
-            if qmin0 > qmin:
-                qmin = qmin0
-            idx = (self.qgrid > qmin) & (self.qgrid < qmax)
             # save the raw data in case needed, e.g. for ploting
             self.overlaps.append({'q_overlap': self.qgrid[idx],
                                   'raw_data1': self.data[idx],
                                   'raw_data2': d1.data[idx]})
-        else:
-            # no overlap
-            # simply stack WAXS data to the high q end of SAXS data
-            qmin = qmax = max(self.qgrid[self.data > 0])
-            self.overlaps.append({'q_overlap': np.empty(0),
-                                  'raw_data1': np.empty(0),
-                                  'raw_data2': np.empty(0)})
-
-        # idx = np.asarray([],dtype=int)
-
-        if len(self.qgrid[idx])==0:
-            if debug!='quiet':
-                print("data sets are not overlapping in the given q range.")
-            if fix_scale < 0:
-                fix_scale = 1
-                if debug!='quiet':
-                    print("forcing fix_scale=1.")
-        elif len(self.qgrid[idx]) < 5 and debug!='quiet':
-            print("too few overlapping points: %d" % len(self.qgrid[idx]))
-
-        if fix_scale > 0:
-            # For a given experimental configuration, the intensity normlization
-            # factor between the SAXS and WAXS should be well-defined. This factor
-            # can be determined using scattering data with siginificant intensity
-            # in the overlapping q-range and applied to all data collected in the
-            # same configuration.
-            sc = fix_scale
-        else:
-            sc = np.linalg.lstsq(np.asmatrix(self.data[idx]).T, np.asmatrix(d1.data[idx]).T)[0]
-            sc = np.trace(sc)
-
-        d1.data /= sc
-        d1.err /= sc
-        if len(self.qgrid[idx]) > 0:
-            if debug==True:
-                print("Scaled Overlaps by 1/%f" % sc)
-            self.overlaps[-1]['raw_data2'] /= sc
-            self.overlaps[-1]['sc'] = sc
-
-        self.label = common_name(self.label, d1.label)
-        if debug==True:
-            print("set2 scaled by 1/%f" % sc)
-            print("merged set re-named %s." % self.label)
-
-        if len(self.qgrid[idx]) > 0:
             # averaging using 1/err^2 as weight, maximum likelihood estimator 
             w1 = 1./(self.err[idx]*self.err[idx]) 
             w2 = 1./(d1.err[idx]*d1.err[idx]) 
             self.data[idx] = (w1*self.data[idx] + w2*d1.data[idx]) / (w1+w2)
             self.err[idx] = np.sqrt((w1/(w1+w2)*self.err[idx])**2 + (w2/(w1+w2)*d1.err[idx])**2)
-        self.data[self.qgrid >= qmax] = d1.data[self.qgrid >= qmax]
-        self.err[self.qgrid >= qmax] = d1.err[self.qgrid >= qmax]
+        
+        # where d1 has data 
+        idx1 = (d1.data > 0) & ~(self.data > 0)
+        self.data[idx1] = d1.data[idx1]
+        self.err[idx1] = d1.err[idx1]
 
-        self.comments += "# merged with the following set by matching intensity within (%.4f, %.4f)," % (qmin, qmax)
-        self.comments += " scaled by %f\n" % sc
-        self.comments += d1.comments.replace("# ", "## ")
+        qmin = self.qgrid[idx][0]
+        qmax = self.qgrid[idx][-1]
+        
 
     def plot_Guinier(self, qs=0, qe=10, rg=15, fix_qe=False, scale_wabs=-1,
                      ax=None, no_plot=False, fontsize="large"):

@@ -119,50 +119,6 @@ class MatrixWithCoords:
         ret.err = self.err
         
         return ret
-
-    def apply_symmetry(self):
-        """ this only applies if the y coordinate is angle and covers 360deg
-        """
-        t = self.copy()
-        Np = int(len(self.yc)/2)
-        t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
-        return self.merge([t])
-
-    def fill_gap(self, method="spline", param=0.05):
-        """ 
-            for now this is interepolating in x coordinate only 
-            
-            interpolate within each row 
-            methods should be "linear" or "spline"
-
-            a better version of this should use 2d interpolation
-            but only fill in the space that is narrow enough in one direction (e.g. <5 missing data points)
-        """
-        h,w = self.d.shape
-        ret = self.copy()
-
-        xx1 = np.arange(w)
-        for k in range(h):
-            yy1 = self.d[k,:]    
-            idx = ~np.isnan(yy1)
-            if len(idx)<=10:  # too few valid data points
-                continue
-            idx1 = np.where(idx)[0]
-            # only need to refill the values that are currently nan
-            if len(idx1)>1:
-                idx2 = np.copy(idx)
-                idx2[:idx1[0]] = True
-                idx2[idx1[-1]:] = True
-                if method=="linear":
-                    ret.d[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
-                elif method=="spline":
-                    fs = uspline(xx1[idx], yy1[idx])
-                    fs.set_smoothing_factor(param)
-                    ret.d[k,~idx2] = fs(xx1[~idx2])
-                else:
-                    raise Exception(f"unknown method for intepolation: {method}")
-
-        return ret
     
     def expand(self, coord, axis, in_place=True):
         """ extend x or y coordinates, as specified by axis and the new coordinates, so that dissimilar
@@ -401,17 +357,27 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
 
+        # need to fix the direction of y-axis; in HPLC y is q and increases downward; q-phi map is the opposite 
+        xx = np.tile(self.xc, [len(self.yc),1])
+        if sc_factor=="x":
+            sc_factor = xx
+        elif sc_factor=="x2":
+            sc_factor = xx*xx
+        else:
+            sc_factor = 1
+        kwargs.pop('sc_factor', None)
+            
         if logScale:
             if "clim" in kwargs.keys():
                 kwargs["clim"] = np.log(kwargs["clim"])
-            im = ax.imshow(np.log(self.d), aspect=aspect, **kwargs)
+            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, **kwargs)
         else:
-            im = ax.imshow(self.d, aspect=aspect, **kwargs)
+            im = ax.imshow(self.d*sc_factor, aspect=aspect, **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
         ax.format_coord = self.format_coord
@@ -453,16 +419,7 @@ class MatrixWithCoords:
             val = self.d[row][col]
             msg += f"{val:.2f}  "
         return msg
-        
-    #def mouse_press(self, event):
-    #    # change the mouseover meesage
-    #    self.ax.format_coord = 
-    #    return ??
-    
-    #def mouse_release(self, event):
-    #    # restore the default message
-    #    self.ax.format_coord = self.format_coord
-        
+                
     def roi(self, x1, x2, y1, y2, mask=None):
         """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
         """
@@ -601,7 +558,53 @@ class MatrixWithCoords:
             ret.d = self.d - dbkg.d*scale_factor
             if self.err and dbkg.err:
                 ret.err = self.err + dbkg.err*scale_factor
+        
+    def apply_symmetry(self):
+        """ this only applies if the y coordinate is angle and covers 360deg
+        """
+        t = self.copy()
+        Np = int(len(self.yc)/2)
+        t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
+        return self.merge([t])
 
+    def fill_gap(self, method="spline", param=0.05):
+        """ 
+            for now this is interepolating in x coordinate only 
+            
+            interpolate within each row 
+            methods should be "linear" or "spline"
+
+            a better version of this should use 2d interpolation
+            but only fill in the space that is narrow enough in one direction (e.g. <5 missing data points)
+        """
+        h,w = self.d.shape
+        ret = self.copy()
+
+        xx1 = np.arange(w)
+        for k in range(h):
+            yy1 = self.d[k,:]    
+            idx = ~np.isnan(yy1)
+            if len(idx)<=10:  # too few valid data points
+                continue
+            idx1 = np.where(idx)[0]
+            # only need to refill the values that are currently nan
+            if len(idx1)>1:
+                idx2 = np.copy(idx)
+                idx2[:idx1[0]] = True
+                idx2[idx1[-1]:] = True
+                if method=="linear":
+                    ret.d[k,~idx2] = np.interp(xx1[~idx2], xx1[idx], yy1[idx])
+                elif method=="spline":
+                    fs = uspline(xx1[idx], yy1[idx])
+                    fs.set_smoothing_factor(param)
+                    ret.d[k,~idx2] = fs(xx1[~idx2])
+                else:
+                    raise Exception(f"unknown method for intepolation: {method}")
+
+        return ret
+                
+                
+                
 def flip_array(d, flip):
     if flip == 0:
         return d

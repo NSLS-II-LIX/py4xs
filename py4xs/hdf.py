@@ -692,17 +692,23 @@ class h5xs():
         frn = self.verify_frn(sn, frn, flatten=True)
         return self.d1s[sn][group][frn]    
             
-    def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None):
+    def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None, detectors=None):
         if sn is None:
             sn = self.samples[0]
         d2s = {}
-        for det in self.detectors:
+        if detectors is None:
+            detectors = self.detectors
+        for det in detectors:
             try:
                 dset = self.fh5[f"{sn}/primary/data/{self.det_name[det.extension]}"]
             except:
                 continue
-            frn = self.verify_frn(sn, frn)
-            d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
+            if frn=="average":
+                davg = np.average(dset, axis=tuple(range(len(dset.shape)-2)))
+                d2 = Data2d(davg, exp=det.exp_para, dtype=dtype)
+            else:
+                frn = self.verify_frn(sn, frn)
+                d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 
             d2s[det.extension] = d2
         if not det_ext:
@@ -796,7 +802,7 @@ class h5xs():
         
     def show_data(self, sn=None, det_ext=None, frn=None, ax=None, fig=None, aspect=1,
                   logScale=True, showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
-                  showRef=["AgBH", "r:"], cmap=None, dtype=None):
+                  showRef=["AgBH", "r:"], cmap=None, detectors=None, dtype=None):
         """ display frame #frn of the data for sample sn and frame number frn
             if not specified, take the first sample and/or first frame
 
@@ -806,13 +812,15 @@ class h5xs():
             when clim is 'auto', check the distribution/histogram of intensity, set limits 
                 to include only bins with number of samples greater than ch_thresh
         """
+        if detectors is None:
+            detectors = self.detectors
         if det_ext is None:
             if fig is None:
                 fig = plt.figure()
-            ndet = len(self.detectors)
+            ndet = len(detectors)
             d2s = {}
             for i in range(ndet):
-                ext = self.detectors[i].extension
+                ext = detectors[i].extension
                 fig.add_subplot(1, ndet, i+1)
                 ax = plt.gca()
                 d2s[ext] = self.show_data(sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
@@ -820,7 +828,7 @@ class h5xs():
                                           clim=clim, showRef=showRef, cmap=cmap, dtype=dtype)
             return d2s
 
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -859,7 +867,7 @@ class h5xs():
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
-                      aspect=1, cmap=None, dtype=None, colorbar=False):
+                      aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
         """
@@ -868,10 +876,12 @@ class h5xs():
             plt.figure()
             ax = plt.gca()
 
-        xqmax = np.max([d.exp_para.xQ.max() for d in self.detectors])
-        xqmin = np.min([d.exp_para.xQ.min() for d in self.detectors])
-        yqmax = np.max([d.exp_para.yQ.max() for d in self.detectors])
-        yqmin = np.min([d.exp_para.yQ.min() for d in self.detectors])
+        if detectors is None:
+            detectors = self.detectors
+        xqmax = np.max([d.exp_para.xQ.max() for d in detectors])
+        xqmin = np.min([d.exp_para.xQ.min() for d in detectors])
+        yqmax = np.max([d.exp_para.yQ.max() for d in detectors])
+        yqmin = np.min([d.exp_para.yQ.min() for d in detectors])
 
         xqmax = np.floor(xqmax/dq)*dq
         xqmin = np.ceil(xqmin/dq)*dq
@@ -882,7 +892,7 @@ class h5xs():
         yqgrid = np.arange(start=yqmin, stop=yqmax+dq, step=dq)        
 
         xyqmaps = []
-        for det in self.detectors:
+        for det in detectors:
             dn = det.extension
             if useMask:
                 mask = d2s[dn].exp.mask
@@ -921,15 +931,17 @@ class h5xs():
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, 
                        logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
-                       aspect="auto", cmap=None, dtype=None, colorbar=False):
+                       aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False):
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
         if ax is None:
             plt.figure()
             ax = plt.gca()
 
+        if detectors is None:
+            detectors = self.detectors
         if isinstance(Nq, int):
-            qmax = np.max([d.exp_para.Q.max() for d in self.detectors]) 
-            qmin = np.min([d.exp_para.Q.min() for d in self.detectors]) 
+            qmax = np.max([d.exp_para.Q.max() for d in detectors]) 
+            qmin = np.min([d.exp_para.Q.min() for d in detectors]) 
             # keep 2 significant digits only for the step_size
             dq = (qmax-qmin)/Nq
             n = int(np.floor(np.log10(dq)))
@@ -950,7 +962,7 @@ class h5xs():
         phi_grid = np.linspace(-180., 180, Nphi)
 
         dms = []
-        for det in self.detectors:
+        for det in detectors:
             dn = det.extension
             if not dn in d2s.keys():
                 continue

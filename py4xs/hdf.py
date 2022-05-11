@@ -22,6 +22,11 @@ from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
 from scipy.integrate import simpson
 
+from dask.distributed import Client,LocalCluster
+import dask.array as da
+
+
+
 def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
     """ list the content of a HDF5 file
         
@@ -106,13 +111,15 @@ def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
         
         assume ts and ts0 are 1d arrays
     """
-    if extend_mon_stream and ts[-1]<ts0[-1]+exp*1.5:
+    et = np.max([1.5, exp*1.5])
+    if extend_mon_stream and ts[-1]<ts0[-1]+et:
         em = np.append(em, em[-1])
-        ts = np.append(ts, ts0[-1]+exp*1.5)
-    ffe = interp1d(ts, em)
+        ts = np.append(ts, ts0[-1]+et)
+    ffe = interp1d(ts, em) 
     em0 = []
     for t in ts0:
-        tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))
+        tt = np.concatenate(([t-exp], ts[(ts>t-exp) & (ts<t)], [t]))  #         trigger timestamp correspond to the start of the exposure
+        #tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))  #         trigger timestamp correspond to the start of the exposure
         ee = ffe(tt)
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
@@ -284,6 +291,7 @@ class h5exp():
         else:
             self.detectors, self.qgrid = exp_setup
             self.save_detectors()
+        
         
     def save_detectors(self):
         self.fh5 = h5py.File(self.fn, "w")   # new file
@@ -551,11 +559,13 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
-    def dset(self, dsname, data_type="data", sn=None):
+    def dset(self, dsname, data_type="data", sn=None, get_path=False):
         assert (data_type in ["data", "timestamps"])
         if sn is None:
             sn = self.samples[0]
         strm = find_field(self.fh5, dsname, sn)
+        if get_path:
+            return f"{sn}/{strm}/{data_type}/{dsname}"
         return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"]
     
     def md_dict(self, sn, md_keys=[]):
@@ -692,38 +702,45 @@ class h5xs():
         frn = self.verify_frn(sn, frn, flatten=True)
         return self.d1s[sn][group][frn]    
             
-    def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None, detectors=None):
+    def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None, detectors=None, client=None):
         if sn is None:
             sn = self.samples[0]
         d2s = {}
         if detectors is None:
             detectors = self.detectors
+            
+        if frn=="average" and client is None:
+            raise Exception("need a dask client for calculating the average.")
+            
         for det in detectors:
             try:
                 dset = self.fh5[f"{sn}/primary/data/{self.det_name[det.extension]}"]
             except:
                 continue
             if frn=="average":
-                davg = np.average(dset, axis=tuple(range(len(dset.shape)-2)))
+                imgs = da.array(dset)
+                fut = da.average(imgs, axis=tuple(range(len(dset.shape)-2)))
+                davg = fut.compute(client=client)
                 d2 = Data2d(davg, exp=det.exp_para, dtype=dtype)
             else:
                 frn = self.verify_frn(sn, frn)
                 d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 
             d2s[det.extension] = d2
+
         if not det_ext:
             return d2s
         else:
             return d2s[det_ext]
                 
     def check_bm_center(self, sn=None, det_ext='_SAXS', frn=0, 
-                        qs=0.005, qe=0.05, qn=100, Ns=9):
+                        qs=0.005, qe=0.05, qn=100, Ns=9, **kwargs):
         """ this function compares the beam intensity on both sides of the beam center,
             and advise if the beam center as defined in the detector configuration is incorrect
             dividing data into 4*Ns slices, show data in horizontal and vertical cuts
         """
         i = 0
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, **kwargs)
         qg = np.linspace(qs, qe, qn)
         d2.conv_Iqphi(Nq=qg, Nphi=Ns*4, mask=d2.exp.mask)
 
@@ -802,7 +819,7 @@ class h5xs():
         
     def show_data(self, sn=None, det_ext=None, frn=None, ax=None, fig=None, aspect=1,
                   logScale=True, showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
-                  showRef=["AgBH", "r:"], cmap=None, detectors=None, dtype=None):
+                  showRef=["AgBH", "r:"], cmap=None, detectors=None, dtype=None, **kwargs):
         """ display frame #frn of the data for sample sn and frame number frn
             if not specified, take the first sample and/or first frame
 
@@ -825,10 +842,10 @@ class h5xs():
                 ax = plt.gca()
                 d2s[ext] = self.show_data(sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
                                           logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
-                                          clim=clim, showRef=showRef, cmap=cmap, dtype=dtype)
+                                          clim=clim, showRef=showRef, cmap=cmap, dtype=dtype, **kwargs)
             return d2s
 
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors)
+        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors, **kwargs)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -867,11 +884,11 @@ class h5xs():
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
-                      aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False):
+                      aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
         """
-        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
+        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -931,8 +948,8 @@ class h5xs():
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, 
                        logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
-                       aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False):
-        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype)
+                       aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
+        d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -1095,7 +1112,9 @@ class h5xs():
                     print(f"trans mon: {np.min(ts2)-t0} ~ {np.max(ts2)-t0}")
                     print(f"incid mon: {np.min(ts1)-t0} ~ {np.max(ts1)-t0}")
                     print(f"detector: start={ts0-t0}, force_synch={force_synch_trig}, exp = {exp}")
-                    raise
+                    ts1 += ts2[0]-ts1[0]
+                    print(f"using force_synch=0, incid mon: {np.min(ts1)-t0} ~ {np.max(ts1)-t0}")
+                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream)
 
                 if plot_trigger:
                     plt.figure()

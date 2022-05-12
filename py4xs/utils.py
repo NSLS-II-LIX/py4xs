@@ -3,6 +3,29 @@ import matplotlib.colors as mc
 from functools import reduce
 import subprocess
 
+def auto_clim(v, logScale, ch_thresh=10):
+    if logScale:
+        tt = np.log(v[v>0])
+    else:
+        tt = v[v>=0]
+    vmax = np.max(tt)
+    vmin = np.min(tt)
+    
+    for i in range(10):
+        val,bins = np.histogram(tt, range=[vmin, vmax], bins=100)
+        vidx = np.where(val>ch_thresh)[0]
+        imin = vidx[0]
+        vmin = bins[imin]
+        imax = vidx[-1]
+        vmax = bins[imax+1]
+        if imax-imin>ch_thresh:
+            break
+    clim = (vmin, vmax)
+    if logScale:
+        clim = np.exp(clim)    
+    
+    return clim
+
 def get_bin_ranges_from_grid(qgrid, prec=1e-5):
     """ convert the given qgrid, which is composed of multiple evenly spaced segments, into a sereis 
         of bin_ranges that can be used for histogramming

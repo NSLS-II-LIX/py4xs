@@ -3,10 +3,9 @@ import fabio
 import datetime,os,copy
 from py4xs.mask import Mask
 from py4xs.local import ExpPara
-from py4xs.utils import calc_avg
+from py4xs.utils import calc_avg,auto_clim
 import pylab as plt
 import matplotlib as mpl
-from matplotlib.colors import LogNorm
 from enum import Enum 
 from PIL import Image
 #import fast_histogram as fh
@@ -357,7 +356,7 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -368,13 +367,17 @@ class MatrixWithCoords:
             sc_factor = xx
         elif sc_factor=="x2":
             sc_factor = xx*xx
+        elif sc_factor=="x0.5":
+            sc_factor = np.power(xx, 0.5)
+        elif sc_factor=="x1.5":
+            sc_factor = np.power(xx, 1.5)
         else:
             sc_factor = 1
         kwargs.pop('sc_factor', None)
             
+        if clim=="auto":
+            clim = auto_clim(self.d*sc_factor, logScale)
         if logScale:
-            if "clim" in kwargs.keys():
-                kwargs["clim"] = np.log(kwargs["clim"])
             im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, **kwargs)
         else:
             im = ax.imshow(self.d*sc_factor, aspect=aspect, **kwargs)
@@ -797,190 +800,3 @@ class Data2d:
         return Iq,dI
 
     
-class Axes2dPlot:
-    """
-        display MatrixWithCoordinates, image origin at the upper left corner
-        option to provide coordinates translation
-    """    
-    def __init__(self, ax, data, exp=None, datatype=DataType.det):
-        """
-        """
-        self.ax = ax
-        self.cmap = plt.get_cmap()
-        self.scale = 'linear'
-        self.d2 = data
-        self.ptns = []
-        self.xlim = None
-        self.ylim = None
-        self.img = None
-        self.coordinate_translation = None
-        self.exp = exp
-        self.n_step = 121
-        self.datatype = datatype
-        self.capture_mouse()
-
-    def capture_mouse(self):
-        self.ax.figure.canvas.mpl_connect('button_press_event', self.clicked)
-        # self.ax.figure.canvas.mpl_connect('motion_notify_event', self.move_event)
-
-    def right_click(self, event):
-        """ display menu to change image color scale etc.
-        """
-        pass
-
-    def clicked(self, event):
-        if event.inaxes != self.ax:
-            return True
-        x = event.xdatta 
-        y = event.ydata 
-        if self.coordinate_translation=="xy2qrqz":
-            (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
-            msg = "qr=%.4f , qz=%.4f" % (qr[0], qz[0])
-        elif self.coordinate_translation=="xy2qphi":
-            (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
-            msg = "q=%.4f, phi=%.1f" % (q[0],phi[0])
-        else:
-            msg = f"({x:.1f}, {y:.1f})"
-        self.ax.set_title(msg, fontsize="small")
-        print(msg)
-        return True
-
-    # best modify d2.xc/d2.yc instead of using xscale/yscale
-    def plot(self, showMask=None, logScale=False, mask_alpha=0.1,
-             aspect='auto', xscale=1., yscale=1.):
-
-        dd = np.asarray(self.d2.d, dtype=np.float)
-
-        immax = np.average(dd) + 5 * np.std(dd)
-        immin = np.average(dd) - 5 * np.std(dd)
-        if immin < 0:
-            immin = 0
-
-        if showMask and self.exp:
-            self.ax.imshow(self.exp.mask.map, cmap="gray")
-        if logScale:
-            self.img = self.ax.imshow(dd, aspect=aspect, alpha=1-mask_alpha,
-                                      cmap=self.cmap, interpolation='nearest', norm=LogNorm(),
-                                      extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
-                                              self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale])
-        else:
-            self.img = self.ax.imshow(dd, vmax=immax, vmin=immin, 
-                                      aspect=aspect, alpha=1-mask_alpha,
-                                      cmap=self.cmap, interpolation='nearest',
-                                      extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
-                                              self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]) 
-        self.xlim = [self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale]
-        self.ylim = [self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]
-
-    def set_color_scale(self, cmap, gamma=1):
-        """ linear, log/gamma
-        """
-        if not gamma == 1:
-            cmap = cmap_map(lambda x: np.exp(gamma * np.log(x)), cmap)
-        self.cmap = cmap
-        if self.img is not None:
-            self.img.set_cmap(cmap)
-
-    # xvalues and yvalues should be arrays of the same length, positons to be markes
-    # used to mark a pixel position, in all types of 2D maps, or a (qr,qz) or (p,phi) pair on the detector image
-    def mark_points(self, xvalues, yvalues, fmt="r+", datatype=None):
-        if self.d2.datatype==DataType.det and self.exp!=None:
-            (Q, Phi, Qr, Qn) = self.exp.calc_from_XY(np.asarray(xvalues), np.asarray(yvalues))
-            if datatype==DataType.qrqz:
-                (xvalues,yvalues) = (Qr,Qn)
-            elif datatype==DataType.qphi:
-                (xvalues,yvalues) = (Q,Phi)
-        elif datatype==DataType.det and self.exp!=None:
-            if self.d2.datatype==DataType.qrqz:
-                (xvalues,yvalues) = self.exp.calc_from_QrQn(np.asarray(xvalues), np.asarray(yvalues))
-            elif self.d2.datatype==DataType.qphi: # need to convert angular unit
-                (xvalues,yvalues) = self.exp.calc_from_QPhi(np.asarray(xvalues), np.asarray(yvalues))
-        elif self.d2.datatype!=datatype and datatype!=None:
-            raise Exception("imcompatible data types:", datatype, self.d2.datatype)
-            
-        ptn = [[xvalues, yvalues], fmt]    
-        self.ptns.append(ptn)
-        self.draw_dec()
-    
-    # xvalues and yvalues can have different lengths 
-    def mark_coords(self, xvalues, yvalues=None, fmt="r-", datatype=None):
-        if datatype==None or datatype==self.d2.datatype: # straight lines between max/min
-            for xv in xvalues:
-                self.ptns.append([[[xv, xv], self.ylim], fmt])
-            for yv in yvalues:
-                self.ptns.append([[self.xlim, [yv, yv]], fmt])
-        elif self.exp==None:
-            raise Exception("undefined ExpPara for the plot.")
-        elif datatype==DataType.q:
-            phi = np.linspace(0, 360., self.n_step)
-            if self.d2.datatype==DataType.det:
-                for q in xvalues:
-                    (xv, yv) = self.exp.calc_from_QPhi(q*np.ones(self.n_step), phi)
-                    self.ptns.append([[xv, yv], fmt])
-            elif self.d2.datatype==DataType.qrqz:
-                for q in xvalues:
-                    self.ptns.append([[q*np.cos(np.radians(phi)), q*np.sin(np.radians(phi))], fmt])
-            elif self.d2.datatype==DataType.qphi:
-                for q in xvalues:
-                    self.ptns.append([[[q, q], self.ylim], fmt])
-        elif self.d2.datatype==DataType.det and datatype==DataType.qrqz:
-            qr_grid = np.linspace(self.exp.Qr.min(), self.exp.Qr.max(), self.n_step)
-            qz_grid = np.linspace(self.exp.Qn.min(), self.exp.Qn.max(), self.n_step)
-            for qr in xvalues:
-                (xv,yv) = self.exp.calc_from_QrQn(qr*np.ones(self.n_step), qz_grid)
-                self.ptns.append([[xv, yv], fmt])
-            for qz in yvalues:
-                (xv,yv) = self.exp.calc_from_QrQn(qr_grid, qz*np.ones(self.n_step))
-                self.ptns.append([[xv, yv], fmt])
-        elif self.d2.datatype==DataType.det and datatype==DataType.qphi:
-            q_grid = np.linspace(self.exp.Q.min(), self.exp.Q.max(), self.n_step)
-            phi_grid = np.linspace(self.exp.Phi.min(), self.exp.Phi.max(), self.n_step)
-            for q in xvalues:
-                (xv,yv) = self.exp.calc_from_QPhi(q*np.ones(self.n_step), phi_grid)
-                self.ptns.append([[xv, yv], fmt])            
-            for phi in yvalues:
-                (xv,yv) = self.exp.calc_from_QPhi(q_grid, phi*np.ones(self.n_step))
-                self.ptns.append([[xv, yv], fmt])
-        else:
-            raise Exception("imcompatible data types:", datatype, self.d2.datatype)
-            
-        self.draw_dec()            
-    
-    def mark_standard(self, std, sym="k:"):
-        """ std should be one of these: 
-            AgBH: mutiples of 0.1076, then 1.37
-            sucrose: 0.5933, 0.8289, 0.9054, 0.9336, 1.1000
-            CeO2: 2.0116, 1.8985, 3.2838, 3.8504
-            LaB6: 1.5115, 2.1376, 2.6180, 3.0230, 3.3799, 3.7025
-        """
-        if std=="AgBH":
-            q_std = np.hstack((0.1076*np.arange(1,10), [1.37]))
-        elif std=="sucrose":
-            q_std = [0.5933, 0.8289, 0.9054, 0.9336, 1.1000]
-        elif std=="CeO2": # http://nvlpubs.nist.gov/nistpubs/Legacy/MONO/nbsmonograph25-20.pdf
-            q_std = [ 2.0116, 2.3219, 3.2838, 3.8504 ]
-        elif std=="LaB6": # NIST SRM 660c
-            q_std = [ 1.5115, 2.1376, 2.6180, 3.0230, 3.3799, 3.7025 ]
-        elif isinstance(std, list):
-            q_std = np.asarray(std, dtype=np.float)
-        else: # unknown standard
-            return 
-        self.mark_coords(q_std, [], sym, DataType.q)
-        if self.exp and self.datatype==DataType.det:
-            self.mark_points([self.exp.bm_ctr_x], [self.exp.bm_ctr_y], datatype=DataType.det)
-    
-    # simply plot the x,y coordinates
-    def mark_line(self, xv, yv, fmt="r-"):
-        self.ptns.append([[xv, yv], fmt])
-        self.draw_dec()
-    
-    # ptn = [data, fmt]
-    # 
-    def draw_dec(self):
-        for ptn in self.ptns:
-            ([px, py], fmt) = ptn
-            self.ax.plot(px, py, fmt)
-        self.ax.set_xlim(self.xlim)
-        self.ax.set_ylim(self.ylim)
-        
-

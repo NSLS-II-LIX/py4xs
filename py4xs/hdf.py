@@ -13,7 +13,8 @@ from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_
 from py4xs.utils import common_name,max_len,Schilling_p_value
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names,det_model,beamline_name,incident_monitor,transmitted_monitor
-from py4xs.data2d import Data2d,Axes2dPlot,MatrixWithCoords,DataType
+from py4xs.data2d import Data2d,MatrixWithCoords,DataType
+from py4xs.plot import show_data,show_data_qxy,show_data_qphi
 from py4xs.utils import run
 from itertools import combinations
 
@@ -544,6 +545,12 @@ class h5xs():
             self.fh5 = h5py.File(self.fn, "r", swmr=True)
         self.writable = writable
     
+    def det(self, ext):
+        for d in self.detectors:
+            if d.extension==ext:
+                return d
+        return None
+    
     def save_detectors(self):
         if self.read_only:
             return
@@ -831,205 +838,38 @@ class h5xs():
         """
         if detectors is None:
             detectors = self.detectors
-        if det_ext is None:
-            if fig is None:
-                fig = plt.figure()
-            ndet = len(detectors)
-            d2s = {}
-            for i in range(ndet):
-                ext = detectors[i].extension
-                fig.add_subplot(1, ndet, i+1)
-                ax = plt.gca()
-                d2s[ext] = self.show_data(sn=sn, det_ext=ext, frn=frn, ax=ax, aspect=aspect,
-                                          logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
-                                          clim=clim, showRef=showRef, cmap=cmap, dtype=dtype, **kwargs)
-            return d2s
-
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors, **kwargs)
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-        pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
-        if cmap is not None:
-            pax.set_color_scale(plt.get_cmap(cmap)) 
-        pax.plot(logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, aspect=aspect)
-        if clim=="auto":
-            tt = d2.data.d[~d2.exp.mask.map]
-            if logScale:
-                tt = np.log(tt[tt>0])
-            else:
-                tt = tt[tt>=0]
-            vmax = np.max(tt)
-            vmin = np.min(tt)
-            for i in range(10):
-                val,bins = np.histogram(tt, range=[vmin, vmax], bins=100)
-                vidx = np.where(val>10)[0]
-                imin = vidx[0]
-                vmin = bins[imin]
-                imax = vidx[-1]
-                vmax = bins[imax+1]
-                if imax-imin>10:
-                    break
-            clim = (vmin, vmax)
-            if logScale:
-                clim = np.exp(clim)
-        pax.img.set_clim(*clim)
-        pax.coordinate_translation="xy2qphi"
-        if showRef:
-            pax.mark_standard(*showRef)
-        ax.set_title(f"frame #{d2.md['frame #']}")
-        pax.capture_mouse()
-
-        return d2
+        d2s = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors, **kwargs)
+        show_data(d2s, ax=ax, fig=fig, aspect=aspect,
+                  logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
+                  clim=clim, showRef=showRef, cmap=cmap, dtype=dtype, **kwargs)
+        return d2s
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
-                      logScale=True, useMask=True, clim=(0.1,14000), showRef=True, 
+                      logScale=True, useMask=True, clim=(0.1,14000), 
                       aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         """ display frame #frn of the data under det for sample sn
             det is a list of detectors, or a string, data file extension
         """
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-
         if detectors is None:
             detectors = self.detectors
-        xqmax = np.max([d.exp_para.xQ.max() for d in detectors])
-        xqmin = np.min([d.exp_para.xQ.min() for d in detectors])
-        yqmax = np.max([d.exp_para.yQ.max() for d in detectors])
-        yqmin = np.min([d.exp_para.yQ.min() for d in detectors])
-
-        xqmax = np.floor(xqmax/dq)*dq
-        xqmin = np.ceil(xqmin/dq)*dq
-        yqmax = np.floor(yqmax/dq)*dq
-        yqmin = np.ceil(yqmin/dq)*dq
-
-        xqgrid = np.arange(start=xqmin, stop=xqmax+dq, step=dq)
-        yqgrid = np.arange(start=yqmin, stop=yqmax+dq, step=dq)        
-
-        xyqmaps = []
-        for det in detectors:
-            dn = det.extension
-            if useMask:
-                mask = d2s[dn].exp.mask
-            else:
-                mask = None
-            
-            cor_factor = d2s[dn].exp.FSA*d2s[dn].exp.FPol
-            if det.flat is not None:
-                cor_factor = det.flat*cor_factor
-            dm = d2s[dn].data.conv(xqgrid, yqgrid, d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
-                                   mask=mask, cor_factor=cor_factor)
-            
-            if bkg is not None:
-                if dn in bkg.keys():
-                    dbkg = Data2d(bkg[dn], exp=det.exp_para)
-                    dm_b = dbkg.data.conv(xqgrid, yqgrid, d2s[dn].exp.xQ, d2s[dn].exp.yQ, 
-                                          mask=mask, cor_factor=cor_factor)
-                    dm.d -= dm_b.d    
-            
-            dm.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
-            xyqmaps.append(dm)
-        
-        dm = xyqmaps[0].merge(xyqmaps[1:])
-        dm.xc = xqgrid
-        dm.xc_label = "qx"
-        dm.xc_prec = 3
-        dm.yc = yqgrid
-        dm.yc_label = "qy"
-        dm.yc_prec = 3
-
-        dm.plot(ax=ax, logScale=logScale, clim=clim, aspect=aspect, colorbar=colorbar)
-        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
-        
-        return dm
+        return show_data_qxy(d2s, detectors, ax=ax, dq=dq, bkg=bkg,
+                             logScale=logScale, useMask=useMask, clim=clim, 
+                             aspect=aspect, cmap=cmap, colorbar=colorbar, **kwargs)
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
-                       apply_symmetry=False, fill_gap=False, 
+                       apply_symmetry=False, fill_gap=False, sc_factor=None,
                        logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
                        aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
-        if ax is None:
-            plt.figure()
-            ax = plt.gca()
-
         if detectors is None:
             detectors = self.detectors
-        if isinstance(Nq, int):
-            qmax = np.max([d.exp_para.Q.max() for d in detectors]) 
-            qmin = np.min([d.exp_para.Q.min() for d in detectors]) 
-            # keep 2 significant digits only for the step_size
-            dq = (qmax-qmin)/Nq
-            n = int(np.floor(np.log10(dq)))
-            sc = np.power(10., n)
-            dq = np.around(dq/sc, 1)*sc
+        return show_data_qphi(d2s, detectors, ax=ax, Nq=200, Nphi=60,
+                              apply_symmetry=apply_symmetry, fill_gap=fill_gap, 
+                              sc_factor=sc_factor, bkg=bkg,
+                              logScale=logScale, useMask=useMask, clim=clim, 
+                              aspect=aspect, cmap=cmap, colorbar=colorbar, **kwargs)
 
-            qmax = dq*np.ceil(qmax/dq)
-            qmin = dq*np.floor(qmin/dq)
-            Nq = int((qmax-qmin)/dq+1)
-
-            q_grid = np.linspace(qmin, qmax, Nq) 
-        else:
-            q_grid=Nq
-            qmin = q_grid[0]
-            qmax = q_grid[-1]
-            
-        Nphi = 2*int(Nphi/2)+1
-        phi_grid = np.linspace(-180., 180, Nphi)
-
-        dms = []
-        for det in detectors:
-            dn = det.extension
-            if not dn in d2s.keys():
-                continue
-            if useMask:
-                mask = d2s[dn].exp.mask
-            else:
-                mask = None
-            
-            cor_factor = d2s[dn].exp.FSA*d2s[dn].exp.FPol
-            if det.flat is not None:
-                cor_factor = det.flat*cor_factor
-            
-            # since the q/phi grids are specified, use the MatrixWithCoord.conv() function
-            # the grid specifies edges of the bin for histogramming
-            # the phi value in exp_para may not always be in the range of (-180, 180)
-            dm = d2s[dn].data.conv(q_grid, phi_grid, d2s[dn].exp.Q, d2s[dn].exp.Phi,
-                                   #fix_angular_range(d2s[dn].exp.Phi),
-                                   cor_factor=cor_factor, 
-                                   mask=mask, datatype=DataType.qphi)
-            
-            if bkg is not None:
-                if dn in bkg.keys():
-                    dbkg = Data2d(bkg[dn], exp=det.exp_para)
-                    dm_b = dbkg.data.conv(q_grid, phi_grid, d2s[dn].exp.Q,d2s[dn].exp.Q, d2s[dn].exp.Phi,
-                                          #fix_angular_range(d2s[dn].exp.Phi),
-                                          cor_factor=cor_factor,
-                                          mask=mask, datatype=DataType.qphi)
-                    dm.d -= dm_b.d    
-                    
-            dm.d /= det.fix_scale
-            
-            if apply_symmetry:
-                dm = dm.apply_symmetry()
-            if fill_gap:
-                dm = dm.fill_gap(method='linear')
-
-            dms.append(dm)
-        
-        dm = dms[0].merge(dms[1:])
-        dm.xc = q_grid
-        dm.xc_label = "q"
-        dm.xc_prec = 3
-        dm.yc = phi_grid
-        dm.yc_label = "phi"
-        dm.yc_prec = 1
-
-        dm.plot(ax=ax, logScale=logScale, clim=clim, colorbar=colorbar)
-        ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
-       
-        return dm
     
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
                 force_synch='auto', force_synch_trig=0, extend_mon_stream=True,

@@ -105,13 +105,15 @@ def synch_mon(ts0, em0, ts, em, dt="auto", Ns=8, plot=False):
     ts += dt
     return dt  
     
-def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
+def integrate_mon(em, ts, ts0, exp, extend_mon_stream, debug=False):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
         ts0 is the timestamps on the exposures, with duration of exp
         
         assume ts and ts0 are 1d arrays
     """
+    if debug:
+        print(f"integrating monitor counts, time stamp offset mon-tr={ts[0]-ts0[0]:.1f}")
     et = np.max([1.5, exp*1.5])
     if extend_mon_stream and ts[-1]<ts0[-1]+et:
         em = np.append(em, em[-1])
@@ -119,7 +121,7 @@ def integrate_mon(em, ts, ts0, exp, extend_mon_stream):
     ffe = interp1d(ts, em) 
     em0 = []
     for t in ts0:
-        tt = np.concatenate(([t-exp], ts[(ts>t-exp) & (ts<t)], [t]))  #         trigger timestamp correspond to the start of the exposure
+        tt = np.concatenate(([t-exp], ts[(ts>t-exp) & (ts<t)], [t]))  #         trigger timestamp correspond to the end of the exposure
         #tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))  #         trigger timestamp correspond to the start of the exposure
         ee = ffe(tt)
         em0.append(simpson(ee, tt))
@@ -944,8 +946,8 @@ class h5xs():
                 incid_data0 = incid_data
             else:
                 try:
-                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream)
-                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream)                
+                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream, debug=debug)
+                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream, debug=debug)   
                 except:
                     t0 = np.min(ts2)
                     print(f"time series likely misaligned:")

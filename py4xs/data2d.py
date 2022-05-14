@@ -378,9 +378,9 @@ class MatrixWithCoords:
         if clim=="auto":
             clim = auto_clim(self.d*sc_factor, logScale)
         if logScale:
-            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, **kwargs)
+            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, clim=np.log(clim), **kwargs)
         else:
-            im = ax.imshow(self.d*sc_factor, aspect=aspect, **kwargs)
+            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
         ax.format_coord = self.format_coord
@@ -635,7 +635,7 @@ class Data2d:
         stores the scattering pattern itself, 
     """
 
-    def __init__(self, img, timestamp=None, uid='', exp=None, label='', dtype=None, flat=None):
+    def __init__(self, img, timestamp=None, uid='', exp=None, ignore_flip=False, label='', dtype=None, flat=None):
         """ read 2D scattering pattern
             img can be either a filename (rely on Fabio to deal with the file format) or a numpy array 
         """
@@ -676,7 +676,7 @@ class Data2d:
         # self.im always stores the original image
         # self.data store the array data after the flip operation
         if exp is not None:
-            self.set_exp_para(exp)
+            self.set_exp_para(exp, ignore_flip)
         else:
             # temporarily set data to img, without a defined exp_para
             self.flip(0)
@@ -707,8 +707,13 @@ class Data2d:
         """  
         self.data.d = flip_array(self.im, flip)
 
-    def set_exp_para(self, exp):
-        self.flip(exp.flip)
+    def set_exp_para(self, exp, ignore_flip=False):
+        """ ignore_flip is useful if the flipped image is saved
+        """
+        if ignore_flip:
+            self.flip(0)
+        else:
+            self.flip(exp.flip)
         (self.height, self.width) = np.shape(self.data.d)
         self.exp = exp
         if exp.ImageHeight!=self.height or exp.ImageWidth!=self.width:

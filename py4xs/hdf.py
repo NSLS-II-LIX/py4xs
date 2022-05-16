@@ -147,13 +147,15 @@ def get_monitor_counts(grp, monitorName):
     # in the case of timeseries data, the time stamps need to be lengthened
     n = int(len(data)/len(ts))
     if n>1:
-        data = np.reshape(data, [-1, len(ts)])
-        # may need to skip the first readback from the circular buffer
+        # sometimes the first two timestamps are the same; based on the data, this seems to be 
+        # an error, and the first timestamp should to be forward adjusted 
         if ts[0]==ts[1]:
-            ts = ts[1:]
-            data = data[1:, :]
-        data = data.flatten()
-        dt = np.average(np.diff(ts))
+            ts[0] -= (ts[2]-ts[1])
+            #data = np.reshape(data, [-1, len(ts)])
+            #ts = ts[1:]
+            #data = data[1:, :]
+            #data = data.flatten()
+        dt = np.average(np.diff(ts))  # the intervals appear to be constant in the data
         # assuming that the time stamp correspond to the time of read
         ts = np.linspace(ts[0]-dt, ts[-1], len(data))
     

@@ -90,6 +90,12 @@ def grid_labels(grid, N=3, step_tol=0.2):
         gpvalues.append(gp[-1])
         gplabels.append(round_by_stepsize(gp[-1],ss))
     
+    # on a 2D plot, the pixel size is finite, the extent of the axis goes from -0.5 to n-0.5
+    # it appears that the only way to align the ticks on a twin axis is to have a blank at the end
+    n = len(grid)
+    gpindex = np.append(0.5+np.array(gpindex), n)
+    gplabels.append('')
+    
     return gpindex,gpvalues,gplabels
 
 def histogram2d(x, y, range, bins, weights):
@@ -179,9 +185,7 @@ class MatrixWithCoords:
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
         shape = (len(ret.yc),len(ret.xc))
-        
-        #print(common_x,common_y,len(ret.xc),len(ret.yc),shape)
-        
+                
         wt = np.zeros(shape)
         ret.d = np.zeros(shape)
         if self.err is not None:
@@ -212,45 +216,6 @@ class MatrixWithCoords:
 
         return ret
     
-    def conv0(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det):
-        """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
-            returns a new MatrixWithCoords, with the new coordinates specified by Nx1, Ny1
-            Nx1, Ny1 can be either the number of bins or an array that specifies the bin edges
-            datatype is used to describe the type of the 2D data (detector image, qr-qz map, q-phi map)
-        """
-        ret = MatrixWithCoords()
-        ret.datatype = datatype
-
-        # correction factor is applied by dividing its value
-        # should be called like this conv(...., cor_factor=exp.FSA)
-        data = self.d/cor_factor
-        if mask is None:
-            xc1 = xc1.flatten()
-            yc1 = yc1.flatten()
-            data = data.flatten()
-        else:
-            xc1 = xc1[~(mask.map)].flatten()
-            yc1 = yc1[~(mask.map)].flatten()
-            data = data[~(mask.map)].flatten()
-
-        if hasattr(Nx1, '__iter__'): # tuple or list or np array
-            Nx1 = get_bin_edges(Nx1)
-        if hasattr(Ny1, '__iter__'): # tuple or list or np array
-            Ny1 = get_bin_edges(Ny1)
-
-        (v_map, x_edges, y_edges) = histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=data)
-        (c_map, x_edges, y_edges) = histogram2d(xc1, yc1,
-                                                bins=(Nx1, Ny1), weights=np.ones(len(data)))
-
-        idx = (c_map<=0) # no data
-        c_map[idx] = 1.
-        v_map[idx] = np.nan
-        ret.d = np.fliplr(v_map/c_map).T
-        ret.xc = (x_edges[:-1] + x_edges[1:])/2
-        ret.yc = (y_edges[:-1] + y_edges[1:])/2
-        return ret
-
     def conv(self, Nx1, Ny1, xc1, yc1, mask=None, interpolate=None, cor_factor=1, 
              inc_stat_err=False, datatype=DataType.det, err_thresh=1e-5):
         """ re-organize the 2D data based on new coordinates (xc1,yc1) for each pixel
@@ -334,7 +299,7 @@ class MatrixWithCoords:
         xc_map[cidx] /= c_map[cidx]
         yc_map[cidx] /= c_map[cidx]
 
-        ret.err = np.fliplr(e_map).T
+        ret.err = e_map.T
 
         # re-evaluate based on the actual coordinates instead of the expected
         # unable to do it in 2D
@@ -350,7 +315,7 @@ class MatrixWithCoords:
                 if (len(v_map[i,:][~idx])>2):
                     v_map[i,:][~idx] = np.interp(ret.yc[~idx], yc_map[i,:][~idx], v_map[i,:][~idx])
 
-        ret.d = np.fliplr(v_map).T
+        ret.d = v_map.T
         idx = (ret.d==0) | (ret.err<err_thresh)
         ret.d[idx] = np.nan
         ret.err[idx] = np.nan
@@ -378,9 +343,9 @@ class MatrixWithCoords:
         if clim=="auto":
             clim = auto_clim(self.d*sc_factor, logScale)
         if logScale:
-            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, clim=np.log(clim), **kwargs)
+            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
         else:
-            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, **kwargs)
+            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
         ax.set_xlabel('ix')
         ax.set_ylabel('iy')
         ax.format_coord = self.format_coord
@@ -409,13 +374,13 @@ class MatrixWithCoords:
 
     def format_coord(self, x, y):
         ix = x
-        iy = len(self.yc)-y-0.8   # not sure why there is a strange offset
+        iy = y  
         msg = f"ix={ix:.1f}, iy={iy:.1f}; "
         
         col = int(x+0.5)
         row = int(iy+0.5)
         xc0 = self.xc[col] #np.interp(col, np.arange(len(self.xc)), self.xc)
-        yc0 = np.flip(self.yc)[row] #np.interp(row, np.arange(len(self.yc)), self.yc)
+        yc0 = self.yc[row] #np.interp(row, np.arange(len(self.yc)), self.yc)
         msg += f"{self.xc_label}={xc0:.{self.xc_prec}f}, {self.yc_label}={yc0:.{self.yc_prec}f}: "
         
         if col>=0 and col<len(self.xc) and row>=0 and row<len(self.yc):
@@ -432,7 +397,7 @@ class MatrixWithCoords:
         xidx = (self.xc>=np.min([x1,x2])) & (self.xc<=np.max([x1,x2]))
         yidx = (self.yc>=np.min([y1,y2])) & (self.yc<=np.max([y1,y2]))
         t1 = np.tile(xidx, [len(yidx),1])
-        t2 = np.tile(np.flipud(yidx), [len(xidx),1]).T
+        t2 = np.tile(yidx, [len(xidx),1]).T
 
         ret.xc = self.xc[xidx]
         ret.yc = self.yc[yidx]
@@ -455,51 +420,17 @@ class MatrixWithCoords:
         d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
-    def line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None):
-        """ take a line cut
-                (x0, y0): center
-                ang: orientation (in degrees) 
-                lT, lN: half length (tangential) and half width (normal) of the cut in pixels 
-                lN, nN: number of returned data points logn the legnth and width of the cut
+    def line_profile(self, direction, xrange=None, yrange=None):
+        """ return the line profile along the specified direction ("x" or "y"), 
+            within the range of coordinate given by crange=[min, max] in the other direction
         """
-        ret = MatrixWithCoords()
-        ret.datatype = self.datatype
-        ang = np.radians(ang)
-        
-        if self.yc[0]>self.yc[-1]:  # raw data, y coordinate lower at the top of the image
-            ang = -ang
-        
-        # xc/yc need to have the same dimension as d
-        (h,w) = self.d.shape
-        xc = np.repeat(self.xc, h).reshape((w, h)).T
-        yc = np.repeat(np.flipud(self.yc), w).reshape((h, w))
-        
-        distT =  (xc.flatten()-x0)*np.cos(ang) + (yc.flatten()-y0)*np.sin(ang) 
-        distN = -(xc.flatten()-x0)*np.sin(ang) + (yc.flatten()-y0)*np.cos(ang) 
-
-        bin_t = np.linspace(-lT, lT, nT)
-        bin_n = np.linspace(-lN, lN, nN)
-
-        # exclude masked pixels or pixels that contain non-numerical values
-        if mask is None:
-            idx = np.isnan(self.d)
-        else:
-            idx = mask.map | np.isnan(self.d)
-        idx = ~idx.flatten()
-        
-        (v_map, t_edges, n_edges) = histogram2d(distT[idx], distN[idx],
-                                                bins=(bin_t, bin_n), weights=self.d.flatten()[idx])
-        (c_map, t_edges, n_edges) = histogram2d(distT[idx], distN[idx],
-                                                bins=(bin_t, bin_n), weights=np.ones(len(distT[idx])))
-                                                 
-        ret.d = np.fliplr(v_map/c_map).T    
-        ret.xc = (t_edges[:-1] + t_edges[1:])/2
-        ret.yc = (n_edges[:-1] + n_edges[1:])/2
-        
-        if self.yc.flatten()[0]>self.yc.flatten()[-1]:  # raw data, y coordinate lower at the top of the image
-            ret.d = np.flipud(ret.d)
-        
-        return ret
+        if xrange is None:
+            xrange = [self.xc[0], self.xc[-1]]
+        if yrange is None:
+            yrange = [self.yc[0], self.yc[-1]]
+        roi = self.roi(xrange[0], xrange[1], yrange[0], yrange[1])
+        dd,ee = roi.flatten(axis=direction)
+        return dd,ee
     
     def flatten(self, axis='x', method='simple'):
         """ collapse the matrix onto the specified axis and turn it into an array 
@@ -518,14 +449,13 @@ class MatrixWithCoords:
                 dat.append(self.d[i,:])
                 if self.err is not None:
                     err.append(self.err[i,:])
-        if axis=='y': # the correspondence between yc and yindex is different from x
+            dd,ee = calc_avg(dat, err, method=method)
+        if axis=='y': 
             for i in range(len(self.xc)):
-                dat.insert(0, self.d[:,i])
+                dat.append(self.d[:,i])
                 if self.err is not None:
-                    err.insert(0, self.err[:,i])
-        
-        # if err is [], calc_avg will return None as averaged err            
-        dd,ee = calc_avg(dat, err, method=method)
+                    err.append(self.err[:,i])
+            dd,ee = calc_avg(dat, err, method=method)
         
         return dd,ee
 

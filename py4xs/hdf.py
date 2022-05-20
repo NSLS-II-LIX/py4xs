@@ -105,24 +105,31 @@ def synch_mon(ts0, em0, ts, em, dt="auto", Ns=8, plot=False):
     ts += dt
     return dt  
     
-def integrate_mon(em, ts, ts0, exp, extend_mon_stream, debug=False):
+def integrate_mon(em, ts, ts0, exp, extend_mon_stream, ts_pos_in_frame="start", debug=False):
     """ integrate monitor counts
         monitor counts are given by em with timestamps ts
         ts0 is the timestamps on the exposures, with duration of exp
-        
+        if extend_mon_stream, repeat the ts data at the beginning and the end to enclose the range of ts0 
         assume ts and ts0 are 1d arrays
+        
+        ts_pos_in_frame: "start" or "end"
+            whether the timestamp correspond to the start of the exposure or the end of the exposure
     """
     if debug:
         print(f"integrating monitor counts, time stamp offset mon-tr={ts[0]-ts0[0]:.1f}")
-    et = np.max([1.5, exp*1.5])
-    if extend_mon_stream and ts[-1]<ts0[-1]+et:
-        em = np.append(em, em[-1])
-        ts = np.append(ts, ts0[-1]+et)
+    if extend_mon_stream: 
+        em = np.concatenate(([em[0]], em, [em[-1]]))
+        ts = np.concatenate(([np.min([ts0[0], ts[0]])-exp*1.5], ts, [np.max([ts0[-1], ts[-1]])+exp*1.5]))
     ffe = interp1d(ts, em) 
     em0 = []
+    
+    ti0 = {"start": 0, "end": -exp}
+    ti1 = {"start": exp, "end": 0}
+    
     for t in ts0:
-        tt = np.concatenate(([t-exp], ts[(ts>t-exp) & (ts<t)], [t]))  #         trigger timestamp correspond to the end of the exposure
-        #tt = np.concatenate(([t], ts[(ts>t) & (ts<t+exp)], [t+exp]))  #         trigger timestamp correspond to the start of the exposure
+        tt = np.concatenate(([t+ti0[ts_pos_in_frame]], 
+                              ts[(ts>t+ti0[ts_pos_in_frame]) & (ts<t+ti1[ts_pos_in_frame])], 
+                              [t+ti1[ts_pos_in_frame]])) 
         ee = ffe(tt)
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
@@ -877,7 +884,7 @@ class h5xs():
     
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
                 force_synch='auto', force_synch_trig=0, extend_mon_stream=True,
-                debug=False, plot_trigger=False, **kwargs): 
+                plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
             2. if the monitors are used asynchronously, monitor values would need to be integated 
@@ -948,8 +955,8 @@ class h5xs():
                 incid_data0 = incid_data
             else:
                 try:
-                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream, debug=debug)
-                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream, debug=debug)   
+                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)
+                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)   
                 except:
                     t0 = np.min(ts2)
                     print(f"time series likely misaligned:")

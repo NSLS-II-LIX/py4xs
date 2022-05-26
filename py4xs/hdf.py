@@ -476,7 +476,7 @@ class h5xs():
 
         self.fn = fn
         self.fh5 = h5py.File(fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
-        if exp_setup==None:     # assume the h5 file will provide the detector config
+        if exp_setup is None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
             self.detectors, self.qgrid = exp_setup

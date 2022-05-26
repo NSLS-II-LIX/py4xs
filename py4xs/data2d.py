@@ -420,7 +420,7 @@ class MatrixWithCoords:
         d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
-    def line_profile(self, direction, xrange=None, yrange=None):
+    def line_profile(self, direction, xrange=None, yrange=None, plot_data=False, ax=None):
         """ return the line profile along the specified direction ("x" or "y"), 
             within the range of coordinate given by crange=[min, max] in the other direction
         """
@@ -428,9 +428,22 @@ class MatrixWithCoords:
             xrange = [self.xc[0], self.xc[-1]]
         if yrange is None:
             yrange = [self.yc[0], self.yc[-1]]
+        if direction=="x":
+            cc = self.xc[(self.xc>=xrange[0]) & (self.xc<=xrange[1])]
+        elif direction=="y":
+            cc = self.yc[(self.yc>=yrange[0]) & (self.yc<=yrange[1])]
+        else:
+            raise exception(f"invalid direction: {direction}")
+            
         roi = self.roi(xrange[0], xrange[1], yrange[0], yrange[1])
         dd,ee = roi.flatten(axis=direction)
-        return dd,ee
+        
+        if plot_data:
+            if ax is None:
+                fig,ax = plt.figure()
+            ax.plot(cc,dd)
+
+        return cc,dd,ee
     
     def flatten(self, axis='x', method='simple'):
         """ collapse the matrix onto the specified axis and turn it into an array 

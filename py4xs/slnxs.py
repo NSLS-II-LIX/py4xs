@@ -47,7 +47,7 @@ BEAM_SIZE_hH = 4
 # this is the global setting
 TRANS_MODE = trans_mode.from_waxs
 # this is the minimum intensity to be used for trans calculations
-WAXS_THRESH = 10
+WAXS_THRESH = 1.
 
 
 # this is the scaling factor for indivudual curves that belong to the same sample
@@ -121,7 +121,22 @@ class Data1d:
         
         if save_ave and isinstance(image, str):
             self.save(image + ".ave", debug=debug)     
+    
+    def water_peak(self, q_start=1.85, q_end=2.15, debug=False):
+        # for solution scattering, hopefully this reflect the intensity of water scattering
+        idx = (self.qgrid > q_start) & (self.qgrid < q_end)  # & (self.data>0.5*np.max(self.data))
+        if len(self.qgrid[idx]) < 5:
+            print("not enough data points under the water peak, consider using a different trans_mode.")
+            #raise Exception()
+
+        # trying to narrow down the peak range turns out to be a bad idea
+        # the width then could vary between datasets, creating artificial fluctuation in trans 
+        #idx1 = idx & (self.data >= 0.95*np.max(self.data[idx]))
         
+        if (self.data[idx]<WAXS_THRESH).all() and debug!='quiet':
+            print("the data points for water peak calculation are below WAXS_THRESH: ", 
+                  np.max(self.data[idx]), WAXS_THRESH)                
+        return np.sum(self.data[idx]),np.average(self.qgrid[idx])
 
     def set_trans(self, transMode=None, trans=-1, ref_trans=-1,
                   calc_water_peak=False, q_start=1.85, q_end=2.15, debug=False):
@@ -142,24 +157,10 @@ class Data1d:
             self.transMode = transMode
         if self.transMode==trans_mode.from_waxs or calc_water_peak:
             # get trans for the near the maximum in the WAXS data
-            # for solution scattering, hopefully this reflect the intensity of water scattering
-            idx = (self.qgrid > q_start) & (self.qgrid < q_end)  # & (self.data>0.5*np.max(self.data))
-            if len(self.qgrid[idx]) < 5:
-                print("not enough data points under the water peak, consider using a different trans_mode.")
-                #raise Exception()
-            
-            # trying to narrow down the peak range turns out to be a bad idea
-            # the width then could vary between datasets, creating artificial fluctuation in trans 
-            #idx1 = idx & (self.data >= 0.95*np.max(self.data[idx]))
-
-            if (self.data[idx]<WAXS_THRESH).all() and debug!='quiet':
-                print("the data points for trans calculation are below WAXS_THRESH: ", 
-                      np.max(self.data[idx]), WAXS_THRESH)                
-            self.trans_w = np.sum(self.data[idx])
+            self.trans_w,qavg = self.water_peak(q_start=q_start, q_end=q_end, debug=debug) 
             if self.transMode==trans_mode.from_waxs:
-                self.trans = self.trans_w 
-            qavg = np.average(self.qgrid[idx])
-            if self.trans_w<1.0:
+                self.trans = self.trans_w             
+            if self.trans_w<1.0:    # this need to be more configurable
                 print(f'caluclated trans is {self.trans_w}, setting it artifically to WAXS_THRESH.')
                 self.trans_w = WAXS_THRESH
             if debug==True:
@@ -174,8 +175,7 @@ class Data1d:
             self.comments += f"# transmitted beam intensity given externally: {trans}"
             self.trans_e = trans
             self.trans = trans
-            #if self.transMode==trans_mode.external:
-            #    self.trans = trans
+
 
         self.comments += ": %f \n" % self.trans
         if debug==True:
@@ -832,7 +832,7 @@ def analyze(d1, qstart, qend, fix_qe, qcutoff, dmax):
     plt.subplots_adjust(bottom=0.15, wspace=0.25)
 
     
-def estimate_scaling_factor(d1s, d1b, 
+def estimate_scaling_factor(d1s, d1b, sc=0.9,
                             q_min=0.5, q_max=3.5, smoothing_width=5, prec=4, s_thresh=1,
                             plot_data=False, ax=None, debug=False):
     """ Estimate the scaling factor needed to subtract buffer scattering d1b
@@ -858,7 +858,7 @@ def estimate_scaling_factor(d1s, d1b,
     except:
         return 1.0      # problems like incomplete data can cause smooth() to fail, no point to continue
     mq = d1s.qgrid[idx]
-    sc = 0.9
+    
     prec0 = 2
     std0 = np.log(md1s-md1b*sc).std()
     n,bins = np.histogram((md1s-md1b*sc)*mq)

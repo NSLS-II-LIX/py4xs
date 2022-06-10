@@ -420,7 +420,7 @@ class MatrixWithCoords:
         d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
-    def line_profile(self, direction, xrange=None, yrange=None, plot_data=False, ax=None):
+    def line_profile(self, direction, xrange=None, yrange=None, plot_data=False, ax=None, **kwargs):
         """ return the line profile along the specified direction ("x" or "y"), 
             within the range of coordinate given by crange=[min, max] in the other direction
         """
@@ -441,7 +441,7 @@ class MatrixWithCoords:
         if plot_data:
             if ax is None:
                 fig,ax = plt.figure()
-            ax.plot(cc,dd)
+            ax.plot(cc,dd, **kwargs)
 
         return cc,dd,ee
     

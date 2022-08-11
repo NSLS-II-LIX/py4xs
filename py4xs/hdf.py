@@ -922,38 +922,38 @@ class h5xs():
             # expect trans and incid monitor data to be in the same stream
             strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor)
             strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor)
-            # synch em1 time stamps to em2, LiX-specific 
-            synch_mon(ts2, trans_data, ts1, incid_data, dt=force_synch)
                 
             if strn=="primary":
                 print("monitors are used as detectors.")
-            elif trigger=="sol" or trigger is None:
-                dn = list(self.det_name.values())[0]
-                # expect a finite but minimal offset in time since all come from the same IOC server
-                ts0 = self.fh5[f'{sn}/primary/timestamps/{dn}'][...].flatten()
-                dshape = self.fh5[f"{sn}/primary/data/{dn}"].shape[0]   # length of the time sequence
-                if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
-                    ts0 = ts0[0]+np.arange(dshape)*exp    
-            elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
-                ts0 = self.fh5[f'{sn}/primary/timestamps/{trigger}'][...].flatten()
-                dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
-                if len(dshape)>1:
-                    if len(dshape)>2:
-                        raise Exception(f"Don't know how to handle data shape {dshape}")
-                    dshape = dshape[0]*dshape[1]
-                else:
-                    dshape = dshape[0]
-                if len(ts0) != dshape:
-                    raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
-                if len(ts0)>1: # expect the monitor data to be 1D
-                    ts0 = ts0.flatten()
-            else:
-                raise Exception(f"timestamp data for {trigger} cannot be found.")
-
-            if strn=="primary":
                 trans_data0 = trans_data
                 incid_data0 = incid_data
             else:
+                # synch em1 time stamps to em2, LiX-specific 
+                synch_mon(ts2, trans_data, ts1, incid_data, dt=force_synch)
+
+                if trigger=="sol" or trigger is None:
+                    dn = list(self.det_name.values())[0]
+                    # expect a finite but minimal offset in time since all come from the same IOC server
+                    ts0 = self.fh5[f'{sn}/primary/timestamps/{dn}'][...].flatten()
+                    dshape = self.fh5[f"{sn}/primary/data/{dn}"].shape[0]   # length of the time sequence
+                    if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
+                        ts0 = ts0[0]+np.arange(dshape)*exp    
+                elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
+                    ts0 = self.fh5[f'{sn}/primary/timestamps/{trigger}'][...].flatten()
+                    dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+                    if len(dshape)>1:
+                        if len(dshape)>2:
+                            raise Exception(f"Don't know how to handle data shape {dshape}")
+                        dshape = dshape[0]*dshape[1]
+                    else:
+                        dshape = dshape[0]
+                    if len(ts0) != dshape:
+                        raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
+                    if len(ts0)>1: # expect the monitor data to be 1D
+                        ts0 = ts0.flatten()
+                else:
+                    raise Exception(f"timestamp data for {trigger} cannot be found.")
+
                 try:
                     trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)
                     incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)   

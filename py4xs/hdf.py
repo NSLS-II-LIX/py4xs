@@ -64,6 +64,54 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
+def get_det_timestamps(grp, trigger, exp, err_band=5., debug=False):
+    """ in fly scans, the timestamps comes from the XPS controller. sometimes the timestamps appear to be off
+        the timestamp on the detector image is used as a fallback
+        
+        also check the length of the timestamp data, the total number of data points should agree of 
+        number of frames in the scattering data
+    """
+    ts0 = grp[f'timestamps/{trigger}'][...].flatten()
+    dns = [dn for dn in grp['timestamps'].keys() if 'image' in dn]
+    if len(dns)<1:
+        raise Exception("cannot find detector data in {grp}")
+    tsd = grp[f'timestamps/{dns[0]}'][...]
+
+    dshape = grp[f'data/{dns[0]}'].shape[:-2]
+    if len(dshape)>1:
+        if len(dshape)>2:
+            raise Exception(f"Don't know how to handle data shape {dshape}")
+        nimg = dshape[0]*dshape[1]
+        ts0 = ts0.flatten()
+    else:
+        nimg = dshape[0]
+    if len(ts0) != nimg:
+        print(f"Warning: mistached timestamp length: {len(ts0)} vs {nimg}")
+        #raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
+    
+    if debug:
+        print(f"time stamp from {trigger} ends at {ts0[-1]} .")
+        print(f"time stamp from {dns[0]} ends at {tsd[-1]} .")
+        print(f"off by {ts0[-1]-tsd[-1]:.3f}")
+        print(f"size of the timestamp data: {len(ts0)}")
+        print(f"size of the scattering data : {nimg}")
+    
+    if len(ts0)<nimg:
+        print("Warning: more scattering patterns than recorded triggers, repeating the last triggers ...")
+        ts01 = ts0[:nimg-len(ts0)]
+        ts0 = np.append(ts0, ts01-ts01[0]+ts0[-1]+exp)
+        #raise Exception("more scattering patterns than recorded triggers ...")
+    elif len(ts0)>nimg:
+        print("Warning: more triggers than existing scattering patterns, ignore the extra triggers ... ")
+        ts0 = ts0[:nimg]
+    
+    dt = ts0[-1]-tsd[-1]
+    if np.fabs(dt)>err_band:
+        print(f"Warning: strange trigger time stamps (different by {dt:.2f} s), falling back to {dns[0]} data")
+        ts0 += tsd[-1]-exp-ts0[-1]
+
+    return ts0    
+    
 def synch_mon(ts0, em0, ts, em, dt="auto", Ns=8, plot=False):
     """ revise the timestamp ts (np array) to match the monitor em to em0
         look for the most significant change, i.e. when the shutter opens 
@@ -146,7 +194,8 @@ def get_monitor_counts(grp, monitorName):
             if monitorName in fieldName:
                 strn = stream
                 data = grp[strn]["data"][fieldName][...]
-                ts = grp[strn]["timestamps"][fieldName][...]
+                #ts = grp[strn]["timestamps"][fieldName][...]   # this filed seems to have occasional issues 
+                ts = grp[strn]["time"][...]   # this is consistent with data from databroker
                 break
     if strn is None:
         raise Exception(f"could not find the stream that contains {monitorName}.")
@@ -939,18 +988,7 @@ class h5xs():
                     if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
                         ts0 = ts0[0]+np.arange(dshape)*exp    
                 elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
-                    ts0 = self.fh5[f'{sn}/primary/timestamps/{trigger}'][...].flatten()
-                    dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
-                    if len(dshape)>1:
-                        if len(dshape)>2:
-                            raise Exception(f"Don't know how to handle data shape {dshape}")
-                        dshape = dshape[0]*dshape[1]
-                    else:
-                        dshape = dshape[0]
-                    if len(ts0) != dshape:
-                        raise Exception(f"mistached timestamp length: {len(ts0)} vs {dshape}")
-                    if len(ts0)>1: # expect the monitor data to be 1D
-                        ts0 = ts0.flatten()
+                    ts0 = get_det_timestamps(self.fh5[f'{sn}/primary/'], trigger, exp)
                 else:
                     raise Exception(f"timestamp data for {trigger} cannot be found.")
 
@@ -981,7 +1019,7 @@ class h5xs():
             self.d0s[sn]["transmitted"] = trans_data0
             self.d0s[sn]["incident"] = incid_data0
             transmission = trans_data0/incid_data0
-            transmission /= np.nanmean(transmission)
+            #transmission /= np.nanmean(transmission)   # this can cause problems when the beam is off during part of the scan
             self.d0s[sn]["transmission"] = transmission
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 

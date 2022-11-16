@@ -321,7 +321,7 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", nolabel=False, **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -346,24 +346,34 @@ class MatrixWithCoords:
             im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
         else:
             im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
-        ax.set_xlabel('ix')
-        ax.set_ylabel('iy')
+        if not nolabel:
+            ax.set_xlabel('ix')
+            ax.set_ylabel('iy')
+        else:
+            ax.xaxis.set_visible(False)
+            ax.yaxis.set_visible(False)
         ax.format_coord = self.format_coord
         
         if aspect=='auto':
             axx = ax.twiny()
             gpindex,gpvalues,gplabels = grid_labels(self.xc)
             axx.set_xticks(gpindex)
-            axx.set_xticklabels(gplabels)
-            if self.xc_label:
-                axx.set_xlabel(self.xc_label)
+            if not nolabel:
+                axx.set_xticklabels(gplabels)
+                if self.xc_label:
+                    axx.set_xlabel(self.xc_label)
+            else:
+                axx.xaxis.set_visible(False)
 
             axy = ax.twinx()
             gpindex,gpvalues,gplabels = grid_labels(self.yc)
             axy.set_yticks(gpindex)
-            axy.set_yticklabels(gplabels)
-            if self.yc_label:
-                axy.set_ylabel(self.yc_label)
+            if not nolabel:
+                axy.set_yticklabels(gplabels)
+                if self.yc_label:
+                    axy.set_ylabel(self.yc_label)
+            else:
+                axy.yaxis.set_visible(False)
 
             axy.format_coord = ax.format_coord #ax.format_coord #make_format(ax2, ax1)
         

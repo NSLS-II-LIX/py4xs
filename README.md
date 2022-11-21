@@ -135,3 +135,5 @@ cleaning up after work on lixtools.scanning
 2022-04:
 bug fixes in MatrixWithCorrds; reorganizing h5xs
 
+2022-11:
+open h5 file only when necessary

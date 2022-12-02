@@ -555,6 +555,18 @@ class h5xs():
 
         self.setup(exp_setup, transField, have_raw_data)
         
+    def explict_open_h5(self):
+        if self.fh5:
+            print(f"{self.hn} file is already open.")
+        else:
+            self.fh5 = h5py.File(self.fn, "r")
+            
+    def explicit_close_h5(self):
+        if not self.fh5:
+            print(f"{self.hn} file is already closed.")
+        else:
+            self.fh5.close()
+        
     @h5_file_access  
     def setup(self, exp_setup=None, transField=transmitted_monitor, have_raw_data=True):
         if exp_setup is None:     # assume the h5 file will provide the detector config
@@ -659,6 +671,14 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
+    @h5_file_access
+    def dshape(self, dsname, data_type="data", sn=None):
+        assert (data_type in ["data", "timestamps"])
+        if sn is None:
+            sn = self.samples[0]
+        strm = find_field(self.fh5, dsname, sn)
+        return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"].shape
+    
     @h5_file_access
     def dset(self, dsname, data_type="data", sn=None, get_path=False, return_reference=True):
         assert (data_type in ["data", "timestamps"])
@@ -991,7 +1011,7 @@ class h5xs():
         return ts0
     
     @h5_file_access  
-    def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, 
+    def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
                 force_synch='auto', force_synch_trig=0, extend_mon_stream=True,
                 plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
@@ -1065,11 +1085,16 @@ class h5xs():
                 self.d0s = {}
             if not sn in self.d0s.keys():
                 self.d0s[sn] = {}
-            self.d0s[sn]["transmitted"] = trans_data0
-            self.d0s[sn]["incident"] = incid_data0
+
+            # make sure that the monitor counts have the right number of data points
+            if check_size>0: 
+                check_size -= len(trans_data0)
+            self.d0s[sn]["transmitted"] = np.pad(trans_data0, (0,check_size), constant_values=np.nan)
+            self.d0s[sn]["incident"] = np.pad(incid_data0, (0,check_size), constant_values=np.nan)
             transmission = trans_data0/incid_data0
             #transmission /= np.nanmean(transmission)   # this can cause problems when the beam is off during part of the scan
-            self.d0s[sn]["transmission"] = transmission
+            self.d0s[sn]["transmission"] = np.pad(transmission, (0,check_size), constant_values=np.nan)
+            
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data

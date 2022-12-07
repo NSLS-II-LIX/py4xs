@@ -486,19 +486,19 @@ class MatrixWithCoords:
         """ average with the list of data given
             all data must have the same coordinates and datatype
         """
+        ret = copy.deepcopy(self)
         for d in datalist:
             if not np.array_equal(ret.xc, d.xc) or not np.array_equal(ret.xc, d.xc) or ret.datatype!=d.datatype:
                 raise Exception("attempted average between incompatiple data.")
             if weighted and d.err is None:
                 raise Exception("weighted average requires error bars for each dataset.")
 
-        ret = copy.deepcopy(self)
         dat = [d.d for d in [self]+datalist]
         if weighted:
             err = [d.err for d in [self]+datalist]
             calc_avg(dat, err, "")
         else: 
-            calc_avg(dat)
+            calc_avg(dat, [])
             
         return ret
     

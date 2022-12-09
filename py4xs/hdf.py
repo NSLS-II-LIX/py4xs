@@ -23,6 +23,8 @@ from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
 from scipy.integrate import simpson
 
+from functools import wraps
+
 USE_DASK = True
 try:
     from dask.distributed import Client,LocalCluster
@@ -500,6 +502,7 @@ def find_field(fh5, fieldName, sname=None):
 
 
 def h5_file_access(method):
+    @wraps(method)
     def inner(ref, *args, **kwargs):
         
         if not ref.fh5:
@@ -671,6 +674,16 @@ class h5xs():
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         return np.asarray(qgrid)
 
+    @h5_file_access
+    def get_h5_attr(self, grp, attr_name):
+        return self.fh5[grp].attrs[attr_name]
+
+    @h5_file_access
+    def set_h5_attr(self, grp, attr_name, value):
+        self.enable_write(True)
+        self.fh5[grp].attrs[attr_name] = value
+        self.enable_write(False)
+        
     @h5_file_access
     def dshape(self, dsname, data_type="data", sn=None):
         assert (data_type in ["data", "timestamps"])

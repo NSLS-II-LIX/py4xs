@@ -256,7 +256,7 @@ class Data1d:
             d1 = dsets[i]
             if debug==True:
                 print("%s " % d1.label, end=' ')
-            if not (d0.qgrid == d1.qgrid).all():
+            if not np.equal(d0.qgrid, d1.qgrid).all():
                 raise Exception("\n1D sets cannot be averaged: qgrid mismatch")
 
             d0.trans += d1.trans
@@ -335,7 +335,7 @@ class Data1d:
             
         if debug==True:
             print("background subtraction: %s - %s" % (dset.label, dbak.label))
-        if not (dbak.qgrid == dset.qgrid).all():
+        if not np.equal(dbak.qgrid, dset.qgrid).all():
             print("background subtraction failed: qgrid mismatch")
             sys.exit()
         if dset.trans < 0 or dbak.trans <= 0:
@@ -425,7 +425,7 @@ class Data1d:
 
         if debug==True:
             print("merging data: %s and %s ..." % (self.label, d1.label))
-        if not (d1.qgrid == self.qgrid).all():
+        if not np.equal(d1.qgrid, self.qgrid).all():
             print("merging data sets should have the same qgrid.")
             exit()
 
@@ -639,7 +639,7 @@ def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
     number_of_simil_per_column = np.sum(similarity_matrix, axis=0)
 
     # No valid candidate, return all the data
-    if np.array_equal(number_of_simil_per_column, np.ones(number_of_datasets)):
+    if np.array_equal(number_of_simil_per_column, np.ones(number_of_datasets)).all():
         if debug is True:
             print("No dataset with similarity level below threshold. Returning everything.")
         return datasets, []

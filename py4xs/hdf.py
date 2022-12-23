@@ -747,21 +747,21 @@ class h5xs():
         ene = bshdr["energy"]["energy"]
         md["Wavelength (A)"] = f"{2.*3.1416*1973/ene:.4f}"
         
-        try:
-            bscfg = json.loads(self.fh5[sn].attrs["descriptors"])[0]['configuration']
-            for det in self.detectors:
-                dn = self.det_name[det.extension].strip("_image")
+        bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        for det in self.detectors:
+            dn = self.det_name[det.extension].strip("_image")
+            if 'pil' in bscfg.keys():
+                exp = bscfg['pil']['data'][f"pil_{dn}_cam_acquire_time"]
+            else:
                 exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
-                if not "Detector" in md.keys():
-                    md["Detector"] = det_model[det.extension]
-                    md["Exposure time/frame (s)"] = f"{exp:.3f}"
-                    md["Sample-to-detector distance (m): "] = f"{det.s2d_distance/1000: .3f}"
-                else:
-                    md["Detector"] += f" , {det_model[det.extension]}"
-                    md["Exposure time/frame (s)"] += f" , {exp:.3f}" 
-                    md["Sample-to-detector distance (m): "] += f" , {det.s2d_distance/1000: .3f}"
-        except:  # the header information may be incomplete
-            pass
+            if not "Detector" in md.keys():
+                md["Detector"] = det_model[det.extension]
+                md["Exposure time/frame (s)"] = f"{exp:.3f}"
+                md["Sample-to-detector distance (m): "] = f"{det.s2d_distance/1000: .3f}"
+            else:
+                md["Detector"] += f" , {det_model[det.extension]}"
+                md["Exposure time/frame (s)"] += f" , {exp:.3f}" 
+                md["Sample-to-detector distance (m): "] += f" , {det.s2d_distance/1000: .3f}"
                     
         for k in md_keys:
             if k in bshdr.keys():

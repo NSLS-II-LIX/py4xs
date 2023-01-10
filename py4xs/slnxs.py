@@ -639,7 +639,7 @@ def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
     number_of_simil_per_column = np.sum(similarity_matrix, axis=0)
 
     # No valid candidate, return all the data
-    if np.array_equal(number_of_simil_per_column, np.ones(number_of_datasets)).all():
+    if np.array_equal(number_of_simil_per_column, np.ones(number_of_datasets)):
         if debug is True:
             print("No dataset with similarity level below threshold. Returning everything.")
         return datasets, []

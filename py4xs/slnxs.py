@@ -618,7 +618,7 @@ def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
     number_of_cpus = os.cpu_count()
     number_of_datasets = len(datasets)
     combinations = list(it.combinations(range(number_of_datasets), 2))
-    similarity_matrix = np.zeros((number_of_datasets, number_of_datasets), dtype=np.bool)
+    similarity_matrix = np.zeros((number_of_datasets, number_of_datasets), dtype=bool)
     np.fill_diagonal(similarity_matrix, 1)  # If we compare the dataset with itself the result will always be one.
 
     norm_data = collections.deque(map(normalize, datasets))

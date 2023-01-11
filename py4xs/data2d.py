@@ -72,7 +72,7 @@ def grid_labels(grid, N=3, step_tol=0.2):
     
     if len(glist)==1: # single step size
         ss = glist[0][0]
-        gpindex = np.linspace(1, len(grid), N, dtype=np.int)-1
+        gpindex = np.linspace(1, len(grid), N, dtype=int)-1
         gpvalues = [grid[k] for k in gpindex]
         gplabels = [round_by_stepsize(gp,ss) for gp in gpvalues]
     else:
@@ -706,7 +706,7 @@ class Data2d:
             idx &= ~(mask.map)
             
         qd = self.exp.Q[idx].flatten()
-        dd = np.asarray(dd[idx].flatten(), dtype=np.float)  # other wise dd*dd might become negative
+        dd = np.asarray(dd[idx].flatten(), dtype=float)  # other wise dd*dd might become negative
         
         if adjust_edges:
             # willing to throw out some data, but the edges strictly correspond to qgrid 

@@ -15,7 +15,7 @@ class Mask:
         self.height = height
         self.maskfile = ""
         mask_map = Image.new('1', (self.width, self.height))
-        self.map = np.asarray(mask_map.convert("I"), dtype=np.bool)
+        self.map = np.asarray(mask_map.convert("I"), dtype=bool)
         
     def reload(self):
         self.read_file(self.maskfile)
@@ -103,13 +103,12 @@ class Mask:
             draw.polygon(para, fill=1)
 
         #mask_map = ImageChops.lighter(mask_map, tmap)
-        self.map |= np.asarray(tmap.convert("I"), dtype=np.bool)
+        self.map |= np.asarray(tmap.convert("I"), dtype=bool)
         del draw,tmap
         #return mask_map
 
     def clear(self):
         self.map &= False 
-        #self.map = np.zeros(self.map.shape, dtype=np.bool)
 
     def val(self, x, y):
         return self.map[x, y]

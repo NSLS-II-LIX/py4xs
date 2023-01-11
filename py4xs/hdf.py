@@ -439,7 +439,7 @@ class h5exp():
                 txt = ret.strip().split('\n')[-1]
                 #print(txt)
                 print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-                d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=np.float)[:3]
+                d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=float)[:3]
                 dr = d/(ep.Dd*pxsize)/1000  # d is in mm
                 ep.ratioDw *= dr
                 if ep.flip: ## can only handle flip=1 right now

@@ -479,6 +479,8 @@ class h5exp():
                     ep.bm_ctr_x = xc
                 print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
             ep.init_coordinates()
+            #if det.extension is not "_SAXS":
+                
 
         self.save_detectors()
 
@@ -636,18 +638,24 @@ class h5xs():
                 self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
                 self.enable_write(False)
                 
-    def enable_write(self, writable):
+    def enable_write(self, writable, debug=False):
         if self.read_only:
             if not writable:
                 return
             raise Exception(f"attempting to enable writing to a read-only h5 file ...")
         if self.writable == writable:
             return
+        if debug:
+            print(f"closing fh5: {self.fh5}")
         self.fh5.close()
         if writable:
+            if debug:
+                print(f"reopening the file for writing: {self.fn}")
             self.fh5 = h5py.File(self.fn, "r+")
             #self.fh5.swmr_mode = True
         else:
+            if debug:
+                print(f"reopening the file for read-only: {self.fn}")
             self.fh5 = h5py.File(self.fn, "r", swmr=True)
         self.writable = writable
     
@@ -748,9 +756,12 @@ class h5xs():
         md["Wavelength (A)"] = f"{2.*3.1416*1973/ene:.4f}"
         
         bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        hdr = self.header(sn)
         for det in self.detectors:
             dn = self.det_name[det.extension].strip("_image")
-            if 'pil' in bscfg.keys():
+            if 'pilatus' in hdr.keys():
+                exp = hdr['pilatus']['exposure_time']
+            elif 'pil' in bscfg.keys():
                 exp = bscfg['pil']['data'][f"pil_{dn}_cam_acquire_time"]
             else:
                 exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
@@ -1224,44 +1235,48 @@ class h5xs():
             return
         if sn==None:
             self.list_samples(quiet=True)
-            for sn in self.samples:
-                self.save_d1s(sn)
-        
-        self.enable_write(True)        
-        if "processed" not in list(lsh5(self.fh5[sn], top_only=True, silent=True)):
-            grp = self.fh5[sn].create_group("processed")
+            #for sn in self.samples:
+            #    self.save_d1s(sn)
+            sns = self.samples
         else:
-            grp = self.fh5[sn+'/processed']
-            g0 = lsh5(grp, top_only=True, silent=True)[0]
-            if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
-                # new size for the data
-                del self.fh5[sn+'/processed']
-                grp = self.fh5[sn].create_group("processed")
+            sns = [sn]
         
-        # these attributes are not necessarily available when save_d1s() is called
-        if sn in list(self.attrs.keys()):
-            for k in list(self.attrs[sn].keys()):
-                grp.attrs[k] = self.attrs[sn][k]
+        self.enable_write(True, debug=debug)
+        for sn in sns:
+            if "processed" not in list(lsh5(self.fh5[sn], top_only=True, silent=True)):
+                grp = self.fh5[sn].create_group("processed")
+            else:
+                grp = self.fh5[sn+'/processed']
+                g0 = lsh5(grp, top_only=True, silent=True)[0]
+                if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
+                    # new size for the data
+                    del self.fh5[sn+'/processed']
+                    grp = self.fh5[sn].create_group("processed")
+
+            # these attributes are not necessarily available when save_d1s() is called
+            if sn in list(self.attrs.keys()):
+                for k in list(self.attrs[sn].keys()):
+                    grp.attrs[k] = self.attrs[sn][k]
+                    if debug is True:
+                        print(f"writing attribute to {sn}: {k}")
+
+            ds_names = lsh5(grp, top_only=True, silent=True)
+            for k in list(self.d1s[sn].keys()):
+                data,tvs = pack_d1(self.d1s[sn][k])
                 if debug is True:
                     print(f"writing attribute to {sn}: {k}")
+                if k not in ds_names:
+                    grp.create_dataset(k, data=data)
+                else:
+                    grp[k][...] = data   
 
-        ds_names = lsh5(grp, top_only=True, silent=True)
-        for k in list(self.d1s[sn].keys()):
-            data,tvs = pack_d1(self.d1s[sn][k])
-            if debug is True:
-                print(f"writing attribute to {sn}: {k}")
-            if k not in ds_names:
-                grp.create_dataset(k, data=data)
-            else:
-                grp[k][...] = data   
-
-            # save trans values for processed data
-            # before 1d data merge, the trans value should be 0              
-            # on the other hand there could be data collected with the beam off, therefore trans=0
-            if (np.asarray(tvs)>0).any(): 
-                grp[k].attrs['trans'] = tvs
+                # save trans values for processed data
+                # before 1d data merge, the trans value should be 0              
+                # on the other hand there could be data collected with the beam off, therefore trans=0
+                if (np.asarray(tvs)>0).any(): 
+                    grp[k].attrs['trans'] = tvs
                 
-        self.enable_write(False)
+        self.enable_write(False, debug=debug)
 
     def average_d1s(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data

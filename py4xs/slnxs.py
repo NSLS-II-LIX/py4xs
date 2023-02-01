@@ -13,6 +13,8 @@ import copy
 import itertools as it
 import multiprocessing as mp
 
+from sklearn.metrics import pairwise_distances
+
 # this is the ratio between protein average denstiy and water density
 # it is assumed to be a constant but in reality depends on the specific portein
 # see Fischer et.al.  Protein Sci. 2004 October; 13(10): 2825-2828
@@ -610,10 +612,51 @@ def calculate(ds0, ds1):
     diff_coef = np.sum(np.abs(np.subtract(ds0, ds1)))  # How different the datasets are
     return diff_coef            
             
-def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
+def filter_by_similarity(datasets, max_distance=50, min_similar_sets=2,
+                          preselection=None, metric="manhattan", debug=False):
+    """ find similar datasets, the calculated distance between sets must be below max_distance
+        considered fail, and retrun empty, if found fewer than min_similar_sets of similar datasets 
+        preselection is a list of True/False, False exclude the dataset from consideration
+    """
+    if len(datasets)==1:
+        return [True]
+    
+    remove_list = []
+    if preselection is not None:
+        if len(datasets)!=len(preselection):
+            raise Exception(f"length of datasets and preselection don't match: {len(datasets)}, {len(preselection)}")
+        for i in range(len(datasets)):
+            if not preselection[i]:
+                remove_list.append(datasets[i])
+
+    datasets = list(set(datasets) - set(remove_list))
+                
+    data_vec = [d1.data[~np.isnan(d1.data)] for d1 in datasets]
+    similarity_matrix = pairwise_distances(data_vec, data_vec, metric=metric)
+    number_of_simil_per_column = np.sum((similarity_matrix<max_distance), axis=0)
+
+    valid_entries = [datasets[i] for i in range(len(number_of_simil_per_column)) 
+                     if number_of_simil_per_column[i]>min_similar_sets]
+    
+    return valid_entries    
+    
+def filter_by_similarity00(datasets, similarity_threshold=0.5, preselection=None, debug=False):
+    """ Hugo's version
+    """
     
     if len(datasets)==1:
         return datasets,None
+    
+    if preselection is not None:
+        if len(datasets)!=len(preselection):
+            raise Exception(f"length of datasets and preselection don't match: {len(datasets)}, {len(preselection)}")
+        idx = []
+        dsets = []
+        for i in range(len(datasets)):
+            if preselection[i]:
+                idx.append[i]
+                dsets.append(datasets[i])
+        datasets = dsets
     
     number_of_cpus = os.cpu_count()
     number_of_datasets = len(datasets)
@@ -650,6 +693,11 @@ def filter_by_similarity(datasets, similarity_threshold=0.5, debug=False):
     invalid_entries = set(datasets) - set(valid_entries)
     # print("Similarity Matrix: \n", similarity_matrix)
     # print("Best Column: \n", best_column)
+    
+    if preselection is not None:
+        for i in range(len(invalid_entries)):
+            preselection[idx[i]] = invalid_enrties[i]
+        
     return valid_entries, invalid_entries
 
 
@@ -755,7 +803,7 @@ def average(fns, detectors, qgrid, reft=-1, plot_data=False, save1d=0, ax=None, 
                          ax, qmax, qmin, fix_scale, debug=debug)
     t1 = time.time()
     if filter_datasets:
-        ss, invalids = filter_by_similarity(ss, similarity_threshold=similarity_threshold, debug=debug)
+        ss = filter_by_similarity(ss, similarity_threshold=similarity_threshold, debug=debug)
         # TODO: Insert warning/exception when the number of datasets discarded is high.
         # TODO: Define the % of discarded to result in a error.
         if debug!='quiet':

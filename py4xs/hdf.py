@@ -1278,7 +1278,8 @@ class h5xs():
                 
         self.enable_write(False, debug=debug)
 
-    def average_d1s(self, samples=None, update_only=False, selection=None, filter_data=False, debug=False):
+    def average_d1s(self, samples=None, update_only=False, selection=None, max_distance=50,
+                    filter_data=False, debug=False):
         """ if update_only is true: only work on samples that do not have "merged' data
             selection: if None, retrieve from dataset attribute
         """
@@ -1294,10 +1295,10 @@ class h5xs():
             if update_only and 'merged' in list(self.d1s[sn].keys()): continue
                 
             if filter_data:
-                d1keep,d1disc = filter_by_similarity(self.d1s[sn]['merged'])
-                self.attrs[sn]['selected'] = []
-                for d1 in self.d1s[sn]['merged']:
-                    self.attrs[sn]['selected'].append(d1 in d1keep)
+                d1keep = filter_by_similarity(self.d1s[sn]['merged'], 
+                                              max_distance=max_distance, preselection=selection)
+                self.attrs[sn]['selected'] = [True if d1 in d1keep else False 
+                                              for d1 in self.d1s[sn]['merged']]
             else:
                 if selection is None:
                     # if there is an error, run with filter_data=True

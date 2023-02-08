@@ -11,7 +11,7 @@ setup(
     url="",
     packages=['py4xs'],
     install_requires=['fabio', 'h5py', 'pillow', 
-                      'matplotlib', 'numpy', 'scipy>-=1.6'],
+                      'matplotlib', 'numpy', 'scipy>=1.6'],
     python_requires='>=3',
     classifiers=[
         "Intended Audience :: Science/Research",

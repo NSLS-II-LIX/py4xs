@@ -343,7 +343,9 @@ class MatrixWithCoords:
         if clim=="auto":
             clim = auto_clim(self.d*sc_factor, logScale)
         if logScale:
-            im = ax.imshow(np.log(self.d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
+            d = self.d
+            d[d<=0] = np.nan
+            im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
         else:
             im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
         if not nolabel:

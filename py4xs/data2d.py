@@ -55,6 +55,11 @@ def round_by_stepsize(v, ss):
     return f"{v:.{prec}f}".rstrip('0')
 
 def grid_labels(grid, N=3, step_tol=0.2):
+    flipped = False
+    if grid[0]>grid[-1]:
+        flipped = True
+        grid = np.flip(grid)
+    
     dd = np.diff(grid)
     tt = []
     td = []
@@ -95,6 +100,11 @@ def grid_labels(grid, N=3, step_tol=0.2):
     n = len(grid)
     gpindex = np.append(0.5+np.array(gpindex), n)
     gplabels.append('')
+
+    if flipped:
+        gpindex = np.flip(gpindex)
+        gpvalues = list(np.flip(gpvalues))
+        gplabels = list(np.flip(gplabels))
     
     return gpindex,gpvalues,gplabels
 

@@ -204,6 +204,9 @@ def get_monitor_counts(grp, monitorName):
     if strn is None:
         raise Exception(f"could not find the stream that contains {monitorName}.")
 
+    if strn=="primary": # use detector timestamps
+        return strn,None,data
+    
     # in the case of timeseries data, the time stamps need to be lengthened
     n = int(len(data)/len(ts))
     if n>1:
@@ -562,7 +565,7 @@ class h5xs():
         
     def explict_open_h5(self):
         if self.fh5:
-            print(f"{self.hn} file is already open.")
+            print(f"{self.fn} file is already open.")
         else:
             self.fh5 = h5py.File(self.fn, "r")
             
@@ -1025,7 +1028,10 @@ class h5xs():
             # expect a finite but minimal offset in time since all come from the same IOC server
             ts0 = self.fh5[f'{sn}/primary/timestamps/{dn}'][...].flatten()
             dshape = self.fh5[f"{sn}/primary/data/{dn}"].shape[0]   # length of the time sequence
-            if len(ts0)==1: # multiple exposures, single trigger, as in HT measurements
+
+            # multiple exposures, single trigger, as in HT measurements
+            # or some kind of glitch causing the timestamps to be constant
+            if len(ts0)==1 or ts0[-1]-ts0[0]<1: 
                 ts0 = ts0[0]+np.arange(dshape)*exp    
         elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
             ts0 = get_det_timestamps(self.fh5[f'{sn}/primary/'], trigger, exp)
@@ -1036,7 +1042,7 @@ class h5xs():
     
     @h5_file_access  
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
-                force_synch='auto', force_synch_trig=0, extend_mon_stream=True,
+                force_synch='auto', force_synch_trig='auto', extend_mon_stream=True,
                 plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
@@ -1072,39 +1078,49 @@ class h5xs():
                 if 'exposure_time' in md.keys():
                     exp=md['exposure_time']
 
-            # expect trans and incid monitor data to be in the same stream
-            strn,ts2,trans_data = get_monitor_counts(self.fh5[sn], transmitted_monitor)
-            strn,ts1,incid_data = get_monitor_counts(self.fh5[sn], incident_monitor)
-                
-            if strn=="primary":
-                print("monitors are used as detectors.")
-                trans_data0 = trans_data
-                incid_data0 = incid_data
-            else:
-                # synch em1 time stamps to em2, LiX-specific 
-                synch_mon(ts2, trans_data, ts1, incid_data, dt=force_synch)
-                ts0 = self.get_ts(sn, exp, trigger)
+            # trans and incid monitor data could be in different streams
+            ts0 = self.get_ts(sn, exp, trigger)        
+            mdata = {}
+            mdata0 = {}
+            mts = {}
+            mts0 = {}
+            for monitor in [transmitted_monitor,incident_monitor]:
+                strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor)
+                if ts is None:
+                    ts = ts0
+                if strn=="primary":
+                    print(f"{monitor} used as detectors.")
+                    if len(data0)<len(ts0):
+                        data0 = np.pad(data0, (0,len(ts0)-len(data0)), constant_values=np.nan)
+                    data = data0
+                    ts1 = ts
+                else:
+                    if force_synch_trig=="auto":
+                        hist,bins = np.histogram(data0, bins=10)  # try to use shutter opening as a reference
+                        ts1 = ts[data0>bins[-2]][4:]              # skip a few more points to make sure  
+                        data0 = data0[data0>bins[-2]][4:]
+                        ts1 = ts0[0]-ts1[0]+ts1
+                        data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)
+                    else:
+                        ts1 = ts0+force_synch_trig
+                        data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)                
+                mdata0[monitor] = data0
+                mdata[monitor] = data
+                mts0[monitor] = ts1
+                mts[monitor] = ts0
 
-                try:
-                    trans_data0 = integrate_mon(trans_data, ts2, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)
-                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream, **kwargs)   
-                except:
-                    t0 = np.min(ts2)
-                    print(f"time series likely misaligned:")
-                    print(f"trans mon: {np.min(ts2)-t0} ~ {np.max(ts2)-t0}")
-                    print(f"incid mon: {np.min(ts1)-t0} ~ {np.max(ts1)-t0}")
-                    print(f"detector: start={ts0-t0}, force_synch={force_synch_trig}, exp = {exp}")
-                    ts1 += ts2[0]-ts1[0]
-                    print(f"using force_synch=0, incid mon: {np.min(ts1)-t0} ~ {np.max(ts1)-t0}")
-                    incid_data0 = integrate_mon(incid_data, ts1, ts0+force_synch_trig, exp, extend_mon_stream)
+            if plot_trigger:
+                plt.figure()
+                mmv = np.nanmax(mdata0[incident_monitor])
+                if len(mts0[incident_monitor])>len(ts0):
+                    plt.plot(mts0[incident_monitor], mdata0[incident_monitor]/mmv)
+                plt.plot(mts[incident_monitor], mdata[incident_monitor]/mmv, "o")
+                mmv = np.nanmax(mdata0[transmitted_monitor])
+                if len(mts0[transmitted_monitor])>len(ts0):
+                    plt.plot(mts0[transmitted_monitor], mdata0[transmitted_monitor]/mmv)
+                plt.plot(mts[transmitted_monitor], mdata[transmitted_monitor]/mmv, "o")
+                plt.ylim(0,1.1)
 
-                if plot_trigger:
-                    plt.figure()
-                    plt.plot(ts2, trans_data/np.max(trans_data))
-                    plt.plot(ts0+force_synch_trig, trans_data0/np.max(trans_data), "o")
-                    plt.plot(ts1, incid_data/np.max(incid_data))
-                    plt.plot(ts0+force_synch_trig, incid_data0/np.max(incid_data), "o")
-                    
             if not hasattr(self, "d0s"):
                 self.d0s = {}
             if not sn in self.d0s.keys():
@@ -1112,12 +1128,10 @@ class h5xs():
 
             # make sure that the monitor counts have the right number of data points
             if check_size>0: 
-                check_size -= len(trans_data0)
-            self.d0s[sn]["transmitted"] = np.pad(trans_data0, (0,check_size), constant_values=np.nan)
-            self.d0s[sn]["incident"] = np.pad(incid_data0, (0,check_size), constant_values=np.nan)
-            transmission = trans_data0/incid_data0
-            #transmission /= np.nanmean(transmission)   # this can cause problems when the beam is off during part of the scan
-            self.d0s[sn]["transmission"] = np.pad(transmission, (0,check_size), constant_values=np.nan)
+                check_size-=len(mdata[transmitted_monitor])
+            self.d0s[sn]["transmitted"] = np.pad(mdata[transmitted_monitor], (0,check_size), constant_values=np.nan)
+            self.d0s[sn]["incident"] = np.pad(mdata[incident_monitor], (0,check_size), constant_values=np.nan)
+            self.d0s[sn]["transmission"] = self.d0s[sn]["transmitted"]/self.d0s[sn]["incident"]
             
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 

@@ -522,7 +522,8 @@ def h5_file_access(method):
                 ref.fh5.close()
             return ret
         except:
-            ref.fh5.close()
+            if ref.fh5:
+                ref.fh5.close()
             raise
     
     return inner
@@ -651,6 +652,9 @@ class h5xs():
         if debug:
             print(f"closing fh5: {self.fh5}")
         self.fh5.close()
+        del self.fh5
+        self.fh5 = None
+
         if writable:
             if debug:
                 print(f"reopening the file for writing: {self.fn}")
@@ -1400,12 +1404,11 @@ class h5xs():
             self.d1s[s][grp].plot(ax=ax)
         
 
-    def export_d1s(self, samples=None, path="", save_subtracted=True, debug=False):
+    def export_d1s(self, samples=None, fn_modifier='', path="", save_subtracted=True, debug=False):
         """ if path is used, be sure that it ends with '/'
         """
         if samples is None:
             samples = self.samples
-            #samples = list(self.buffer_list.keys())
         elif isinstance(samples, str):
             samples = [samples]
 
@@ -1419,23 +1422,23 @@ class h5xs():
                     print("1d data not available.")
                     continue
                 for i in range(len(self.d1s[sn]['merged'])):
-                    self.d1s[sn]['merged'][i].save("%s%s_%d%c.dat"%(path,sn,i,'m'), debug=debug, 
+                    self.d1s[sn]['merged'][i].save(f"{path}{sn}_{i}{fn_modifier}m.dat", debug=debug, 
                                                 footer=self.md_string(sn))                                    
             elif save_subtracted is True:
                 if 'subtracted' not in self.d1s[sn].keys():
                     print("subtracted data not available.")
                     continue
-                self.d1s[sn]['subtracted'].save("%s%s_%c.dat"%(path,sn,'s'), debug=debug, 
+                self.d1s[sn]['subtracted'].save(f"{path}{sn}_{fn_modifier}s.dat", debug=debug, 
                                                 footer=self.md_string(sn))
             else: 
                 if 'averaged' not in self.d1s[sn].keys():
                     print("1d data not available.")
                     continue
-                self.d1s[sn]['averaged'].save("%s%s_%c.dat"%(path,sn,'a'), debug=debug, 
+                self.d1s[sn]['averaged'].save(f"{path}{sn}_{fn_modifier}a.dat", debug=debug, 
                                               footer=self.md_string(sn))
                 
     @h5_file_access  
-    def load_data(self, update_only=False, detectors=None,
+    def load_data(self, samples=None, update_only=False, detectors=None,
            reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0, dtype=None):
         """ assume multiple samples, parallel-process by sample
             use Pool to limit the number of processes; 
@@ -1452,7 +1455,11 @@ class h5xs():
         pool = mp.Pool(N)
         jobs = []
         
-        for sn in self.samples:
+        if samples is None:
+            samples = self.samples
+        elif isinstance(samples, str):
+            samples = [samples]
+        for sn in samples:
             if sn not in list(self.attrs.keys()):
                 self.attrs[sn] = {}
             if 'buffer' in list(fh5[sn].attrs):

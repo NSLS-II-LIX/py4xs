@@ -79,7 +79,7 @@ class Mask:
         elif stype == 'r':
             # rectangle
             # r  x  y  w  h  rotation
-            wmargin,hmargin = (np.asarray(map_shape)/2).astype(np.int)
+            wmargin,hmargin = (np.asarray(map_shape)/2).astype(int)
             tmap = tmap.resize([self.width+2*wmargin, self.height+2*hmargin])
             draw = ImageDraw.Draw(tmap)
             (x, y, w, h, rot) = para

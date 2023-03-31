@@ -636,7 +636,12 @@ def filter_by_similarity(datasets, max_distance=50, min_similar_sets=2,
     number_of_simil_per_column = np.sum((similarity_matrix<max_distance), axis=0)
 
     valid_entries = [datasets[i] for i in range(len(number_of_simil_per_column)) 
-                     if number_of_simil_per_column[i]>min_similar_sets]
+                     if number_of_simil_per_column[i]>=min_similar_sets]
+    
+    if len(valid_entries)==0:
+        if debug:
+            print("no similar datasets found. returning the first dataset")
+        return [datasets[0]]
     
     return valid_entries    
     

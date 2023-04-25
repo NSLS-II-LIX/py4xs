@@ -7,6 +7,8 @@
 
   ``xc, yc`` : 1d arrays that define the x and y coordinates of the intensity map
 
+  ``xc_label, yc_label`` : axis lables for the intensity map
+
   ``datatype`` : type of the data (e.g. detector raw image, $I(q, \phi)$ map, ...), which 
   must be of type Enum `DataType`. This is useful when plotting the intensity map,
   so that the correct coordinates can be displayed. 
@@ -16,7 +18,27 @@
 
   ``line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None)`` 
   returns a line cut from the intensity map. Masked pixels are omitted.
-
+  
+  ``copy()``: creates a deep copy of the object
+  
+  ``expand()``: exapnds the coordinates for the intensity map, e.g. in preparation for merging
+  
+  ``merge()``: merges two or more maps with the same axis labels
+  
+  ``plot()``: plots the intensity map
+  
+  ``roi()``: returns a smaller map within the specified range
+  
+  ``val()``: returns the integrated intensity within the specified range
+  
+  ``flatten()``: collapses the intensity map onto the apecified axis and returns an intensity profile
+  
+  ``average()``: averages multiple intensity maps together
+  
+  ``bkg_cor()``: perform background subtraction with the specified scaling factor.
+  
+  ``fill_gap()`` and ``apply_symmetry()``: attempt to exapnd the intensity map coverage 
+  
 ----------------
 
 ## Data2d
@@ -78,7 +100,8 @@
 
   ``avg()`` performs averaging with the given set of Data1d objects. 
 
-  ``bkg_cor()`` performs background subtraction, based on the *trans* value.
+  ``bkg_cor()`` performs background subtraction, based on the *trans* value, optionally with a 
+  scaling factor. For solution scattering, this scaling factor could be estiamted using ``py4xs.slnxs.estiamte_scaling_factor()``.
 
   ``plot()`` plots the data, in a given matplotlib Axes if specified.
 

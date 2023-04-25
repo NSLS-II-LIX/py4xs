@@ -24,9 +24,6 @@ py4xs provides the following generic functionalities:
   scattering geometry, raw data, and processed data, can be packaged into a single
   hdf5 file.
 
-* **Data processing pipeline (under development)** Custom data processing pipelines 
-  can be defined and saved in the hdf5 file.
-
 Functionalities specific to the LiX beamline (e.g. data processing GUIs) can be found
 under lixtools.
 
@@ -39,7 +36,10 @@ under lixtools.
                      # detector configuration
         data2d.py    # functions related to 2d data
         slnxs.py     # functions related to 1d data
-        hdf.py       #
+        mask.py      # mask used for azimuthal average
+        plot.py      # functions for plotting 2D data
+        hdf.py       # python interface to the hdf5 data file 
+        utils.py     # utility functions
     doc/             
                      # documentation pages
 

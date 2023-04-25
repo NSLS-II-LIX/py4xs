@@ -81,7 +81,7 @@
 
   ``s2d_distance``: sample-to-detector distance, in $mm$ 
 
-  ``mask`` : as defined above
+  ``mask`` : as defined above [this is saved under exp_para for now]
 
   ``dark, flat`` : dark field and flat field data needed to apply corrections.
 

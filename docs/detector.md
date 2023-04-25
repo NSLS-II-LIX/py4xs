@@ -85,5 +85,6 @@
 
   ``dark, flat`` : dark field and flat field data needed to apply corrections.
 
-  ``pre_process()`` : method for performing drak field and flat feld corrections.  
+  ``pre_process()`` : method for performing drak field and flat feld corrections. This is not implemented but 
+  can be defined by the user.
 

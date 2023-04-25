@@ -79,6 +79,8 @@
 
   ``exp_para`` : experimental parameters for the detector, as defined above
 
+  ``s2d_distance``: sample-to-detector distance, in $mm$ 
+
   ``mask`` : as defined above
 
   ``dark, flat`` : dark field and flat field data needed to apply corrections.

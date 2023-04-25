@@ -547,7 +547,6 @@ class h5xs():
         """
         self.d0s = {}
         self.d1s = {}
-        self.d2s = {}
         self.detectors = None
         self.samples = []
         self.attrs = {}
@@ -1093,7 +1092,7 @@ class h5xs():
                 if ts is None:
                     ts = ts0
                 if strn=="primary":
-                    print(f"{monitor} used as detectors.")
+                    print(f"{monitor} used as a detector.")
                     if len(data0)<len(ts0):
                         data0 = np.pad(data0, (0,len(ts0)-len(data0)), constant_values=np.nan)
                     data = data0
@@ -1223,7 +1222,6 @@ class h5xs():
         if sn not in list(self.attrs.keys()):
             self.d0s[sn] = {}    # these are attributes extracted from each data point
             self.d1s[sn] = {}    # 1d scattering data, of the type data1d
-            self.d2s[sn] = {}    # 2d data, of the type MatrixWithCorrds
             self.attrs[sn] = {}
         grp = fh5[sn+'/processed']
         for k in list(grp.attrs.keys()):

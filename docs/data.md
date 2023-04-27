@@ -14,26 +14,26 @@
   so that the correct coordinates can be displayed. 
 
   ``conv(self, Nx1, Ny1, xc1, yc1, mask=None, cor_factor=1, datatype=DataType.det)`` 
-  converts the intensity map to new coordinates xc1, yc1. Masked pixels are omitted.
+  convert the intensity map to new coordinates xc1, yc1. Masked pixels are omitted.
 
   ``line_cut(self, x0, y0, ang, lT, lN, nT, nN, mask=None)`` 
-  returns a line cut from the intensity map. Masked pixels are omitted.
+  return a line cut from the intensity map. Masked pixels are omitted.
   
-  ``copy()``: creates a deep copy of the object
+  ``copy()``: create a deep copy of the object
   
-  ``expand()``: exapnds the coordinates for the intensity map, e.g. in preparation for merging
+  ``expand()``: exapnd the coordinates for the intensity map, e.g. in preparation for merging
   
-  ``merge()``: merges two or more maps with the same axis labels
+  ``merge()``: merge two or more maps with the same axis labels
   
-  ``plot()``: plots the intensity map
+  ``plot()``: plot the intensity map
   
-  ``roi()``: returns a smaller map within the specified range
+  ``roi()``: return a smaller map within the specified range
   
-  ``val()``: returns the integrated intensity within the specified range
+  ``val()``: return the integrated intensity within the specified range
   
-  ``flatten()``: collapses the intensity map onto the apecified axis and returns an intensity profile
+  ``flatten()``: collapse the intensity map onto the apecified axis and returns an intensity profile
   
-  ``average()``: averages multiple intensity maps together
+  ``average()``: average multiple intensity maps together
   
   ``bkg_cor()``: perform background subtraction with the specified scaling factor.
   
@@ -54,10 +54,10 @@
   ``uid, timestamp`` : optional information. They are extracted from the data file
   for Pilatus data collected at NSLS-II.  
 
-  ``conv_Iq(self, qgrid, mask=None, cor_factor=1)`` converts the 2D scattering data
+  ``conv_Iq(self, qgrid, mask=None, cor_factor=1)``: convert the 2D scattering data
   into a 1D scattering intensity profile.
 
-  ``conv_Iqphi()`` and ``conv_Iqrqz()`` generate the $I(q, \phi)$ and $I(q_r, q_z)$ 
+  ``conv_Iqphi()`` and ``conv_Iqrqz()``: generate the $I(q, \phi)$ and $I(q_r, q_z)$ 
   map of the scattering data.
 
 
@@ -77,7 +77,7 @@
   (points, lines/grids with the given coordinates, and powder rings expected from standard
   samples) to be overlaid onto the scattering pattern. Refer to the Examples section.
 
-  ``plot()`` plots the data. 
+  ``plot()``: plot the data. 
 
 -----------
 
@@ -95,18 +95,17 @@
   corrections. The error bar is the standard deviation of intensity in all pixels that belong to the
   same *q* value.
 
-  ``merge()`` merges data with another Data1d object. Within the overlapping *q*-range, the 
+  ``merge()``: merge data with another Data1d object. Within the overlapping *q*-range, the 
   scattering intensity is averaged and the original data are saved can could be displayed later.
 
-  ``avg()`` performs averaging with the given set of Data1d objects. 
+  ``avg()``: perform averaging with the given set of Data1d objects. 
 
-  ``bkg_cor()`` performs background subtraction, based on the *trans* value, optionally with a 
+  ``bkg_cor()``: perform background subtraction, based on the *trans* value, optionally with a 
   scaling factor. For solution scattering, this scaling factor could be estiamted using ``py4xs.slnxs.estiamte_scaling_factor()``.
 
-  ``plot()`` plots the data, in a given matplotlib Axes if specified.
+  ``plot()``: plot the data, in a given matplotlib Axes if specified.
 
-  ``save()`` exports the data into a text file in a 3-column format (*q*, intensity, error bar).
+  ``save()``: export the data into a text file in a 3-column format (*q*, intensity, error bar).
 
-  ``plot_Guinier()`` plots $ln[I(q)]$ vs $q^2$ (Guinier plot) and report $I_0$ and 
-  $R_g$ .
+  ``plot_Guinier()``: plot $ln[I(q)]$ vs $q^2$ (Guinier plot) and report $I_0$ and $R_g$ .
 

@@ -38,9 +38,9 @@
   
   `compare_d1s()`: plot the 1D data from multiple samples, useful for visualizing the difference between samples
 
-  `get_d2()`: returns the `Data2d` object(s) corresponding to a specified sample name and frame number
+  `get_d2()`: return the `Data2d` object(s) corresponding to a specified sample name and frame number
   
-  `get_d1()`: returns the `Data1d` object corresponding to a specified sample name and frame number. By default
+  `get_d1()`: return the `Data1d` object corresponding to a specified sample name and frame number. By default
   returns the `merged` data.
 
   `get_mon()`: get the beam intensity monitor data corresponding to the individual scattering patterns. The 
@@ -53,10 +53,10 @@
   on either side of the beam center, as a simplied means to verify whether the beam center specified in 
   the detector configuration is correct.
 
-  `md_dict()`: returns the meta data to be recorded in the exported ascii file, derived from the info 
+  `md_dict()`: return the meta data to be recorded in the exported ascii file, derived from the info 
   defined in `py4xs.local`. 
   
-  `header()`: returns the header of the Bluesky scan that produced the data  
+  `header()`: return the header of the Bluesky scan that produced the data  
   
 ---------------
 
@@ -65,10 +65,10 @@
 `h5exp` is derived from `h5xs` and is used to store the detector configuration and $q$-grid 
   so that this information can be propagated easily to other `h5xs` objects.
   
-  ``save_detectors()`` and ``read_detectors()`` are provided to exchange information between 
+  `save_detectors()` and `read_detectors()` are provided to exchange information between 
   a h5 file and the corresponding `h5exp` object. 
   
-  ``recalibrate()`` : recalibrate the detector `exp_para` based on the scattering data collected
+  `recalibrate()` : recalibrate the detector `exp_para` based on the scattering data collected
   from a standard sample (sivler behenate).
   
   

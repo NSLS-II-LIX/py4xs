@@ -1018,7 +1018,7 @@ class h5xs():
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
         if detectors is None:
             detectors = self.detectors
-        return show_data_qphi(d2s, detectors, ax=ax, Nq=200, Nphi=60,
+        return show_data_qphi(d2s, detectors, ax=ax, Nq=Nq, Nphi=Nphi,
                               apply_symmetry=apply_symmetry, fill_gap=fill_gap, 
                               sc_factor=sc_factor, bkg=bkg,
                               logScale=logScale, useMask=useMask, clim=clim, 

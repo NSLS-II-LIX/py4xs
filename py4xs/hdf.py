@@ -507,6 +507,9 @@ def find_field(fh5, fieldName, sname=None):
 
 
 def h5_file_access(method):
+    """ run method, open the associated h5 file if not already open
+        leave the h5 file in its origional open/closed state
+    """
     @wraps(method)
     def inner(ref, *args, **kwargs):
         
@@ -522,7 +525,7 @@ def h5_file_access(method):
                 ref.fh5.close()
             return ret
         except:
-            if ref.fh5:
+            if ref.fh5 and not file_open:
                 ref.fh5.close()
             raise
     
@@ -563,12 +566,15 @@ class h5xs():
 
         self.setup(exp_setup, transField, have_raw_data)
         
-    def explict_open_h5(self):
+    def explict_open_h5(self, readonly=True):
         if self.fh5:
             print(f"{self.fn} file is already open.")
         else:
-            self.fh5 = h5py.File(self.fn, "r")
-            
+            if readonly:
+                self.fh5 = h5py.File(self.fn, "r")
+            else:
+                self.fh5 = h5py.File(self.fn, "r+")
+                
     def explicit_close_h5(self):
         if not self.fh5:
             print(f"{self.hn} file is already closed.")
@@ -642,6 +648,9 @@ class h5xs():
                 self.enable_write(False)
                 
     def enable_write(self, writable, debug=False):
+        """ assuming the h5 file is already open, if currently not open for writting
+            reopen it with intent to write
+        """
         if self.read_only:
             if not writable:
                 return
@@ -763,14 +772,8 @@ class h5xs():
         
         bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
         hdr = self.header(sn)
+        exp = self.exp_time(sn)
         for det in self.detectors:
-            dn = self.det_name[det.extension].strip("_image")
-            if 'pilatus' in hdr.keys():
-                exp = hdr['pilatus']['exposure_time']
-            elif 'pil' in bscfg.keys():
-                exp = bscfg['pil']['data'][f"pil_{dn}_cam_acquire_time"]
-            else:
-                exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
             if not "Detector" in md.keys():
                 md["Detector"] = det_model[det.extension]
                 md["Exposure time/frame (s)"] = f"{exp:.3f}"
@@ -1043,6 +1046,19 @@ class h5xs():
 
         return ts0
     
+    def exp_time(self, sn):
+        bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        hdr = self.header(sn)
+        dn = self.det_name[self.detectors[0].extension].strip("_image")
+        try:
+            exp = hdr['pilatus']['exposure_time']
+        except:
+            try:
+                exp = bscfg['pil']['data'][f"pil_{dn}_cam_acquire_time"]
+            except:
+                exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
+        return exp
+    
     @h5_file_access  
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
                 force_synch='auto', force_synch_trig='auto', extend_mon_stream=True,
@@ -1076,10 +1092,7 @@ class h5xs():
             samples = [sn]
            
         for sn in samples:
-            if "pilatus" in self.header(sn).keys():
-                md = self.header(sn)['pilatus']
-                if 'exposure_time' in md.keys():
-                    exp=md['exposure_time']
+            exp = self.exp_time()
 
             # trans and incid monitor data could be in different streams
             ts0 = self.get_ts(sn, exp, trigger)        

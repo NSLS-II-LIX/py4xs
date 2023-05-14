@@ -137,3 +137,7 @@ bug fixes in MatrixWithCorrds; reorganizing h5xs
 
 2022-11:
 open h5 file only when necessary
+
+2023-03:
+similarity calculation for Data1d; handling of intensity monitor data
+h5xs.exp_time() 

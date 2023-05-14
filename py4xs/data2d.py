@@ -114,15 +114,17 @@ def histogram2d(x, y, range, bins, weights):
 
 class MatrixWithCoords:
     # 2D data with coordinates
-    d = None
-    xc = None
-    xc_label = None
-    xc_prec = 3
-    yc = None 
-    yc_label = None
-    yc_prec = 3
-    err = None
-    datatype = None
+    
+    def __init__(self):
+        d = None
+        xc = None
+        xc_label = None
+        xc_prec = 3
+        yc = None 
+        yc_label = None
+        yc_prec = 3
+        err = None
+        datatype = None
     
     def copy(self):
         ret = MatrixWithCoords()
@@ -608,8 +610,8 @@ class Data2d:
         self.timestamp = None
         self.uid = None
         self.data = MatrixWithCoords()
-        self.qrqz_data = MatrixWithCoords()
-        self.qphi_data = MatrixWithCoords()
+        #self.qrqz_data = MatrixWithCoords()
+        #self.qphi_data = MatrixWithCoords()
         self.label = label
         self.md = {}
         

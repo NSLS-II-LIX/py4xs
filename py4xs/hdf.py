@@ -1092,7 +1092,7 @@ class h5xs():
             samples = [sn]
            
         for sn in samples:
-            exp = self.exp_time()
+            exp = self.exp_time(sn)
 
             # trans and incid monitor data could be in different streams
             ts0 = self.get_ts(sn, exp, trigger)        

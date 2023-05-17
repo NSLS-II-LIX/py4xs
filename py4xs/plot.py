@@ -272,15 +272,15 @@ def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
                 dm.d -= dm_b.d    
 
         dm.d *= (d2s[dn].exp.Dd/d2s["_SAXS"].exp.Dd)**2
+        dm.xc = xqgrid
+        dm.xc_label = "qx"
+        dm.xc_prec = 3
+        dm.yc = yqgrid
+        dm.yc_label = "qy"
+        dm.yc_prec = 3
         xyqmaps.append(dm)
 
     dm = xyqmaps[0].merge(xyqmaps[1:])
-    dm.xc = xqgrid
-    dm.xc_label = "qx"
-    dm.xc_prec = 3
-    dm.yc = yqgrid
-    dm.yc_label = "qy"
-    dm.yc_prec = 3
 
     if clim=="auto":
         clim = auto_clim(dm.d, logScale)
@@ -351,6 +351,12 @@ def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,
                 dm.d -= dm_b.d    
 
         dm.d /= det.fix_scale
+        dm.xc = q_grid
+        dm.xc_label = "q"
+        dm.xc_prec = 3
+        dm.yc = phi_grid
+        dm.yc_label = "phi"
+        dm.yc_prec = 1
 
         if apply_symmetry:
             dm = dm.apply_symmetry()
@@ -360,12 +366,6 @@ def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,
         dms.append(dm)
 
     dm = dms[0].merge(dms[1:])
-    dm.xc = q_grid
-    dm.xc_label = "q"
-    dm.xc_prec = 3
-    dm.yc = phi_grid
-    dm.yc_label = "phi"
-    dm.yc_prec = 1
 
     dm.plot(ax=ax, sc_factor=sc_factor, logScale=logScale, clim=clim, cmap=cmap, colorbar=colorbar)
     ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")

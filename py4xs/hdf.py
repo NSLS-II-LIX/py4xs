@@ -1005,7 +1005,6 @@ class h5xs():
                       logScale=True, useMask=True, clim=(0.1,14000), 
                       aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         """ display frame #frn of the data under det for sample sn
-            det is a list of detectors, or a string, data file extension
         """
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
         if detectors is None:
@@ -1018,6 +1017,9 @@ class h5xs():
                        apply_symmetry=False, fill_gap=False, sc_factor=None,
                        logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
                        aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
+        """ display frame #frn of the data under det for sample sn
+            Nq can be given as a integer, for the number of data points, or as an array
+        """
         d2s = self.get_d2(sn=sn, frn=frn, dtype=dtype, **kwargs)
         if detectors is None:
             detectors = self.detectors

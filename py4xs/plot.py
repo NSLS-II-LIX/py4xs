@@ -278,6 +278,7 @@ def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
         dm.yc = yqgrid
         dm.yc_label = "qy"
         dm.yc_prec = 3
+        dm.datatype = DataType.xyq
         xyqmaps.append(dm)
 
     dm = xyqmaps[0].merge(xyqmaps[1:])
@@ -357,6 +358,7 @@ def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,
         dm.yc = phi_grid
         dm.yc_label = "phi"
         dm.yc_prec = 1
+        dm.datatype = DataType.qphi
 
         if apply_symmetry:
             dm = dm.apply_symmetry()

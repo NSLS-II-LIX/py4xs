@@ -8,6 +8,7 @@ import pylab as plt
 import matplotlib as mpl
 from enum import Enum 
 from PIL import Image
+
 #import fast_histogram as fh
 
 class DataType(Enum):
@@ -134,6 +135,7 @@ class MatrixWithCoords:
         ret.yc_label = self.yc_label
         ret.d = np.copy(self.d)
         ret.err = self.err
+        ret.datatype = self.datatype
         
         return ret
     
@@ -196,6 +198,7 @@ class MatrixWithCoords:
         ret.yc = np.unique(np.hstack([m.yc for m in [self]+ds]).flatten())
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
+        ret.datatype = self.datatype
         shape = (len(ret.yc),len(ret.xc))
                 
         wt = np.zeros(shape)
@@ -444,10 +447,15 @@ class MatrixWithCoords:
         d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
-    def line_profile(self, direction, xrange=None, yrange=None, plot_data=False, ax=None, **kwargs):
+    def line_profile(self, direction, xrange=None, yrange=None, 
+                     plot_data=False, ax=None, 
+                     return_data1d=False, **kwargs):
         """ return the line profile along the specified direction ("x" or "y"), 
             within the range of coordinate given by crange=[min, max] in the other direction
         """
+        # having import here avoids circular import
+        from py4xs.slnxs import Data1d
+        
         if xrange is None:
             xrange = [self.xc[0], self.xc[-1]]
         if yrange is None:
@@ -464,9 +472,17 @@ class MatrixWithCoords:
         
         if plot_data:
             if ax is None:
-                fig,ax = plt.figure()
+                fig = plt.figure()
+                ax = plt.gca()
             ax.plot(cc,dd, **kwargs)
 
+        if return_data1d:
+            d1 = Data1d()
+            d1.qgrid = cc
+            d1.data = dd
+            d1.err = ee
+            return d1
+        
         return cc,dd,ee
     
     def flatten(self, axis='x', method='simple'):

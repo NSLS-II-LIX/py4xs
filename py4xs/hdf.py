@@ -487,12 +487,15 @@ class h5exp():
 
         self.save_detectors()
 
-def find_field(fh5, fieldName, sname=None):
+def find_field(fh5, fieldName, sname):
     tstream = {}
-    if sname is None:
-        samples = lsh5(fh5, top_only=True, silent=True)
-    else:
+    if isinstance(sname,str):
         samples = [sname]
+    elif isinstance(sname,list):
+        samples = sname
+    else:
+        raise Exception("sname must be a string or a list: ", sname)
+        
     for sn in samples:
         for stream in list(fh5[f"{sn}"]):
             if not 'data' in list(fh5[f"{sn}/{stream}"]):
@@ -500,7 +503,7 @@ def find_field(fh5, fieldName, sname=None):
             if fieldName in list(fh5[f"{sn}/{stream}/data"]):
                 tstream[sn] = stream
                 break
-    if sname is None:
+    if isinstance(sname,list):
         return tstream
     
     return tstream[sname] 
@@ -514,23 +517,43 @@ def h5_file_access(method):
     def inner(ref, *args, **kwargs):
         
         if not ref.fh5:
-            file_open = False
+            file_previously_open = False
             ref.fh5 = h5py.File(ref.fn, "r", swmr=True)
         else:
-            file_open = True
+            file_previously_open = True
             
         try:
             ret = method(ref, *args, **kwargs)
-            if not file_open:  # leave the file open if it was initially open
+            if not file_previously_open:  # leave the file open if it was initially open
                 ref.fh5.close()
             return ret
         except:
-            if ref.fh5 and not file_open:
+            if ref.fh5 and not file_previously_open:
                 ref.fh5.close()
             raise
     
     return inner
+
+
+def get_d1s_from_grp(grp, qgrid, label=""):
+    """ 
+    read processed data from a h5 group
+    """
+    d1s = {}
+    attrs = {}
     
+    for k in list(grp.attrs.keys()):
+        attrs[k] = grp.attrs[k]   
+    # initially only handles 1d data
+    for k in lsh5(grp, top_only=True, silent=True):
+        if 'trans' in grp[k].attrs.keys():
+            tvs = grp[k].attrs['trans']
+        else:
+            tvs = 0
+        d1s[k] = unpack_d1(grp[k], qgrid, f"{label}-{k}", tvs)   
+
+    return d1s,attrs
+
 class h5xs():
     """ Scattering data in transmission geometry
         Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
@@ -543,7 +566,7 @@ class h5xs():
         
     """    
     def __init__(self, fn, exp_setup=None, transField=transmitted_monitor, save_d1=True, 
-                 have_raw_data=True, read_only=False):
+                 have_raw_data=True, read_only=False, exclude_sample_names=[]):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
@@ -552,6 +575,7 @@ class h5xs():
         self.d1s = {}
         self.detectors = None
         self.samples = []
+        self.exclude_sample_names = exclude_sample_names
         self.attrs = {}
         # name of the dataset that contains transmitted beam intensity, e.g. em2_current1_mean_value
         self.transField = ''  
@@ -627,7 +651,7 @@ class h5xs():
                     # but transStream is not always recorded
                     v, self.transField = tf[:2]
                     self.transMode = trans_mode(int(v))
-                    self.transStream = find_field(self.fh5, self.transField)
+                    self.transStream = find_field(self.fh5, self.transField, self.samples)
                     return
                 else:
                     self.transMode = trans_mode.from_waxs
@@ -635,7 +659,7 @@ class h5xs():
                     self.transStream = {}
             else:
                 try:
-                    self.transStream = find_field(self.fh5, transField)
+                    self.transStream = find_field(self.fh5, transField, self.samples)
                 except:
                     print("invalid field for transmitted intensity: ", transField)
                     raise Exception()
@@ -808,7 +832,8 @@ class h5xs():
     
     @h5_file_access  
     def list_samples(self, quiet=False):
-        self.samples = lsh5(self.fh5, top_only=True, silent=True)
+        samples = lsh5(self.fh5, top_only=True, silent=True)
+        self.samples = list(set(samples) - set(self.exclude_sample_names))
         if not quiet:
             print(self.samples)
     
@@ -1150,7 +1175,7 @@ class h5xs():
             self.d0s[sn]["transmitted"] = np.pad(mdata[transmitted_monitor], (0,check_size), constant_values=np.nan)
             self.d0s[sn]["incident"] = np.pad(mdata[incident_monitor], (0,check_size), constant_values=np.nan)
             self.d0s[sn]["transmission"] = self.d0s[sn]["transmitted"]/self.d0s[sn]["incident"]
-            
+                        
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data
@@ -1214,8 +1239,11 @@ class h5xs():
             if 'averaged' in self.d1s[s].keys():
                 self.d1s[s]['averaged'].trans = np.average(t_values)
     
+        self.save_d1s()
+
+                
     @h5_file_access  
-    def load_d1s(self, sn=None):
+    def load_d1s(self, sn=None, read_attrs=[]):
         """ load the processed 1d data saved in the hdf5 file into memory 
             for each sample
                  attribute "selected": which raw data are included in average
@@ -1225,29 +1253,33 @@ class h5xs():
             corrected data: subtracted for buffer scattering
             buffer data will be recreated based on buffer assignment 
         """        
-        if sn==None:
+        if sn is None:
             self.list_samples(quiet=True)
-            for sn in self.samples:
-                self.load_d1s(sn)
+            samples = self.samples
+        elif isinstance(sn,str):
+            samples = [sn]
+        elif isinstance(sn,list):
+            samples = sn
+        else:
+            raise Exception("invalid sn:", sn)
         
         fh5 = self.fh5
-        if "processed" not in lsh5(fh5[sn], top_only=True, silent=True): 
-            return
         
-        if sn not in list(self.attrs.keys()):
-            self.d0s[sn] = {}    # these are attributes extracted from each data point
-            self.d1s[sn] = {}    # 1d scattering data, of the type data1d
-            self.attrs[sn] = {}
-        grp = fh5[sn+'/processed']
-        for k in list(grp.attrs.keys()):
-            self.attrs[sn][k] = grp.attrs[k]   
-        # initially only handles 1d data
-        for k in lsh5(grp, top_only=True, silent=True):
-            if 'trans' in grp[k].attrs.keys():
-                tvs = grp[k].attrs['trans']
-            else:
-                tvs = 0
-            self.d1s[sn][k] = unpack_d1(grp[k], self.qgrid, sn+k, tvs)   
+        for sn in samples:
+            if "processed" not in lsh5(fh5[sn], top_only=True, silent=True): 
+                continue
+
+            if sn not in list(self.attrs.keys()):
+                self.d0s[sn] = {}    # these are attributes extracted from each data point
+                self.d1s[sn] = {}    # 1d scattering data, of the type data1d
+                self.attrs[sn] = {}
+
+            ra_list = list(set(read_attrs) & set(self.fh5[sn].attrs.keys()))
+            for k in ra_list:
+                self.__dict__[f"{k}_list"][sn] = self.fh5[sn].attrs[k].split()
+
+            grp = fh5[sn+'/processed']
+            self.d1s[sn],self.attrs[sn] = get_d1s_from_grp(grp, self.qgrid, sn)
             
 
     @h5_file_access  
@@ -1350,11 +1382,10 @@ class h5xs():
             print("done, time elapsed: %.2f sec" % (t2-t1))
             
     def plot_d1s(self, sn, ax=None, offset=1.5, fontsize="large",
-                    show_overlap=False, show_subtracted=False, show_subtraction=True):
-        """ show_subtracted:
-                work only if sample is background-subtracted, show the subtracted result
-            show_subtraction: 
-                if True, show sample and boffer when show_subtracted
+                    show_overlap=False, show_subtracted=None, src_d1=None, bkg_d1=None):
+        """ show_subtracted: value should be "subtracted" or "empty_subtracted"
+                the specified data must exist
+                source data fo
             show_overlap: 
                 also show data in the overlapping range from individual detectors
                 only allow if show_subtracted is False
@@ -1364,12 +1395,13 @@ class h5xs():
             plt.figure()
             ax = plt.gca()
         if show_subtracted:
-            if 'subtracted' not in list(self.d1s[sn].keys()):
-                raise Exception("bkg-subtracted data not found: ", sn)
-            self.d1s[sn]['subtracted'].plot(ax=ax, fontsize=fontsize)
-            if show_subtraction:
-                self.d1s[sn]['averaged'].plot(ax=ax, fontsize=fontsize)
-                self.d1b[sn].plot(ax=ax, fontsize=fontsize)
+            if not show_subtracted in self.d1s[sn].keys():
+                raise Exception(f"{show_subtracted} data does not exist for {sn} ...")
+            self.d1s[sn][show_subtracted].plot(ax=ax, fontsize=fontsize)
+            if isinstance(src_d1, Data1d):
+                src_d1.plot(ax=ax, fontsize=fontsize)
+            if isinstance(bkg_d1, Data1d):
+                bkg_d1.plot(ax=ax, fontsize=fontsize)
         else:
             sc = 1
             for i,d1 in enumerate(self.d1s[sn]['merged']):

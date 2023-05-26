@@ -323,7 +323,7 @@ class Data1d:
         return d0
 
 
-    def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, 
+    def bkg_cor(self, dbak, sc_factor=1., plot_data=False, ax=None, label=None,
                 inplace=False, check_overlap=False, show_eb=True, debug=False, fontsize='large'):
         """
         background subtraction
@@ -343,8 +343,12 @@ class Data1d:
         if dset.trans < 0 or dbak.trans <= 0:
             print("WARNING: trans value not assigned to data or background, assuming normalized intensity.")
             sc = 1.
-        else:
+        elif sc_factor==1.0:
             sc = dset.trans / dbak.trans
+        else:
+            sc = 1.
+            if sc_factor=='auto':
+                sc_factor = estimate_scaling_factor(self, dbak)
 
         # need to include raw data
         if plot_data:
@@ -392,6 +396,8 @@ class Data1d:
         if not sc_factor == 1.:
             dset.comments += "# with addtional scaling factor of: %f\n" % sc_factor
         dset.comments += dbak.comments.replace("# ", "## ")
+        if label:
+            dset.label = label
 
         return dset
 

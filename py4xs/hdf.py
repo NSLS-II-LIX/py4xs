@@ -63,7 +63,7 @@ def create_linked_files(fn, fnlist):
             for an in fs.attrs:
                 ff.attrs[an] = fs.attrs[an]
             ff.flush()
-        for ds in lsh5(fs, top_only=True, silent=True):
+        for ds in list(fs.keys()):
             ff[ds] = h5py.ExternalLink(s, ds)
         fs.close()
     ff.close()
@@ -545,7 +545,7 @@ def get_d1s_from_grp(grp, qgrid, label=""):
     for k in list(grp.attrs.keys()):
         attrs[k] = grp.attrs[k]   
     # initially only handles 1d data
-    for k in lsh5(grp, top_only=True, silent=True):
+    for k in list(grp.keys()):
         if 'trans' in grp[k].attrs.keys():
             tvs = grp[k].attrs['trans']
         else:
@@ -832,8 +832,7 @@ class h5xs():
     
     @h5_file_access  
     def list_samples(self, quiet=False):
-        samples = lsh5(self.fh5, top_only=True, silent=True)
-        self.samples = list(set(samples) - set(self.exclude_sample_names))
+        self.samples = list(set(self.fh5.keys()) - set(self.exclude_sample_names))
         if not quiet:
             print(self.samples)
     
@@ -1266,7 +1265,7 @@ class h5xs():
         fh5 = self.fh5
         
         for sn in samples:
-            if "processed" not in lsh5(fh5[sn], top_only=True, silent=True): 
+            if "processed" not in list(fh5[sn].keys()): 
                 continue
 
             if sn not in list(self.attrs.keys()):
@@ -1306,11 +1305,11 @@ class h5xs():
         
         self.enable_write(True, debug=debug)
         for sn in sns:
-            if "processed" not in list(lsh5(self.fh5[sn], top_only=True, silent=True)):
+            if "processed" not in list(self.fh5[sn].keys()):
                 grp = self.fh5[sn].create_group("processed")
             else:
                 grp = self.fh5[sn+'/processed']
-                g0 = lsh5(grp, top_only=True, silent=True)[0]
+                g0 = list(grp.keys())[0]
                 if grp[g0][0].shape[1]!=len(self.qgrid): # if grp[g0].value[0].shape[1]!=len(self.qgrid):
                     # new size for the data
                     del self.fh5[sn+'/processed']
@@ -1323,7 +1322,7 @@ class h5xs():
                     if debug is True:
                         print(f"writing attribute to {sn}: {k}")
 
-            ds_names = lsh5(grp, top_only=True, silent=True)
+            ds_names = list(grp.keys())
             for k in list(self.d1s[sn].keys()):
                 data,tvs = pack_d1(self.d1s[sn][k])
                 if debug is True:
@@ -1494,8 +1493,7 @@ class h5xs():
             t1 = time.time()
         
         fh5 = self.fh5
-        self.samples = lsh5(fh5, top_only=True, silent=(not debug))
-        
+        self.list_samples(quiet=True)
         results = {}
         pool = mp.Pool(N)
         jobs = []

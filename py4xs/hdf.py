@@ -1353,7 +1353,7 @@ class h5xs():
             else:
                 grp = grp0["attrs"]
                 g0 = list(grp.keys())[0]
-                if len(grp[g0][0])!=len(list(self.d0s[sn].values())[0]): 
+                if len(grp[g0])!=len(list(self.d0s[sn].values())[0]): 
                     # new size for the data
                     del grp0["attrs"]
                     grp = grp0.create_group("attrs")

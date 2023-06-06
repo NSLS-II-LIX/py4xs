@@ -141,3 +141,6 @@ open h5 file only when necessary
 2023-03:
 similarity calculation for Data1d; handling of intensity monitor data
 h5xs.exp_time() 
+
+2023-06:
+save h5xs.d0s under processed/attrs

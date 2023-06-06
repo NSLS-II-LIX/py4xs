@@ -117,15 +117,15 @@ class MatrixWithCoords:
     # 2D data with coordinates
     
     def __init__(self):
-        d = None
-        xc = None
-        xc_label = None
-        xc_prec = 3
-        yc = None 
-        yc_label = None
-        yc_prec = 3
-        err = None
-        datatype = None
+        self.d = None
+        self.xc = None
+        self.xc_label = None
+        self.xc_prec = 3
+        self.yc = None 
+        self.yc_label = None
+        self.yc_prec = 3
+        self.err = None
+        self.datatype = None
     
     def copy(self):
         ret = MatrixWithCoords()

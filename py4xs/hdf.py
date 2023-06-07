@@ -1352,20 +1352,22 @@ class h5xs():
                 grp = grp0.create_group("attrs")
             else:
                 grp = grp0["attrs"]
-                g0 = list(grp.keys())[0]
-                if len(grp[g0])!=len(list(self.d0s[sn].values())[0]): 
-                    # new size for the data
-                    del grp0["attrs"]
-                    grp = grp0.create_group("attrs")
+                if len(grp.keys())>0: # not empty
+                    g0 = list(grp.keys())[0]
+                    if len(grp[g0])!=len(list(self.d0s[sn].values())[0]): 
+                        # new size for the data
+                        del grp0["attrs"]
+                        grp = grp0.create_group("attrs")
 
             ds_names = list(grp.keys())
-            for k in list(self.d0s[sn].keys()):
-                if debug is True:
-                    print(f"writing attribute to {sn}/processed/attrs: {k}")
-                if k not in ds_names:
-                    grp.create_dataset(k, data=self.d0s[sn][k])
-                else:
-                    grp[k][...] = self.d0s[sn][k]   
+            if sn in self.d0s.keys():
+                for k in list(self.d0s[sn].keys()):
+                    if debug is True:
+                        print(f"writing attribute to {sn}/processed/attrs: {k}")
+                    if k not in ds_names:
+                        grp.create_dataset(k, data=self.d0s[sn][k])
+                    else:
+                        grp[k][...] = self.d0s[sn][k]   
                 
         self.enable_write(False, debug=debug)
 

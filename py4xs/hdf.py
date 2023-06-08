@@ -1089,7 +1089,8 @@ class h5xs():
     
     @h5_file_access  
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
-                force_synch='auto', force_synch_trig='auto', extend_mon_stream=True,
+                force_synch='auto', force_synch_trig={'em1': 'auto', 'em2': 'auto'}, 
+                extend_mon_stream=True,
                 plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
@@ -1129,6 +1130,7 @@ class h5xs():
             mts = {}
             mts0 = {}
             for monitor in [transmitted_monitor,incident_monitor]:
+                
                 strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor)
                 if ts is None:
                     ts = ts0
@@ -1139,14 +1141,20 @@ class h5xs():
                     data = data0
                     ts1 = ts
                 else:
-                    if force_synch_trig=="auto":
-                        hist,bins = np.histogram(data0, bins=10)  # try to use shutter opening as a reference
-                        ts1 = ts[data0>bins[-2]][4:]              # skip a few more points to make sure  
-                        data0 = data0[data0>bins[-2]][4:]
+                    if force_synch_trig[monitor]=="auto":
+                        # try to use shutter opening as a reference
+                        #hist,bins = np.histogram(data0, bins=10)  
+                        # there are situations transmitted beam intensity may peak then drop
+                        # due to bubbles in the sample. histogramming doesn't work so well
+                        # use differential instead
+                        dd = np.diff(data0)
+                        i = np.where(dd>np.max(dd)/2)[0][-1]
+                        ts1 = ts[i+4:]              # skip a few more points to make sure  
+                        data0 = data0[i+4:]
                         ts1 = ts0[0]-ts1[0]+ts1
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)
                     else:
-                        ts1 = ts0+force_synch_trig
+                        ts1 = ts0+force_synch_trig[monitor]
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)                
                 mdata0[monitor] = data0
                 mdata[monitor] = data

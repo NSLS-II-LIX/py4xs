@@ -592,7 +592,7 @@ class h5xs():
 
         self.setup(exp_setup, transField, have_raw_data)
         
-    def explict_open_h5(self, readonly=True):
+    def explicit_open_h5(self, readonly=True):
         if self.fh5:
             print(f"{self.fn} file is already open.")
         else:
@@ -603,7 +603,7 @@ class h5xs():
                 
     def explicit_close_h5(self):
         if not self.fh5:
-            print(f"{self.hn} file is already closed.")
+            print(f"{self.fn} file is already closed.")
         else:
             self.fh5.close()
         

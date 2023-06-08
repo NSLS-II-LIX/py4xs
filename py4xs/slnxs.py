@@ -327,6 +327,8 @@ class Data1d:
                 inplace=False, check_overlap=False, show_eb=True, debug=False, fontsize='large'):
         """
         background subtraction
+        if sc_factor is not specified, scale by trans values
+        if sc_factor is 'auto', the scaling factor will be estimated using estimate_scaling_factor()
         """
         dset = None
         if inplace:
@@ -890,7 +892,7 @@ def analyze(d1, qstart, qend, fix_qe, qcutoff, dmax):
     d1.plot_pr(I0, Rg, qmax=1.2, dmax=dmax)
     plt.subplots_adjust(bottom=0.15, wspace=0.25)
 
-    
+
 def estimate_scaling_factor(d1s, d1b, sc=0.9,
                             q_min=0.5, q_max=3.5, smoothing_width=5, prec=4, s_thresh=1,
                             plot_data=False, ax=None, debug=False):

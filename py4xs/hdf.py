@@ -1444,18 +1444,18 @@ class h5xs():
             sc = 1
             for i,d1 in enumerate(self.d1s[sn]['merged']):
                 if self.attrs[sn]['selected'][i]:
-                    d1.plot(ax=ax, scale=sc, fontsize=fontsize)
+                    d1.plot(ax=ax, scale=sc, fontsize=fontsize, show_overlap=show_overlap)
                     ax.plot(self.d1s[sn]['averaged'].qgrid, 
                             self.d1s[sn]['averaged'].data*sc, 
                             color="gray", lw=2, ls="--")
-                    if show_overlap:
-                        for det1,det2 in combinations(list(self.det_name.keys()), 2):
-                            idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
-                            if len(idx_ov)>0:
-                                ax.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
-                                        self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
-                                ax.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
-                                        self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
+                    #if show_overlap:
+                    #    for det1,det2 in combinations(list(self.det_name.keys()), 2):
+                    #        idx_ov = ~np.isnan(self.d1s[sn][det1][i].data) & ~np.isnan(self.d1s[sn][det2][i].data) 
+                    #        if len(idx_ov)>0:
+                    #            ax.plot(self.d1s[sn][det1][i].qgrid[idx_ov], 
+                    #                    self.d1s[sn][det1][i].data[idx_ov]*sc, "y^")
+                    #            ax.plot(self.d1s[sn][det2][i].qgrid[idx_ov], 
+                    #                    self.d1s[sn][det2][i].data[idx_ov]*sc, "gv")
                 else:
                     ax.plot(self.d1s[sn]['merged'][i].qgrid, self.d1s[sn]['merged'][i].data*sc, 
                             color="gray", lw=2, ls=":")

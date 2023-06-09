@@ -591,7 +591,7 @@ class Data1d:
                 ff.write(footer)
             ff.close()
 
-    def plot(self, ax=None, scale=1., fontsize='large', scale_wabs=-1):
+    def plot(self, ax=None, scale=1., fontsize='large', scale_wabs=-1, show_overlap=False):
         i_fs = get_font_size(fontsize)[0]
         if ax is None:
             plt.figure()
@@ -605,9 +605,10 @@ class Data1d:
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.errorbar(self.qgrid, self.data*scale, self.err*scale, label=self.label)
-        for ov in self.overlaps:
-            ax.plot(ov['q_overlap'], ov['raw_data1']*scale, "v")
-            ax.plot(ov['q_overlap'], ov['raw_data2']*scale, "^")
+        if show_overlap:
+            for ov in self.overlaps:
+                ax.plot(ov['q_overlap'], ov['raw_data1']*scale, "v")
+                ax.plot(ov['q_overlap'], ov['raw_data2']*scale, "^")
         leg = ax.legend(loc='upper right', frameon=False)
 
         for t in leg.get_texts():

@@ -318,7 +318,7 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
 def proc_merge1d(args):
     """ utility function to perfrom azimuthal average and merge detectors
     """
-    images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_1d,save_merged,dtype = args
+    images,sn,nframes,starting_frame_no,debug,detectors,qgrid,reft,save_merged,dtype = args
     ret = {'merged': []}
     sc = {}
     
@@ -1580,7 +1580,7 @@ class h5xs():
                 
     @h5_file_access  
     def load_data(self, samples=None, update_only=False, detectors=None, exclude_links=True,
-           reft=-1, save_1d=False, save_merged=False, debug=False, N=8, max_c_size=0, dtype=None):
+           reft=-1, save_d1s=True, save_merged=False, debug=False, N=8, max_c_size=0, dtype=None):
         """ assume multiple samples, parallel-process by sample
             use Pool to limit the number of processes; 
             access h5 group directly in the worker process
@@ -1643,11 +1643,11 @@ class h5xs():
 
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
                         job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size, debug,
-                                                             detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                                                             detectors, self.qgrid, reft, save_merged, dtype)])
                         jobs.append(job)
                     else: # serial processing
                         [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size, debug, 
-                                                        detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                                                        detectors, self.qgrid, reft, save_merged, dtype)) 
                         results[sn][fr1] = data                
                 else: # len(s)==4
                     for j in range(s[0]):  # slow axis
@@ -1657,11 +1657,11 @@ class h5xs():
                             images[det.extension] = dset[gn][j, i*c_size:i*c_size+nframes]
                         if N>1: # multi-processing, need to keep track of total number of active processes
                             job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1], debug,
-                                                                 detectors, self.qgrid, reft, save_1d, save_merged, dtype)])
+                                                                 detectors, self.qgrid, reft, save_merged, dtype)])
                             jobs.append(job)
                         else: # serial processing
                             [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1], debug, 
-                                                            detectors, self.qgrid, reft, save_1d, save_merged, dtype)) 
+                                                            detectors, self.qgrid, reft, save_merged, dtype)) 
                             results[sn][fr1] = data                
 
         if N>1:             
@@ -1684,7 +1684,8 @@ class h5xs():
                     data[k].extend(results[sn][frn][k])
             self.d1s[sn] = data
         
-        self.save_d1s(skip_d0s=True, debug=debug)
+        if save_d1s:
+            self.save_d1s(skip_d0s=True, debug=debug)
         if debug is True:
             t2 = time.time()
             print("done, time lapsed: %.2f sec" % (t2-t1))

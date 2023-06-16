@@ -628,7 +628,7 @@ def filter_by_similarity(datasets, max_distance=50, min_similar_sets=2,
         preselection is a list of True/False, False exclude the dataset from consideration
     """
     if len(datasets)==1:
-        return [True]
+        return datasets
     
     remove_list = []
     if preselection is not None:

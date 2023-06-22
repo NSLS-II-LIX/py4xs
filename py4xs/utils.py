@@ -19,7 +19,8 @@ def auto_clim(v, logScale, ch_thresh=10):
         Nbins = int(Nd/ch_thresh)
     
     for i in range(10):
-        val,bins = np.histogram(tt, range=[vmin, vmax], bins=Nbins)
+        val,bins = np.histogram(tt, bins=Nbins)
+        #val,bins = np.histogram(tt, range=[vmin, vmax], bins=Nbins)
         vidx = np.where(val>ch_thresh)[0]
         imin = vidx[0]
         vmin = bins[imin]

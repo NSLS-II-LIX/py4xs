@@ -1186,8 +1186,7 @@ class h5xs():
             mdata0 = {}
             mts = {}
             mts0 = {}
-            for monitor in [transmitted_monitor,incident_monitor]:
-                
+            for monitor in [transmitted_monitor,incident_monitor]:              
                 strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor)
                 if ts is None:
                     ts = ts0
@@ -1241,7 +1240,9 @@ class h5xs():
             self.d0s[sn]["transmitted"] = np.pad(mdata[transmitted_monitor], (0,check_size), constant_values=np.nan)
             self.d0s[sn]["incident"] = np.pad(mdata[incident_monitor], (0,check_size), constant_values=np.nan)
             self.d0s[sn]["transmission"] = self.d0s[sn]["transmitted"]/self.d0s[sn]["incident"]
-                        
+            # record integrated values
+            self.d0s[sn]["incident"] *= exp           
+            self.d0s[sn]["transmitted"] *= exp           
             
     def set_trans(self, transMode, sn=None, trigger=None, gf_sigma=2, dt0=-133.8, exp=1, plot_trigger=False, **kwargs): 
         """ set the transmission values for the merged data

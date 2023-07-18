@@ -401,10 +401,10 @@ class MatrixWithCoords:
 
     def format_coord(self, x, y):
         ix = x
-        iy = y  
+        iy = y-0.5   # based on the actual behavior of the plots
         msg = f"ix={ix:.1f}, iy={iy:.1f}; "
         
-        col = int(x+0.5)
+        col = int(ix+0.5)
         row = int(iy+0.5)
         xc0 = self.xc[col] #np.interp(col, np.arange(len(self.xc)), self.xc)
         yc0 = self.yc[row] #np.interp(row, np.arange(len(self.yc)), self.yc)

@@ -402,7 +402,7 @@ class h5exp():
 
             with h5py.File(dstd.fn, "r") as fh5:
                 dn = dstd.det_name[dstd.detectors[0].extension]
-                strn = find_field(self.fh5, dn, sn)
+                strn = find_field(dstd.fh5, dn, sn)
                 img = fh5[f"{sn}/{strn}/data/{dn}"][0]
 
                 # this would work better if the detector geometry specification 

@@ -118,4 +118,10 @@ class Mask:
         
     def clear_bit(self, x, y):
         self.map[x, y]=False
+        
+    def clear_mask(self, para):
+        (x, y, w, h) = para
+        for i in range(x-w,x+2):
+            for j in range(y-h,y+h):
+                self.map[i, j]=False
 

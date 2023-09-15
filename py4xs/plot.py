@@ -287,6 +287,8 @@ def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
         clim = auto_clim(dm.d, logScale)
     dm.plot(ax=ax, logScale=logScale, clim=clim, aspect=aspect, colorbar=colorbar)
     ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
+    
+    return dm
         
     
 def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,

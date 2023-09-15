@@ -401,7 +401,9 @@ class h5exp():
             data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
 
             with h5py.File(dstd.fn, "r") as fh5:
-                img = fh5["%s/primary/data/%s" % (sn, dstd.det_name[det.extension])][0]
+                dn = dstd.det_name[dstd.detectors[0].extension]
+                strn = find_field(self.fh5, dn, sn)
+                img = fh5[f"{sn}/{strn}/data/{dn}"][0]
 
                 # this would work better if the detector geometry specification 
                 # can be more flexible for pyFAI-recalib 
@@ -683,7 +685,12 @@ class h5xs():
             if not writable:
                 return
             raise Exception(f"attempting to enable writing to a read-only h5 file ...")
-        if self.writable == writable:
+        #if self.writable == writable:
+        if self.fh5.mode=="r+" and writable:
+            self.writable = True
+            return
+        elif self.fh5.mode=="r" and not writable:
+            self.writable = False
             return
         if debug:
             print(f"closing fh5: {self.fh5}")
@@ -911,7 +918,8 @@ class h5xs():
             #snaking = False
         else:
             raise Exception("don't kno how to handler the header", header)
-        dshape = self.fh5[f"{sn}/primary/data/{list(self.det_name.values())[0]}"].shape[:-2]
+        strn = find_field(self.fh5, self.det_name[self.detectors[0].extension], sn)
+        dshape = self.fh5[f"{sn}/{strn}/data/{list(self.det_name.values())[0]}"].shape[:-2]
     
         if frn is None:
             frn = 0
@@ -959,7 +967,8 @@ class h5xs():
             
         for det in detectors:
             try:
-                dset = self.fh5[f"{sn}/primary/data/{self.det_name[det.extension]}"]
+                strn = find_field(self.fh5, self.det_name[det.extension], sn)
+                dset = self.fh5[f"{sn}/{strn}/data/{self.det_name[det.extension]}"]
             except:
                 continue
             if frn=="average":
@@ -1609,7 +1618,8 @@ class h5xs():
                                     
             self.d1s[sn] = {}
             results[sn] = {}
-            dset = fh5["%s/primary/data" % sn]
+            strn = find_field(self.fh5, self.det_name[self.detectors[0].extension], sn)
+            dset = fh5[f"{sn}/{strn}/data"]
             
             s = dset["%s" % self.det_name[self.detectors[0].extension]].shape
             if len(s)==3 or len(s)==4:

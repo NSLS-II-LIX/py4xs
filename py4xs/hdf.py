@@ -68,20 +68,20 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
-def get_det_timestamps(grp, trigger, exp, err_band=5., debug=False):
+def get_det_timestamps(tgrp, dgrp, trigger, exp, err_band=5., debug=False):
     """ in fly scans, the timestamps comes from the XPS controller. sometimes the timestamps appear to be off
         the timestamp on the detector image is used as a fallback
         
         also check the length of the timestamp data, the total number of data points should agree of 
         number of frames in the scattering data
     """
-    ts0 = grp[f'timestamps/{trigger}'][...].flatten()
-    dns = [dn for dn in grp['timestamps'].keys() if 'image' in dn]
+    ts0 = tgrp[f'timestamps/{trigger}'][...].flatten()
+    dns = [dn for dn in dgrp['timestamps'].keys() if 'image' in dn]
     if len(dns)<1:
-        raise Exception("cannot find detector data in {grp}")
-    tsd = grp[f'timestamps/{dns[0]}'][...]
+        raise Exception(f"cannot find detector data in {dgrp}")
+    tsd = dgrp[f'timestamps/{dns[0]}'][...]
 
-    dshape = grp[f'data/{dns[0]}'].shape[:-2]
+    dshape = dgrp[f'data/{dns[0]}'].shape[:-2]
     if len(dshape)>1:
         if len(dshape)>2:
             raise Exception(f"Don't know how to handle data shape {dshape}")
@@ -508,6 +508,8 @@ def find_field(fh5, fieldName, sname):
     if isinstance(sname,list):
         return tstream
     
+    if len(tstream.keys())==0:
+        return None
     return tstream[sname] 
 
 
@@ -1123,20 +1125,25 @@ class h5xs():
 
     @h5_file_access  
     def get_ts(self, sn, exp, trigger="sol"):
+        dn = list(self.det_name.values())[0]
+        strn = find_field(self.fh5, dn, sn)
         if trigger=="sol" or trigger is None:
-            dn = list(self.det_name.values())[0]
             # expect a finite but minimal offset in time since all come from the same IOC server
-            ts0 = self.fh5[f'{sn}/primary/timestamps/{dn}'][...].flatten()
-            dshape = self.fh5[f"{sn}/primary/data/{dn}"].shape[0]   # length of the time sequence
+            ts0 = self.fh5[f'{sn}/{strn}/timestamps/{dn}'][...].flatten()
+            dshape = self.fh5[f"{sn}/{strn}/data/{dn}"].shape[0]   # length of the time sequence
 
             # multiple exposures, single trigger, as in HT measurements
             # or some kind of glitch causing the timestamps to be constant
             if len(ts0)==1 or ts0[-1]-ts0[0]<1: 
                 ts0 = ts0[0]+np.arange(dshape)*exp    
-        elif trigger in self.fh5[f'{sn}/primary/timestamps'].keys():
-            ts0 = get_det_timestamps(self.fh5[f'{sn}/primary/'], trigger, exp)
         else:
-            raise Exception(f"timestamp data for {trigger} cannot be found.")
+            t_strn = find_field(self.fh5, trigger, sn)
+            if t_strn:
+                ts0 = get_det_timestamps(self.fh5[f'{sn}/{t_strn}/'],
+                                         self.fh5[f'{sn}/{strn}/'],
+                                         trigger, exp)
+            else:
+                raise Exception(f"timestamp data for {trigger} cannot be found.")
 
         return ts0
     

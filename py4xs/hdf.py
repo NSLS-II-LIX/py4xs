@@ -68,7 +68,7 @@ def create_linked_files(fn, fnlist):
         fs.close()
     ff.close()
 
-def get_det_timestamps(tgrp, dgrp, trigger, exp, err_band=5., debug=False):
+def get_det_timestamps(tgrp, dgrp, trigger, exp, err_band=5., debug=False, slow_axis=None):
     """ in fly scans, the timestamps comes from the XPS controller. sometimes the timestamps appear to be off
         the timestamp on the detector image is used as a fallback
         
@@ -76,6 +76,13 @@ def get_det_timestamps(tgrp, dgrp, trigger, exp, err_band=5., debug=False):
         number of frames in the scattering data
     """
     ts0 = tgrp[f'timestamps/{trigger}'][...].flatten()
+    # fix Zebra time stamps if necessary
+    if ts0[0]<1000 and slow_axis: # indicative of relative timestamps
+        ts1 = tgrp[f'timestamps/{slow_axis}'][...].flatten()
+        nn = int(len(ts0)/len(ts1))
+        t00 = ts0[nn-1]+exp   # slow axis position if read after the completion of the trjactory
+        ts0 += np.repeat(ts1, nn)-t00
+    
     dns = [dn for dn in dgrp['timestamps'].keys() if 'image' in dn]
     if len(dns)<1:
         raise Exception(f"cannot find detector data in {dgrp}")
@@ -204,7 +211,8 @@ def get_monitor_counts(grp, monitorName):
     if strn is None:
         raise Exception(f"could not find the stream that contains {monitorName}.")
 
-    if strn=="primary": # use detector timestamps
+    #if strn=="primary": # use detector timestamps
+    if not 'monitor' in strn:
         return strn,None,data
     
     # in the case of timeseries data, the time stamps need to be lengthened
@@ -221,6 +229,7 @@ def get_monitor_counts(grp, monitorName):
         dt = np.average(np.diff(ts))  # the intervals appear to be constant in the data
         # assuming that the time stamp correspond to the time of read
         ts = np.linspace(ts[0]-dt, ts[-1], len(data))
+        #ts = ts[0]+dt*np.arange(len(data))
     
     return strn,ts,data
 
@@ -377,7 +386,8 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)
     
-    def recalibrate(self, fn_std, energy, e_range=[5, 20], use_recalib=False,
+    def recalibrate(self, fn_std, energy, sn=None,
+                    e_range=[5, 20], use_recalib=False,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
                     bkg={}, temp_file_location="/tmp"):
         """ fn_std should be a h5 file that contains AgBH pattern
@@ -387,7 +397,8 @@ class h5exp():
         pxsize = 0.172e-3
         dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
         uname = os.getenv("USER")
-        sn = dstd.samples[0]
+        if sn is None:
+            sn = dstd.samples[0]
         if energy>=e_range[0] and energy<=e_range[1]:
             wl = 2.*np.pi*1.973/energy
             for det in self.detectors:
@@ -1139,9 +1150,15 @@ class h5xs():
         else:
             t_strn = find_field(self.fh5, trigger, sn)
             if t_strn:
+                mots = self.header(sn)['motors']
+                if len(mots)==2:
+                    mots.remove(trigger)
+                    slow_axis = mots[0]
+                else:
+                    slow_axis = None
                 ts0 = get_det_timestamps(self.fh5[f'{sn}/{t_strn}/'],
                                          self.fh5[f'{sn}/{strn}/'],
-                                         trigger, exp)
+                                         trigger, exp, slow_axis=slow_axis)                
             else:
                 raise Exception(f"timestamp data for {trigger} cannot be found.")
 
@@ -1206,13 +1223,7 @@ class h5xs():
                 strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor)
                 if ts is None:
                     ts = ts0
-                if strn=="primary":
-                    print(f"{monitor} used as a detector.")
-                    if len(data0)<len(ts0):
-                        data0 = np.pad(data0, (0,len(ts0)-len(data0)), constant_values=np.nan)
-                    data = data0
-                    ts1 = ts
-                else:
+                if 'monitor' in strn: # e.g. em1_ts_SumAll_monitor
                     if force_synch_trig[monitor]=="auto":
                         # try to use shutter opening as a reference
                         #hist,bins = np.histogram(data0, bins=10)  
@@ -1228,6 +1239,12 @@ class h5xs():
                     else:
                         ts1 = ts0+force_synch_trig[monitor]
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)                
+                else: # strn=="primary", this is no longer the case in the updated flyscan (Oct 2023)
+                    print(f"{monitor} used as a detector.")
+                    if len(data0)<len(ts0):
+                        data0 = np.pad(data0, (0,len(ts0)-len(data0)), constant_values=np.nan)
+                    data = data0
+                    ts1 = ts
                 mdata0[monitor] = data0
                 mdata[monitor] = data
                 mts0[monitor] = ts1
@@ -1657,7 +1674,7 @@ class h5xs():
                     images = {}
                     for det in detectors:
                         gn = f'{self.det_name[det.extension]}'
-                        images[det.extension] = dset[gn][i*c_size:i*c_size+nframes]    
+                        images[det.extension] = dset[gn][i*c_size:i*c_size+nframes] 
 
                     if N>1: # multi-processing, need to keep track of total number of active processes                    
                         job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size, debug,

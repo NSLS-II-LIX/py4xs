@@ -757,24 +757,34 @@ class h5xs():
         
     @h5_file_access
     def dshape(self, dsname, data_type="data", sn=None):
-        assert (data_type in ["data", "timestamps"])
         if sn is None:
             sn = self.samples[0]
-        strm = find_field(self.fh5, dsname, sn)
-        return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"].shape
+        if data_type in ["data", "timestamps"]:
+            strm = find_field(self.fh5, dsname, sn)
+            dpath = f"{sn}/{strm}/{data_type}/{dsname}"
+        else:
+            dpath = f"{sn}/{data_type}/{dsname}"
+        return self.fh5[dpath].shape
     
     @h5_file_access
-    def dset(self, dsname, data_type="data", sn=None, get_path=False, return_reference=True):
-        assert (data_type in ["data", "timestamps"])
+    def dset(self, dsname, data_type="data", sn=None, get_path=False, return_reference=True, debug=False):
         if sn is None:
             sn = self.samples[0]
-        strm = find_field(self.fh5, dsname, sn)
+        if data_type in ["data", "timestamps"]:
+            strm = find_field(self.fh5, dsname, sn)
+            dpath = f"{sn}/{strm}/{data_type}/{dsname}"
+        else: 
+            dpath = f"{sn}/{data_type}/{dsname}"
+
+        if debug:
+            print(dpath)
+        
         if get_path:
-            return f"{sn}/{strm}/{data_type}/{dsname}"
+            return dpath
         if return_reference:
-            return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"]   # just return a reference  
+            return self.fh5[dpath]   # just return a reference  
         else:
-            return self.fh5[f"{sn}/{strm}/{data_type}/{dsname}"][...]
+            return self.fh5[dpath][...]
     
     @h5_file_access  
     def md_dict(self, sn, md_keys=[]):
@@ -982,6 +992,9 @@ class h5xs():
             try:
                 strn = find_field(self.fh5, self.det_name[det.extension], sn)
                 dset = self.fh5[f"{sn}/{strn}/data/{self.det_name[det.extension]}"]
+                if frn!="average": # this could raise an exception if frn is out of bounds
+                    frn = self.verify_frn(sn, frn)
+                    d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             except:
                 continue
             if frn=="average":
@@ -991,9 +1004,6 @@ class h5xs():
                 fut = da.average(imgs, axis=tuple(range(len(dset.shape)-2)))
                 davg = fut.compute(client=client)
                 d2 = Data2d(davg, exp=det.exp_para, dtype=dtype)
-            else:
-                frn = self.verify_frn(sn, frn)
-                d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 
             d2s[det.extension] = d2
 

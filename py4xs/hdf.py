@@ -571,6 +571,9 @@ def get_d1s_from_grp(grp, qgrid, label=""):
 
     return d1s,attrs
 
+def err_callback(e):
+    print(f"an error has occured: {e}")
+
 class h5xs():
     """ Scattering data in transmission geometry
         Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
@@ -1701,8 +1704,10 @@ class h5xs():
                             gn = f'{self.det_name[det.extension]}'
                             images[det.extension] = dset[gn][j, i*c_size:i*c_size+nframes]
                         if N>1: # multi-processing, need to keep track of total number of active processes
-                            job = pool.map_async(proc_merge1d, [(images, sn, nframes, i*c_size+j*s[1], debug,
-                                                                 detectors, self.qgrid, reft, save_merged, dtype)])
+                            job = pool.map_async(proc_merge1d, 
+                                                 [(images, sn, nframes, i*c_size+j*s[1], debug, 
+                                                   detectors, self.qgrid, reft, save_merged, dtype)],
+                                                 error_callback=err_callback)
                             jobs.append(job)
                         else: # serial processing
                             [sn, fr1, data] = proc_merge1d((images, sn, nframes, i*c_size+j*s[1], debug, 

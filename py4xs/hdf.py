@@ -193,33 +193,43 @@ def integrate_mon(em, ts, ts0, exp, extend_mon_stream, ts_pos_in_frame="start", 
         em0.append(simpson(ee, tt))
     return np.asarray(em0)/exp
 
-def get_monitor_counts(grp, monitorName):
+def get_monitor_counts(grp, monitorName, debug=False):
     """ look under a data group (grp) that belong to a specific sample, find the stream that contains fieldName
         caluclate the monitor counts based on the given timestamps (ts) and exposure time
     """
     strn = None
-    for stream in list(grp):
-        if not 'data' in list(grp[stream]):
-            continue
-        for fieldName in list(grp[stream]["data"]):
-            if monitorName in fieldName:
-                strn = stream
-                data = grp[strn]["data"][fieldName][...]
-                #ts = grp[strn]["timestamps"][fieldName][...]   # this filed seems to have occasional issues 
-                ts = grp[strn]["time"][...]   # this is consistent with data from databroker
-                break
+    streams = [stn for stn in list(grp.keys()) if stn.find(monitorName)>=0 and 'data' in list(grp[stn].keys())]
+    for stream in streams:
+        if debug:
+            print(f"checking {stream}: {list(grp[stream].keys())}")
+            print(f"  fields under data: {list(grp[stream]['data'].keys())} ")
+        fields = [fdn for fdn in list(grp[stream]["data"].keys()) if fdn.find(monitorName)>=0]
+        if len(fields)>1:
+            print(f"Warning: found multiple streams: ({strn, stream}) or fields: {fields} ...")
+        strn = stream
+        fieldName = fields[0]
+        data = grp[strn]["data"][fieldName][...]
+        #ts = grp[strn]["timestamps"][fieldName][...]   # this field seems to have occasional issues 
+        ts = grp[strn]["time"][...]   # this is consistent with data from databroker
+        if debug:
+            print(f'  found data in {fieldName}, {len(data)} elements...')
+
     if strn is None:
         raise Exception(f"could not find the stream that contains {monitorName}.")
 
-    #if strn=="primary": # use detector timestamps
-    if not 'monitor' in strn:
-        return strn,None,data
+    if strn.find('monitor')<0:
+        return strn,None,data        # use detector timestamps
     
+    if len(data)!=len(ts):
+        raise Exception("mismatched data length: {len(ts)} (ts) vs {len(data)} (data) ")
     # in the case of timeseries data, the time stamps need to be lengthened
     n = int(len(data)/len(ts))
     if n>1:
         # sometimes the first two timestamps are the same; based on the data, this seems to be 
         # an error, and the first timestamp should to be forward adjusted 
+        if debug:
+            print("reformating timestamps ...")
+        
         if ts[0]==ts[1]:
             ts[0] -= (ts[2]-ts[1])
             #data = np.reshape(data, [-1, len(ts)])
@@ -1193,7 +1203,7 @@ class h5xs():
     @h5_file_access  
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
                 force_synch='auto', force_synch_trig={'em1': 'auto', 'em2': 'auto'}, 
-                extend_mon_stream=True,
+                extend_mon_stream=True, debug=False,
                 plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
             1. if the monitors are read together with the detectors 
@@ -1233,7 +1243,9 @@ class h5xs():
             mts = {}
             mts0 = {}
             for monitor in [transmitted_monitor,incident_monitor]:              
-                strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor)
+                strn,ts,data0 = get_monitor_counts(self.fh5[sn], monitor, debug=debug)
+                if debug:
+                    print(strn,ts,data0)
                 if ts is None:
                     ts = ts0
                 if 'monitor' in strn: # e.g. em1_ts_SumAll_monitor
@@ -1243,10 +1255,14 @@ class h5xs():
                         # there are situations transmitted beam intensity may peak then drop
                         # due to bubbles in the sample. histogramming doesn't work so well
                         # use differential instead
-                        dd = np.diff(data0)
-                        i = np.where(dd>np.max(dd)/2)[0][-1]
-                        ts1 = ts[i+4:]              # skip a few more points to make sure  
-                        data0 = data0[i+4:]
+                        #dd = np.diff(data0)
+                        #i = np.where(dd>np.max(dd)/2)[0][-1]   # this would be a problem if the monitor sees intensity all the time
+                        i = np.where(data0>np.max(data0)/2)[0][0]   # look for the first data point with more than half intensity
+                        if i>0 and len(ts)/len(ts0)>2:  # monitor running much faster than detector
+                            ts1 = ts[i+4:]              # skip a few more points to make sure, maybe useful for fly scans  
+                            data0 = data0[i+4:]
+                        else:
+                            ts1 = ts
                         ts1 = ts0[0]-ts1[0]+ts1
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)
                     else:

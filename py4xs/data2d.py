@@ -447,7 +447,7 @@ class MatrixWithCoords:
         d = roi.d[~np.isnan(roi.d)]
         return np.sum(d)/len(d)
     
-    def line_profile(self, direction, xrange=None, yrange=None, 
+    def line_profile(self, direction, xrange=None, yrange=None, bkg_range=None,
                      plot_data=False, ax=None, 
                      return_data1d=False, **kwargs):
         """ return the line profile along the specified direction ("x" or "y"), 
@@ -469,6 +469,13 @@ class MatrixWithCoords:
             
         roi = self.roi(xrange[0], xrange[1], yrange[0], yrange[1])
         dd,ee = roi.flatten(axis=direction)
+        if bkg_range:
+            if direction=="x":
+                broi = self.roi(xrange[0], xrange[1], bkg_range[0], bkg_range[1])
+            if direction=="y":
+                broi = self.roi(bkg_range[0], bkg_range[1], yrange[0], yrange[1])
+            bdd,ee = broi.flatten(axis=direction)
+            dd -= bdd
         
         if plot_data:
             if ax is None:

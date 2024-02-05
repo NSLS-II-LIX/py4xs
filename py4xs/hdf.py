@@ -220,9 +220,10 @@ def get_monitor_counts(grp, monitorName, debug=False):
     if strn.find('monitor')<0:
         return strn,None,data        # use detector timestamps
     
-    if len(data)!=len(ts):
-        raise Exception("mismatched data length: {len(ts)} (ts) vs {len(data)} (data) ")
-    # in the case of timeseries data, the time stamps need to be lengthened
+    #if len(data)!=len(ts):
+    #    print("Warning: mismatched data length: {len(ts)} (ts) vs {len(data)} (data) ")
+    # in the case of timeseries data, the timestamps need to be lengthened
+    # since they are recorded only when the buffer is read 
     n = int(len(data)/len(ts))
     if n>1:
         # sometimes the first two timestamps are the same; based on the data, this seems to be 

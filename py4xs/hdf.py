@@ -198,7 +198,7 @@ def get_monitor_counts(grp, monitorName, debug=False):
         caluclate the monitor counts based on the given timestamps (ts) and exposure time
     """
     strn = None
-    streams = [stn for stn in list(grp.keys()) if stn.find(monitorName)>=0 and 'data' in list(grp[stn].keys())]
+    streams = [stn for stn in list(grp.keys()) if stn.find(monitorName)>=0 or 'data' in list(grp[stn].keys())]
     for stream in streams:
         if debug:
             print(f"checking {stream}: {list(grp[stream].keys())}")

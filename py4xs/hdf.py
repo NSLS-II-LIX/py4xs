@@ -204,6 +204,8 @@ def get_monitor_counts(grp, monitorName, debug=False):
             print(f"checking {stream}: {list(grp[stream].keys())}")
             print(f"  fields under data: {list(grp[stream]['data'].keys())} ")
         fields = [fdn for fdn in list(grp[stream]["data"].keys()) if fdn.find(monitorName)>=0]
+        if len(fields)==0:
+            continue
         if len(fields)>1:
             print(f"Warning: found multiple streams: ({strn, stream}) or fields: {fields} ...")
         strn = stream
@@ -212,7 +214,7 @@ def get_monitor_counts(grp, monitorName, debug=False):
         #ts = grp[strn]["timestamps"][fieldName][...]   # this field seems to have occasional issues 
         ts = grp[strn]["time"][...]   # this is consistent with data from databroker
         if debug:
-            print(f'  found data in {fieldName}, {len(data)} elements...')
+            print(f'  found data in {fieldName}, {len(data)} elements, {len(ts)} timestamps ...')
 
     if strn is None:
         raise Exception(f"could not find the stream that contains {monitorName}.")
@@ -1203,7 +1205,9 @@ class h5xs():
     
     @h5_file_access  
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
-                force_synch='auto', force_synch_trig={'em1': 'auto', 'em2': 'auto'}, 
+                force_synch='auto', 
+                force_synch_trig={'em1': 'auto', 'em2': 'auto'},
+                timestamp_scaling={'em1': 1.00132, 'em2': 1.},   # this is empirical
                 extend_mon_stream=True, debug=False,
                 plot_trigger=False, **kwargs): 
         """ calculate the monitor counts for each data point
@@ -1249,6 +1253,9 @@ class h5xs():
                     print(strn,ts,data0)
                 if ts is None:
                     ts = ts0
+                else:
+                    ts = ts[0]+(ts-ts[0])*timestamp_scaling[monitor]     # for some reason Siddons EM seem to have a problem with the timestamps
+
                 if 'monitor' in strn: # e.g. em1_ts_SumAll_monitor
                     if force_synch_trig[monitor]=="auto":
                         # try to use shutter opening as a reference
@@ -1267,7 +1274,7 @@ class h5xs():
                         ts1 = ts0[0]-ts1[0]+ts1
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)
                     else:
-                        ts1 = ts0+force_synch_trig[monitor]
+                        ts1 = ts+force_synch_trig[monitor]
                         data = integrate_mon(data0, ts1, ts0, exp, extend_mon_stream, **kwargs)                
                 else: # strn=="primary", this is no longer the case in the updated flyscan (Oct 2023)
                     print(f"{monitor} used as a detector.")

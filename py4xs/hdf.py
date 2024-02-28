@@ -599,10 +599,11 @@ class h5xs():
         
     """    
     def __init__(self, fn, exp_setup=None, transField=transmitted_monitor, save_d1=True, 
-                 have_raw_data=True, read_only=False, exclude_sample_names=[]):
+                 have_raw_data=True, sn=None, read_only=False, exclude_sample_names=[]):
         """ exp_setup: [detectors, qgrid]
             transField: the intensity monitor field packed by suitcase from databroker
             save_d1: save newly processed 1d data back to the h5 file
+            sn is needed when raw data files linked to h5xs_scan contain multiple samples
         """
         self.d0s = {}
         self.d1s = {}
@@ -623,7 +624,7 @@ class h5xs():
         #self.fh5 = h5py.File(fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
         self.save_d1 = save_d1
 
-        self.setup(exp_setup, transField, have_raw_data)
+        self.setup(exp_setup, sn, transField, have_raw_data)
         
     def explicit_open_h5(self, readonly=True):
         if self.fh5:
@@ -641,7 +642,7 @@ class h5xs():
             self.fh5.close()
         
     @h5_file_access  
-    def setup(self, exp_setup=None, transField=transmitted_monitor, have_raw_data=True):
+    def setup(self, exp_setup=None, sn=None, transField=transmitted_monitor, have_raw_data=True):
         if exp_setup is None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -653,7 +654,8 @@ class h5xs():
         if have_raw_data:
             # find out what are the fields corresponding to the 2D detectors
             # at LiX there are two possibilities; assume all samples have have data stored in the same fileds
-            sn = self.samples[0]
+            if sn is None:
+                sn = self.samples[0]
             streams = list(self.fh5[sn].keys())
             data_fields = {}
             for stnm in streams:

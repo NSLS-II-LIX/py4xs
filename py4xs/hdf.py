@@ -1,7 +1,7 @@
 # need to have a more uniform method to exchange (pack/unpack) 1D and 2D PROCESSED data with hdf5
 # type of data: Data1d, MatrixWithCoordinates (not just simple numpy arrays)
 import pylab as plt
-import h5py
+import h5py,re
 import numpy as np
 import time,datetime
 import os,copy,subprocess,re
@@ -22,7 +22,8 @@ from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
 from scipy.integrate import simpson
-
+import skimage.filters as ft
+import skimage.morphology as morph
 from functools import wraps
 
 USE_DASK = True
@@ -370,7 +371,132 @@ def proc_merge1d(args):
         print("processing completed: ", sn, starting_frame_no)
 
     return [sn, starting_frame_no, ret]
-        
+
+def calib_detector(det, dstd, sn, wl, det_type, pxsize, 
+                   bkg, use_recalib, temp_file_location):
+    print(f"processing detector {det.extension} ...")    
+    ep = det.exp_para
+    ep.wavelength = wl
+    uname = os.getenv("USER")
+    data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
+
+    with h5py.File(dstd.fn, "r") as fh5:
+        dn = dstd.det_name[det.extension]
+        strn = find_field(fh5, dn, sn)
+        img = fh5[f"{sn}/{strn}/data/{dn}"][0]
+
+        # this would work better if the detector geometry specification 
+        # can be more flexible for pyFAI-recalib 
+        if ep.flip: ## can only handle flip=1 right now
+            if ep.flip!=1: 
+                raise Exception(f"don't know how to handle flip={ep.flip}.")
+            poni1 = pxsize*ep.bm_ctr_x
+            poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
+            dmask = np.fliplr(det.exp_para.mask.map.T)
+        else: 
+            poni1 = pxsize*ep.bm_ctr_y
+            poni2 = pxsize*ep.bm_ctr_x
+            dmask = det.exp_para.mask.map
+        if det.extension in bkg.keys():
+            img -= bkg[det.extension]
+        fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+
+    if use_recalib:
+        # WARNING: pyFAI-recalib is obselete
+        poni_file = f"/tmp/{uname}{det.extension}.poni"
+        poni_file_text = ["poni_version: 2",
+                          f"Detector: {det_type[det.extension]}",
+                          "Detector_config: {}",
+                          f"Distance: {pxsize*ep.Dd}",
+                          f"Poni1: {poni1}", # y-axis
+                          f"Poni2: {poni2}", # x-axis
+                          "Rot1: 0.0", "Rot2: 0.0", "Rot3: 0.0",
+                          f"Wavelength: {ep.wavelength*1e-10:.4g}"]
+        fh = open(poni_file, "w")
+        fh.write("\n".join(poni_file_text))
+        fh.close()
+        #cmd = ["pyFAI-recalib", "-i", poni_file, 
+        #       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+        cmd = ["pyFAI-calib", "-i", poni_file, 
+               "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
+        print(" ".join(cmd))
+        ret = run(cmd)
+        txt = ret.strip().split('\n')[-1]
+        #print(txt)
+        print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+        d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=float)[:3]
+        dr = d/(ep.Dd*pxsize)/1000  # d is in mm
+        ep.ratioDw *= dr
+        if ep.flip: ## can only handle flip=1 right now
+            ep.bm_ctr_x = yc
+            ep.bm_ctr_y = ep.ImageHeight-xc
+        else: 
+            ep.bm_ctr_y = yc
+            ep.bm_ctr_x = xc
+        print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    else:
+        cmd = ["pyFAI-calib2",
+               "-D", det_type[det.extension],
+               "-w", f"{ep.wavelength:.4f}", "--dist", f"{pxsize*ep.Dd:.5f}",
+               "--poni1", f"{poni1:.6f}", "--poni2", f"{poni2:.6f}", "--no-tilt",
+               "-c", "AgBh", data_file]
+        print("pyFAI-recalib is now obselete ...") 
+        print("Run this interactively:")
+        print(" ".join(cmd))
+        fp = input("Then enter the path/name of the PONI file:")
+
+        with open(fp, "r") as fh:
+            lines = {}
+            for _ in fh.read().split("\n"):
+                tl = _.split(":")
+                if len(tl)==2:
+                    lines[tl[0]] = tl[1]
+
+        print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+        ep.ratioDw *= float(lines['Distance'])/(ep.Dd*pxsize)
+        xc = float(lines['Poni2'])/pxsize
+        yc = float(lines['Poni1'])/pxsize
+        if ep.flip: ## can only handle flip=1 right now
+            ep.bm_ctr_x = yc
+            ep.bm_ctr_y = ep.ImageHeight-xc
+        else: 
+            ep.bm_ctr_y = yc
+            ep.bm_ctr_x = xc
+        print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    ep.init_coordinates()
+    #if det.extension is not "_SAXS":        
+    
+def generate_mask_from_std(det, dstd, std_samples, template_map=None):
+    """ some LiX-specific assumptions are made
+    """
+    d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension).data.d
+    d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension).data.d
+    d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension).data.d for sn in std_samples['empty']], axis=0)
+    
+    if "SAXS" in det.extension:
+        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
+        bb0 = (bb[:-1]+bb[1:])/2
+        carbon_thresh = np.min(cc)*2
+
+        bs = (d2carbon<np.std(d2carbon)/4) & (d2carbon>0)
+        bs = (morph.dilation(bs, morph.disk(2))>0)
+        extra = bs
+    else: # WAXS
+        cc,bb = np.histogram(d2empty.flatten(), bins=50, range=[0, np.std(d2empty)])
+        bb0 = (bb[:-1]+bb[1:])/2
+        cc0 = cc[-1]/2 
+        empty_thresh = np.average(bb0[cc>0.1*np.max(cc)])*3
+                
+        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
+        bb0 = (bb[:-1]+bb[1:])/2
+        carbon_thresh = cc[-1]/5         
+        mica_pks = (d2empty>empty_thresh)
+        extra = mica_pks
+
+    hot_pix = (d2dark>1)
+    dead_pix = (d2carbon<carbon_thresh)
+    return hot_pix|dead_pix|extra
+    
 class h5exp():
     """ empty h5 file for exchanging exp_setup/qgrid
     """
@@ -380,8 +506,7 @@ class h5exp():
             self.qgrid = self.read_detectors()
         else:
             self.detectors, self.qgrid = exp_setup
-            self.save_detectors()
-        
+            self.save_detectors()  
         
     def save_detectors(self):
         self.fh5 = h5py.File(self.fn, "w")   # new file
@@ -397,121 +522,81 @@ class h5exp():
         qgrid = self.fh5.attrs['qgrid']
         self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
         self.fh5.close()
-        return np.asarray(qgrid)
+        return np.asarray(qgrid)            
     
-    def recalibrate(self, fn_std, energy, sn=None,
-                    e_range=[5, 20], use_recalib=False,
-                    det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"},
+    def recalibrate(self, fn_std, energy=None,
+                    e_range=[5, 20], use_recalib=False, generate_mask=False,
+                    det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,
                     bkg={}, temp_file_location="/tmp"):
-        """ fn_std should be a h5 file that contains AgBH pattern
+        """ fn_std should be a h5 file that contains standard pattern
+                *AgBH*
+                *dark*: images with the beam off
+                *empty*: this for dealing with mica peaks, there could be multiple empty samples
+                        e.g. corresponding to the different flow channels for solution scattering
+                *carbon*: high, continuous intensity 
+                
+            AgBH is for detector geometry calibration, must present
+            others are optional, needed for mask generation, must be all present
+            if carbon data is present, will also adjust scaling between detectors
+            
             use the specified energy (keV) if the value is valid
-            detector type
+            detector type            
         """
-        pxsize = 0.172e-3
         dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
-        uname = os.getenv("USER")
-        if sn is None:
-            sn = dstd.samples[0]
+        if energy is None:
+            energy = dstd.header(dstd.samples[0])["energy"]["energy"]/1000
+
+        samples = {}
+        samples["empty"] = []
+        for sn in dstd.samples:
+            if re.search('AgBH', sn, re.IGNORECASE):
+                samples['AgBH'] = sn
+            elif re.search('empty', sn, re.IGNORECASE):
+                samples['empty'].append(sn)
+            elif re.search('dark', sn, re.IGNORECASE):
+                samples['dark'] = sn
+            elif re.search('carbon', sn, re.IGNORECASE):
+                samples['carbon'] = sn
+                
         if energy>=e_range[0] and energy<=e_range[1]:
             wl = 2.*np.pi*1.973/energy
-            for det in self.detectors:
-                det.exp_para.wavelength = wl
         else:
             raise Exception(f"energy should be between {e_range[0]} and {e_range[1]} (keV): {energy}")
+
+        if 'AgBH' not in samples.keys():
+            print("AgBH data not present for calibration ...")
+            calib = False
+        else:
+            calib = True
+
+        if generate_mask:
+            if not set(["dark", "carbon"]).issubset(samples.keys()) or len(samples["empty"])==0:
+                print("Not all required data are present for mask generation ...")
+                generate_mask = False
+
+        for i in range(len(self.detectors)):
+            if generate_mask:
+                bmap = generate_mask_from_std(self.detectors[i], dstd, samples)
+                dstd.detectors[i].exp_para.mask.map = bmap
+                self.detectors[i].exp_para.mask.map = bmap
+            if calib:
+                calib_detector(self.detectors[i], dstd, samples['AgBH'], wl, det_type, pxsize, 
+                               bkg, use_recalib, temp_file_location)
         
-        for det in self.detectors:
-            print(f"processing detector {det.extension} ...")    
-            ep = det.exp_para
-            data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
-
-            with h5py.File(dstd.fn, "r") as fh5:
-                dn = dstd.det_name[det.extension]
-                strn = find_field(fh5, dn, sn)
-                img = fh5[f"{sn}/{strn}/data/{dn}"][0]
-
-                # this would work better if the detector geometry specification 
-                # can be more flexible for pyFAI-recalib 
-                if ep.flip: ## can only handle flip=1 right now
-                    if ep.flip!=1: 
-                        raise Exception(f"don't know how to handle flip={ep.flip}.")
-                    poni1 = pxsize*ep.bm_ctr_x
-                    poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
-                    dmask = np.fliplr(det.exp_para.mask.map.T)
-                else: 
-                    poni1 = pxsize*ep.bm_ctr_y
-                    poni2 = pxsize*ep.bm_ctr_x
-                    dmask = det.exp_para.mask.map
-                if det.extension in bkg.keys():
-                    img -= bkg[det.extension]
-                fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
-
-            if use_recalib:
-                # WARNING: pyFAI-recalib is obselete
-                poni_file = f"/tmp/{uname}{det.extension}.poni"
-                poni_file_text = ["poni_version: 2",
-                                  f"Detector: {det_type[det.extension]}",
-                                  "Detector_config: {}",
-                                  f"Distance: {pxsize*ep.Dd}",
-                                  f"Poni1: {poni1}", # y-axis
-                                  f"Poni2: {poni2}", # x-axis
-                                  "Rot1: 0.0", "Rot2: 0.0", "Rot3: 0.0",
-                                  f"Wavelength: {ep.wavelength*1e-10:.4g}"]
-                fh = open(poni_file, "w")
-                fh.write("\n".join(poni_file_text))
-                fh.close()
-                #cmd = ["pyFAI-recalib", "-i", poni_file, 
-                #       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
-                cmd = ["pyFAI-calib", "-i", poni_file, 
-                       "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
-                print(" ".join(cmd))
-                ret = run(cmd)
-                txt = ret.strip().split('\n')[-1]
-                #print(txt)
-                print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-                d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=float)[:3]
-                dr = d/(ep.Dd*pxsize)/1000  # d is in mm
-                ep.ratioDw *= dr
-                if ep.flip: ## can only handle flip=1 right now
-                    ep.bm_ctr_x = yc
-                    ep.bm_ctr_y = ep.ImageHeight-xc
-                else: 
-                    ep.bm_ctr_y = yc
-                    ep.bm_ctr_x = xc
-                print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-            else:
-                cmd = ["pyFAI-calib2",
-                       "-D", det_type[det.extension],
-                       "-w", f"{ep.wavelength:.4f}", "--dist", f"{pxsize*ep.Dd:.5f}",
-                       "--poni1", f"{poni1:.6f}", "--poni2", f"{poni2:.6f}", "--no-tilt",
-                       "-c", "AgBh", data_file]
-                print("pyFAI-recalib is now obselete ...") 
-                print("Run this interactively:")
-                print(" ".join(cmd))
-                fp = input("Then enter the path/name of the PONI file:")
-
-                with open(fp, "r") as fh:
-                    lines = {}
-                    for _ in fh.read().split("\n"):
-                        tl = _.split(":")
-                        if len(tl)==2:
-                            lines[tl[0]] = tl[1]
-
-                print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-                ep.ratioDw *= float(lines['Distance'])/(ep.Dd*pxsize)
-                xc = float(lines['Poni2'])/pxsize
-                yc = float(lines['Poni1'])/pxsize
-                if ep.flip: ## can only handle flip=1 right now
-                    ep.bm_ctr_x = yc
-                    ep.bm_ctr_y = ep.ImageHeight-xc
-                else: 
-                    ep.bm_ctr_y = yc
-                    ep.bm_ctr_x = xc
-                print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-            ep.init_coordinates()
-            #if det.extension is not "_SAXS":
-                
-
+        if "dark" in samples.keys():
+            # this is over-simplifying, assuming SAXS and WAXS2 only
+            # to be revised for more generic scenarios
+            dstd.load_data()
+            d1s = dstd.d1s[samples['carbon']]
+            idx = (~np.isnan(d1s['_SAXS'][0].data))&(~np.isnan(d1s['_WAXS2'][0].data))
+            s1 = np.sum(d1s['_SAXS'][0].data[idx])/np.sum(d1s['_WAXS2'][0].data[idx])
+            dstd.detectors[0].fix_scale *= s1
+            self.detectors[0].fix_scale = dstd.detectors[0].fix_scale
+            dstd.load_data()
+            
         self.save_detectors()
+        dstd.save_detectors()
+        
 
 def find_field(fh5, fieldName, sname):
     tstream = {}
@@ -640,6 +725,43 @@ class h5xs():
             print(f"{self.fn} file is already closed.")
         else:
             self.fh5.close()
+    
+    def auto_fix_WAXS_mask(self, sn=None, frn=None, radius=3, replace=True):
+        """ this is meant to deal with the mica peaks that show up in WAXS patterns
+            currently can only deal with the LiX pilatus900K
+        """
+        for i in range(len(self.detectors)):
+            ext = self.detectors[i].extension
+            dn = det_model[ext]
+            if not re.match('pilatus[\s\w]+900k', dn, re.IGNORECASE):
+                continue
+            
+            modules = [[0,195,0,487], [0,195,493,981],
+                       [212,407,0,487], [212,407,493,981],
+                       [424,619,0,487], 
+                       [636,831,0,487], [636,831,493,981],
+                       [848,1043,0,487], [848,1043,493,981]]
+
+            img = self.get_d2(sn=sn, det_ext=ext, frn=frn).data.d
+            
+            msk1 = (img<0)
+            msk2 = (img<1)
+            for mm in modules:
+                img0 = img[mm[0]:mm[1], mm[2]:mm[3]]
+                img_s1 = ft.gaussian(img0, 1, preserve_range=True)
+                img_s2 = ft.gaussian(img0, radius, preserve_range=True)
+                img_d = img_s2-img_s1
+                msk = (img_d>np.sqrt(img_s1)*1.5)
+                msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
+                msk = (img_d<-np.sqrt(img_s1)*1.5)
+                msk2[mm[0]:mm[1], mm[2]:mm[3]] |= morph.dilation(msk, morph.disk(radius))   
+                
+            if replace:
+                self.detectors[i].exp_para.mask.map = msk1|msk2
+            else:
+                self.detectors[i].exp_para.mask.map |= msk1|msk2
+            self.detectors[i].exp_para.mask.map[424:619,493:981] = True
+            self.save_detectors()
         
     @h5_file_access  
     def setup(self, exp_setup=None, sn=None, transField=transmitted_monitor, have_raw_data=True):

@@ -398,6 +398,7 @@ class MatrixWithCoords:
             plt.colorbar(im)
         #plt.connect('button_press_event', self.mouse_press)
         #plt.connect('button_release_event', self.mouse_release)
+        return im
 
     def format_coord(self, x, y):
         ix = x

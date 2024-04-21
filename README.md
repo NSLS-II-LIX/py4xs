@@ -145,3 +145,6 @@ h5xs.exp_time()
 2023-06:
 save h5xs.d0s under processed/attrs
 add/remove external links
+
+2024-04:
+automated mask generation 

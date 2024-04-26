@@ -1773,6 +1773,37 @@ class h5xs():
                 self.d1s[sn]['averaged'].save(f"{path}{sn}_{fn_modifier}a.dat", debug=debug, 
                                               footer=self.md_string(sn))
                 
+    def export_NXcanSAS(self, fn=None, I_units="A.U."):
+        """ save subtracted data only
+        """
+        if fn is None:
+            fn = self.fn.replace("h5", "nxs")
+        with h5py.File(fn, "w") as fh5:
+            for sn in dsamp.samples:
+                if not "subtracted" in dsamp.d1s[sn].keys():
+                    continue
+                d1 = dsamp.d1s[sn]['subtracted']
+
+                nxentry = fh5.create_group(sn)
+                nxentry.attrs["NX_class"] = 'NXentry'
+                nxentry.attrs["canSAS_class"] = 'SASentry'
+                nxentry.create_dataset('title', data=sn)
+
+                nxdata = nxentry.create_group('sasdata')
+                nxdata.attrs["NX_class"] = 'NXdata'
+                nxdata.attrs["canSAS_class"] = 'SASdata'
+                nxdata.attrs["signal"] = "I"
+                nxdata.attrs["axes"] = "Q"
+
+                dQ = nxdata.create_dataset("Q", data=d1.qgrid)
+                dQ.attrs['units'] = "1/A"
+                dI = nxdata.create_dataset("I", data=d1.data)
+                dI.attrs['units'] = "A.U."
+                dI.attrs['uncertainties'] = "Idev"
+                ddI = nxdata.create_dataset("Idev", data=d1.err)
+                ddI.attrs['units'] = "A.U."
+
+
     @h5_file_access  
     def load_data(self, samples=None, update_only=False, detectors=None, exclude_links=True,
            reft=-1, save_d1s=True, save_merged=False, debug=False, N=8, max_c_size=0, dtype=None):

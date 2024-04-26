@@ -147,4 +147,4 @@ save h5xs.d0s under processed/attrs
 add/remove external links
 
 2024-04:
-automated mask generation 
+automated mask generation; export blank-subtracted data to NXcanSAS

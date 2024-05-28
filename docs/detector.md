@@ -54,10 +54,10 @@
   ``read_file()`` : read the mask from a text file that defines the collection
   of shapes, one per line . Valid shapes include:
   
-  *rectangles: r x~c~ y~c~ width height tilt_angle
-  *circles:  c x~c~ y~c~ radius
-  *holes (inverse of circles):   h x~c~ y~c~ radius
-  *polygons: p x~1~ y~1~ x~2~ y~2~ ... x~1~ y~1~
+  * rectangles: r x~c~ y~c~ width height tilt_angle
+  * circles:  c x~c~ y~c~ radius
+  * holes (inverse of circles):   h x~c~ y~c~ radius
+  * polygons: p x~1~ y~1~ x~2~ y~2~ ... x~1~ y~1~
 
   ``read_from_8bit_tif()`` : create the mask map from a 8-bit tif file. All the pixels 
   with the numerical value of 255 will be considered as part of the mask. This is useful 

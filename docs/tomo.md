@@ -1,4 +1,4 @@
-Using the same data processing workflow for scanning mapping, sinograms can be produced from the tomographic dataset. 
+Using the same data processing work-flow for scanning mapping, sinograms can be produced from the tomographic dataset. 
 ![sinograms](fig/tm_sino_saxs.png)
 Before tomographic reconstruction using [tomopy](https://tomopy.readthedocs.io/en/stable/), the rotation center may need to be find manually:
 ![cen_test](fig/tm_find_center_c.png)

@@ -1,7 +1,7 @@
-In the data processing workflow for scanning mapping measurements, a wide variety anf large volume of data attributes may need to be extractred and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new hdf file is created for the processed data, while the raw data are kept seperately in their original hdf files. The processed data are organized in a `proc_data` dictionary, orgnaized in three levels:
+In the data processing work-flow for scanning mapping measurements, a wide variety and large volume of data attributes may need to be extracted and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new hdf5 file is created for the processed data, while the raw data are kept separately in their original hdf5 files. The processed data are organized in a `proc_data` dictionary, organized in three levels:
 
 * *Sample name.* 
-  This could be the sample name defined in the scan when collecting the raw data, or `overall`, if the final results are assembled from multiple raw data files.     
+  This could be the sample name defined in the scan when collecting the raw data, or `overall`, if the final results are assembled from multiple raw data files.
 <br>
 
 * *Data key.*
@@ -9,21 +9,21 @@ In the data processing workflow for scanning mapping measurements, a wide variet
 
     `Iqphi` for the 2D intensity map as a function of scattering vector $q$ and azimuthal angle $\phi$; 
     
-    `Iq` for azimuhtally averaged intensity; 
+    `Iq` for azimuthally averaged intensity; 
     
     `attrs` for per-frame attributes extracted from the data; 
     
-    `maps` for strcutral maps reformated from `attrs` based on the scan parameters; 
+    `maps` for structural maps reformatted from `attrs` based on the scan parameters; 
     
     `tomo` for tomograms reconstructed from `maps`.
-<br>    
+<br>
   
 * *Sub key.* 
-  For istance, `merged` and `subtracted` for `Iq`, `transmission` and `incident` for `attrs`.
+  For instance, `merged` and `subtracted` for `Iq`, `transmission` and `incident` for `attrs`.
 
 
 
-Here's an example of typical code for data proessing. First we instantatiate the `h5xs_scan` object: 
+Here's an example of typical code for data processing. First we instantiate the `h5xs_scan` object: 
 
 ```python
 rn = "time_series1"
@@ -32,8 +32,8 @@ dt = h5xs_scan(f"{rn}_an.h5", [de.detectors, qgrid], Nphi=61, pre_proc="2D",
 ```
 
 `de` defines the detectors as in solution scattering. `Nphi` specifies the number of azimuthal
-angles (evenly spaced) to be used for pre-processing that generates the $q$-$\phi$ maps, as sepcified by `pre_proc`. The `replace_path` argument
-is necessary since currently the hdf files for raw data must be moved to the proposal directory manually.
+angles (evenly spaced) to be used for pre-processing that generates the $q$-$\phi$ maps, as specified by `pre_proc`. The `replace_path` argument
+is necessary since currently the hdf5 files for raw data must be moved to the proposal directory manually.
 
 
 Next we connect the `h5xs_scan` to the raw data files and import the metadata from the scans that produced the raw data:

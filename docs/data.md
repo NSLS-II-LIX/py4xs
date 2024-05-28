@@ -5,9 +5,9 @@
 
   `d` : the actual intensity map
 
-  `xc, yc` : 1d arrays that define the x and y coordinates of the intensity map
+  `xc, yc` : 1D arrays that define the x and y coordinates of the intensity map
 
-  `xc_label, yc_label` : axis lables for the intensity map
+  `xc_label, yc_label` : axis labels for the intensity map
 
   `datatype` : type of the data (e.g. detector raw image, $I(q, \phi)$ map, ...), which 
   must be of type Enum `DataType`. This is useful when plotting the intensity map,
@@ -21,7 +21,7 @@
   
   `copy()`: create a deep copy of the object
   
-  `expand()`: exapnd the coordinates for the intensity map, e.g. in preparation for merging
+  `expand()`: expand the coordinates for the intensity map, e.g. in preparation for merging
   
   `merge()`: merge two or more maps with the same axis labels
   
@@ -31,13 +31,13 @@
   
   `val()`: return the integrated intensity within the specified range
   
-  `flatten()`: collapse the intensity map onto the apecified axis and returns an intensity profile
+  `flatten()`: collapse the intensity map onto the specified axis and returns an intensity profile
   
   `average()`: average multiple intensity maps together
   
   `bkg_cor()`: perform background subtraction with the specified scaling factor.
   
-  `fill_gap()` and `apply_symmetry()`: attempt to exapnd the intensity map coverage 
+  `fill_gap()` and `apply_symmetry()`: attempt to expand the intensity map coverage 
   
 ----------------
 
@@ -49,10 +49,10 @@
   `exp` : the ExpPara for the scattering data.
 
   `label` : by default this is set to the name of the data file. But it could be set 
-  when the instance is initilized.  
+  when the instance is initialized.
 
   `uid, timestamp` : optional information. They are extracted from the data file
-  for Pilatus data collected at NSLS-II.  
+  for Pilatus data collected at NSLS-II.
 
   `conv_Iq(self, qgrid, mask=None, cor_factor=1)`: convert the 2D scattering data
   into a 1D scattering intensity profile.
@@ -84,14 +84,14 @@
 ## Data1d
 
   `trans` is the (relative) value of the transmitted intensity, which is used as a reference
-  for normlization during background subtraction. Two modes are allowed (defined as members of the 
+  for normalization during background subtraction. Two modes are allowed (defined as members of the 
   `Enum` `transMode` ) : `external` or `from_waxs`. For `transMode.external` , the `trans`
   value must be specified explicitly. For `transMode.from_waxs`, the `trans` value is calculated
-  from the water scattering peak intensty near $2.0 \unicode{x212B}^{-1}$ .
+  from the water scattering peak intensity near $2.0 \unicode{x212B}^{-1}$ .
 
-  `load_from_2D()` populates the atrtibutes of the instance based on the input data, which can be
+  `load_from_2D()` populates the attributes of the instance based on the input data, which can be
   a Data2d object, a data file, or a numpy array, and the specified ExpPara. The azimuthally averaged
-  1D data is generated using Data2d.conv_Iq(), after applying the polorization and solid angle 
+  1D data is generated using Data2d.conv_Iq(), after applying the polarization and solid angle 
   corrections. The error bar is the standard deviation of intensity in all pixels that belong to the
   same *q* value.
 
@@ -101,7 +101,7 @@
   `avg()`: perform averaging with the given set of Data1d objects. 
 
   `bkg_cor()`: perform background subtraction, based on the *trans* value, optionally with a 
-  scaling factor. For solution scattering, this scaling factor could be estiamted using `py4xs.slnxs.estiamte_scaling_factor()`.
+  scaling factor. For solution scattering, this scaling factor could be estimated using `py4xs.slnxs.estiamte_scaling_factor()`.
 
   `plot()`: plot the data, in a given matplotlib Axes if specified.
 

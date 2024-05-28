@@ -3,7 +3,7 @@
 ## h5xs
 
   This is the base class that enables interaction with the h5 file that stores the experimental data, by
-  associating the raw information in the h5 file into meanful py4xs objects (e.g. Data1d instances),
+  associating the raw information in the h5 file into meaningful py4xs objects (e.g. Data1d instances),
   on which data analysis can be carried out. It is assumed that the file structure follow 
   the convention: 
   
@@ -13,10 +13,10 @@
   azimuthal average. The datasets include those from the individual detectors, `merged` (from all detectors), `averaged` 
   (from multiple frames/exposures), and possibly `subtracted` (for background). 
   
-  The file structure assciated with specific
+  The file structure associated with specific
   types of experiments supported at LiX are defined under `lixtools`. 
   
-  Each `h5xs` object must be initilized with detector configurations and a $q$-grid.
+  Each `h5xs` object must be initialized with detector configurations and a $q$-grid.
   
   `fh5`: the file handle to the associated h5 file. `py4xs` now closes the file any time it is 
     not actively reading or writing data. Call `explicit_open()` to get the file handle. And close
@@ -52,13 +52,13 @@
   in the h5 file in various coordinates (see examples).
 
   `check_bm_center()`: take horizontal and vertical line cuts near the beam center and compare the intensity 
-  on either side of the beam center, as a simplied means to verify whether the beam center specified in 
+  on either side of the beam center, as a simplified means to verify whether the beam center specified in 
   the detector configuration is correct.
 
   `md_dict()`: return the meta data to be recorded in the exported ascii file, derived from the info 
   defined in `py4xs.local`. 
   
-  `header()`: return the header of the Bluesky scan that produced the data  
+  `header()`: return the header of the Bluesky scan that produced the data
   
 ---------------
 
@@ -71,6 +71,6 @@
   a h5 file and the corresponding `h5exp` object. 
   
   `recalibrate()` : recalibrate the detector `exp_para` based on the scattering data collected
-  from a standard sample (sivler behenate).
+  from a standard sample (silver behenate).
   
   

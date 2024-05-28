@@ -1,8 +1,9 @@
-In the data processing workflow for scanning mapping measurements, a large variety of data attributes may need to be extractred and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new hdf file is created for the processed data, while the raw data are kept seperately in their original hdf files. The processed data are organized in a dictionary, orgnaized in three levels:
+In the data processing workflow for scanning mapping measurements, a wide variety anf large volume of data attributes may need to be extractred and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new hdf file is created for the processed data, while the raw data are kept seperately in their original hdf files. The processed data are organized in a `proc_data` dictionary, orgnaized in three levels:
 
 * *Sample name.* 
-  This could be the sample name for the raw data, or `overall`, if the final results are assembled from multiple raw data files 
-  
+  This could be the sample name defined in the scan when collecting the raw data, or `overall`, if the final results are assembled from multiple raw data files.     
+<br>
+
 * *Data key.*
   Here are a few already used in `lixtools`: 
 
@@ -14,10 +15,13 @@ In the data processing workflow for scanning mapping measurements, a large varie
     
     `maps` for strcutral maps reformated from `attrs` based on the scan parameters; 
     
-    `tomo` for tomograms reconstructed from `maps`
+    `tomo` for tomograms reconstructed from `maps`.
+<br>    
   
 * *Sub key.* 
   For istance, `merged` and `subtracted` for `Iq`, `transmission` and `incident` for `attrs`.
+
+
 
 Here's an example of typical code for data proessing. First we instantatiate the `h5xs_scan` object: 
 
@@ -63,5 +67,5 @@ During and after processing, the data can be visualized using a GUI:
 Or the data can plotted using `matplotlib`:
 ![map plot](fig/plot_scan_maps.png)
 In this examples, the 4 measurements('samples') correspond to 4 data points in time as a flow field is established. In some cases, 
-individual measurements could correspond to parts of a larger sample, the individual maps can then be merged based on the 
+these measurements could correspond to parts of a larger sample, the individual maps can then be merged based on the 
 coordinates in the metadata from the scans.

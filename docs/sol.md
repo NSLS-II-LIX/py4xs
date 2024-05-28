@@ -8,7 +8,7 @@ This is typically used for protein samples in aqueous solution. A matching buffe
 
 After data collection is completed for each sample holder, data from all samples are packed into a hdf5 file. As automated data processing takes place, the processed data are added to the same hdf5 file. And a html data processing report is produced. The process typically consists of the following steps:
 
-<h6> define the python instance that correspond to the dataset</h6>
+<h6> Define the python instance that correspond to the dataset</h6>
 ```python
 from lixtools.hdf.sol import h5sol_HT
 from lixtools.samples import get_sample_dicts
@@ -17,7 +17,7 @@ dt = h5sol_HT(h5_file_name, (de.detectors, de.grid))
 ```
 Here the class `h5sol_HT` is specific to the flowcell measurements. `de` should be an instance of `DetectorConfig` (see docs for [py4xs](detector.md)). Utilities under `py4xs` and reference data provided by the beamline should be used to verify the validity of `de`. 
 
-<h6 id="#heading-id"> assign the sample-buffer relationship and perform processing </h6>
+<h6> Assign the sample-buffer relationship and perform processing </h6>
 ```python
 sd = get_sample_dicts(spreadSheet, holderName, use_flowcell=True)
 dt.assign_buffer(sd['buffer'])
@@ -25,7 +25,7 @@ dt.process(sc_factor='auto', debug='quiet')
 ```
 The last line performs azimuthal averaging, frame selection, and buffer subtraction. These can be done separately. Refer to the code under `lixtools`.
 
-<h6 id="#heading-id"> generate processing report</h6>
+<h6> Generate processing report</h6>
 
 ```python
 from lixtools.atsas import gen_report
@@ -66,11 +66,11 @@ gui.dt.export_NXcanSAS()
 
 Both `h5sol_HT` and `h5sol_HT` are derived from the `h5xs` class from `py4xs`, and therefore can methods described under `h5xs` docs. For instance, once the data processing is done once, the 1D data can be reloaded using `load_d1s()`, visualized using `plot_d1s()`, compared different samples in the same file using `compare_d1s()`, and exported the 1D data using `export_d1s()`.  
 
-#### frame selection
+#### Frame selection
 In some situations, the scattering patterns (typically 10-20 frames) collected from the same sample may be different. This can happen when there are bubbles when the sample is loaded into the flow cell, or if the is not enough sample to cover the entire scan range in the fixed cell. It is therefore necessary to exclude the frames that do not correpond to the beam fully illuminating the sample. While simple similarity comparison is often sufficinet, it is more reliable to also check the x-ray transmission through the sample, which is expected to be higher is the beam-illuminated volume is not completely filled with sample. This GUI below is useful to identify what the threshold values are for transmission and similarity (max pairwise distance), so that they can be applied in automated frame selection.
 ![frame selection GUI](fig/sol_sel_GUI.png)
 
-#### scaling factor estimate
+#### Scaling factor estimate
 As discussed [here](https://journals.iucr.org/s/issues/2021/04/00/ye5004/), subtraction of the scattering from aquesous buffer can be performed based on the intensity of the water peak, which automatically takes into account the volumn fraction occupied by the solute molecules. However, an additional scaling factor is still necessary and need to be fine tuned. This scaling factor can be estiamted using the `estimate_scaling_factor()` function.  
 ![buffer scaling](fig/sol_buf_autoscaling.png)
 

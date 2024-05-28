@@ -20,11 +20,16 @@ nav:
   - 'Detector': 'detector.md'
   - 'Data': 'data.md'
   - 'Data organization': 'hdf.md'
-- Examples: 
+- py4xs examples: 
   - The basics: Data2D_demo.ipynb
   - Data visualization: show_data.ipynb 
   - Grazing incidence: GID.ipynb
   - Data processing workflow: mapping.ipynb
+- LiX experiments: 
+  - Static solution scattering: 'sol.md'
+  - In-line SEC:  SEC.ipynb
+  - Scanning mapping: 'scan.md'
+  - Tomography: 'tomo.md'
 
 plugins:
   - mknotebooks

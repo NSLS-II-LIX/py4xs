@@ -31,12 +31,14 @@
   `average_d1s()`: average together multiple scattering patterns for the same sample, based on a similarity
   analysis. Selection of the frames to be averaged together can be specified.
   
-  `save_d1s()` and `load_d1s()`: save the `d1s` dictionaries to the h5 file from load them
-  back from the h5 file.
+  `save_d1s()`: save the `d1s` dictionaries into the h5 file.
+  `load_d1s()`: load the `d1s` dictionaries back from the h5 file.
 
   `plot_d1s()`: plot the 1D data from single sample, useful for showing how the frames are selected
   
   `compare_d1s()`: plot the 1D data from multiple samples, useful for visualizing the difference between samples
+  
+  `export_d1s()`: export the 1D data to a specified path
 
   `get_d2()`: return the `Data2d` object(s) corresponding to a specified sample name and frame number
   

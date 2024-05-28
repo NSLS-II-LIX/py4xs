@@ -5,42 +5,42 @@
   Experimental parameters necessary to define the scattering geometry for 
   a 2D detector. 
 
-  ``bm_ctr_x, bm_ctr_y``  specify the beam center position, defined as the pixel coordinates 
+  `bm_ctr_x, bm_ctr_y`  specify the beam center position, defined as the pixel coordinates 
   of the intersection between the beam and the detector.
 
-  ``ratioDw`` is the sample-to-detector distance, defined as a dimensionless ratio between 
+  `ratioDw` is the sample-to-detector distance, defined as a dimensionless ratio between 
   this distance and the horizontal dimenson of the detector sensing area.
 
-  ``wavelength`` is the x-ray wavelength, in angstrom ( $\unicode{x212B}$ ) .
+  `wavelength` is the x-ray wavelength, in angstrom ( $\unicode{x212B}$ ) .
 
-  ``flip`` defines how the detector image should be reoriented when read from the data file.
+  `flip` defines how the detector image should be reoriented when read from the data file.
   The numberical value is the number of 90-deg rotations. The image is first mirrored 
   (lef and right) if the value is negative. 
 
-  ``rot_matrix`` is the rotation matrix that translate the detector pixel position into 
+  `rot_matrix` is the rotation matrix that translate the detector pixel position into 
   coordinates in the lab reference frame. This matrix should be calculated in classes 
   inhereted from ExpPara, where the method of calculatiing this rotation matrix is defined.
 
-  ``sample_normal, incident_angle`` are parameters that define the sample orientation in grazing 
-  incident geometry ( only effective when ``grazing_incidence`` is `True` ). 
+  `sample_normal, incident_angle` are parameters that define the sample orientation in grazing 
+  incident geometry ( only effective when `grazing_incidence` is `True` ). 
 
   From these parameters, these reciprocal coordinates for each pixel are then calculated:
 
-  ``Q`` : the amplitude of the scattering vector, in $\unicode{x212B}^{-1}$
+  `Q` : the amplitude of the scattering vector, in $\unicode{x212B}^{-1}$
 
-  ``Phi`` : the azimuthal angle, $\phi$, in degrees.
+  `Phi` : the azimuthal angle, $\phi$, in degrees.
 
-  ``Qr, Qn`` : projection of the scattering vector perpendicular/paralell to the sample
+  `Qr, Qn` : projection of the scattering vector perpendicular/paralell to the sample
   normal (grazing incidence)
 
-  ``xQ, yQ``: projection of the scattering vector in the horizontal/vertical directions.
+  `xQ, yQ`: projection of the scattering vector in the horizontal/vertical directions.
 
   These common correction factors are also calculated:
 
-  ``FPol`` is the polarization vector, assuming that the x-ray is linearly polarized along
+  `FPol` is the polarization vector, assuming that the x-ray is linearly polarized along
   the horizontal direction (synchrotron radiation).
 
-  ``FSA``  accounts for the difference in the solid angle each pixel opens to the sample.
+  `FSA`  accounts for the difference in the solid angle each pixel opens to the sample.
 
 ---------------
 

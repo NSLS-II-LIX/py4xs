@@ -22,12 +22,10 @@ py4xs provides the following generic functionalities:
 
 * **HDF5 packaging** All information relevant to the scattering experiment, including
   scattering geometry, raw data, and processed data, can be packaged into a single
-  hdf5 file.
+  hdf5 file. For now it is assumed that the hdf layout is based on export from the 
+  nsls2 databroker.
 
-Functionalities specific to the LiX beamline (e.g. data processing GUIs) can be found
-under lixtools.
-
-## Project layout
+## py4xs project layout
 
     README.md        
     py4xs/
@@ -42,4 +40,39 @@ under lixtools.
         utils.py     # utility functions
     doc/             
                      # documentation pages
+
+In principle py4xs can be used to process scattering data collected on any instruments, as long
+as the detector configurations are defined. Functionalities specific to data collected at the LiX 
+beamline are implemented under lixtools, to provide the class definition and processing GUI for 
+the supported types of experiments: 
+
+## lixtools project layout
+
+    README.md        
+    lixtool/
+        hdf/
+            sol.py         # python classes for static solution scattering data
+            hplc.py        # python class for in-line SEC data
+            an.py          # base class for processed data stored separately from raw data 
+            scan.py        # python class for scanning imaging data
+        notebooks/
+            generic.py     # GUI for generic solution scatterintg/powder diffraction data
+            sol_static.py  # GUI for static solution scattering
+            sol_hplc.py    # GUI for in-line SEC
+            scanning.py    # GUI for scanning mapping and tomography
+        tomo/
+            common.py      # functions for tomography
+            FLcorrections.py
+                           # functions for XRF absorption correction, from Mingyuan Ge
+            plants.py      # functions specific to scattering tomography on plant samples
+        inst/
+            check_deck_config2.py
+                           # script for sample prep using Opentrons OT2, runs on the RasPi 
+            ot2_gen_prot.py
+                           # script for reading the QR codes and generate transfer protocol
+                           # run from data directory
+            webcam.py      # read QR codes from a webcam
+
+
+
 

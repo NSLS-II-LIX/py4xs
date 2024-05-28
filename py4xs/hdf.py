@@ -26,13 +26,6 @@ import skimage.filters as ft
 import skimage.morphology as morph
 from functools import wraps
 
-USE_DASK = True
-try:
-    from dask.distributed import Client,LocalCluster
-    import dask.array as da
-except:
-    USE_DASK = False
-
 def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
     """ list the content of a HDF5 file
         
@@ -497,6 +490,28 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None):
     dead_pix = (d2carbon<carbon_thresh)
     return hot_pix|dead_pix|extra
     
+def gen_p900k_mask(img, radius=3, thresh=1.5):
+    modules = [[0,195,0,487], [0,195,493,981],
+               [212,407,0,487], [212,407,493,981],
+               [424,619,0,487], 
+               [636,831,0,487], [636,831,493,981],
+               [848,1043,0,487], [848,1043,493,981]]
+
+    msk1 = (img<0)
+    msk2 = (img<1)
+    for mm in modules:
+        img0 = img[mm[0]:mm[1], mm[2]:mm[3]]
+        img_s1 = ft.gaussian(img0, 1, preserve_range=True)
+        img_s2 = ft.gaussian(img0, radius, preserve_range=True)
+        img_d = img_s2-img_s1
+        msk = (img_d>np.sqrt(img_s1)*thresh)
+        msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
+        msk = (img_d<-np.sqrt(img_s1)*thresh)
+        msk2[mm[0]:mm[1], mm[2]:mm[3]] |= morph.dilation(msk, morph.disk(radius))   
+    
+    msk1[424:619,493:981] = True
+    return msk1|msk2
+
 class h5exp():
     """ empty h5 file for exchanging exp_setup/qgrid
     """
@@ -672,6 +687,7 @@ def get_d1s_from_grp(grp, qgrid, label=""):
 def err_callback(e):
     print(f"an error has occured: {e}")
 
+
 class h5xs():
     """ Scattering data in transmission geometry
         Transmitted beam intensity can be set either from the water peak (sol), or from intensity monitor.
@@ -726,7 +742,7 @@ class h5xs():
         else:
             self.fh5.close()
     
-    def auto_fix_WAXS_mask(self, sn=None, frn=None, radius=3, replace=True):
+    def auto_fix_WAXS_mask(self, sn=None, frn=None, radius=3, replace=True, **kwargs):
         """ this is meant to deal with the mica peaks that show up in WAXS patterns
             currently can only deal with the LiX pilatus900K
         """
@@ -736,31 +752,13 @@ class h5xs():
             if not re.match('pilatus[\s\w]+900k', dn, re.IGNORECASE):
                 continue
             
-            modules = [[0,195,0,487], [0,195,493,981],
-                       [212,407,0,487], [212,407,493,981],
-                       [424,619,0,487], 
-                       [636,831,0,487], [636,831,493,981],
-                       [848,1043,0,487], [848,1043,493,981]]
-
-            img = self.get_d2(sn=sn, det_ext=ext, frn=frn).data.d
-            
-            msk1 = (img<0)
-            msk2 = (img<1)
-            for mm in modules:
-                img0 = img[mm[0]:mm[1], mm[2]:mm[3]]
-                img_s1 = ft.gaussian(img0, 1, preserve_range=True)
-                img_s2 = ft.gaussian(img0, radius, preserve_range=True)
-                img_d = img_s2-img_s1
-                msk = (img_d>np.sqrt(img_s1)*1.5)
-                msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
-                msk = (img_d<-np.sqrt(img_s1)*1.5)
-                msk2[mm[0]:mm[1], mm[2]:mm[3]] |= morph.dilation(msk, morph.disk(radius))   
+            img = self.get_d2(sn=sn, det_ext=ext, frn=frn, **kwargs).data.d
+            msk0 = gen_p900k_mask(img, radius=radius)
                 
             if replace:
-                self.detectors[i].exp_para.mask.map = msk1|msk2
+                self.detectors[i].exp_para.mask.map = msk0
             else:
-                self.detectors[i].exp_para.mask.map |= msk1|msk2
-            self.detectors[i].exp_para.mask.map[424:619,493:981] = True
+                self.detectors[i].exp_para.mask.map |= msk0
             self.save_detectors()
         
     @h5_file_access  
@@ -1138,8 +1136,6 @@ class h5xs():
             except:
                 continue
             if frn=="average":
-                if not USE_DASK:
-                    raise Exception("Dask is not available for averaging frames ...")
                 imgs = da.array(dset)
                 fut = da.average(imgs, axis=tuple(range(len(dset.shape)-2)))
                 davg = fut.compute(client=client)
@@ -1779,10 +1775,10 @@ class h5xs():
         if fn is None:
             fn = self.fn.replace("h5", "nxs")
         with h5py.File(fn, "w") as fh5:
-            for sn in dsamp.samples:
-                if not "subtracted" in dsamp.d1s[sn].keys():
+            for sn in self.samples:
+                if not "subtracted" in self.d1s[sn].keys():
                     continue
-                d1 = dsamp.d1s[sn]['subtracted']
+                d1 = self.d1s[sn]['subtracted']
 
                 nxentry = fh5.create_group(sn)
                 nxentry.attrs["NX_class"] = 'NXentry'

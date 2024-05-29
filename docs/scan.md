@@ -1,4 +1,4 @@
-In the data processing work-flow for scanning mapping measurements, a wide variety and large volume of data attributes may need to be extracted and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new hdf5 file is created for the processed data, while the raw data are kept separately in their original hdf5 files. The processed data are organized in a `proc_data` dictionary, organized in three levels:
+In the data processing work-flow for scanning mapping measurements, a wide variety and large volume of data attributes may need to be extracted and analyzed. Therefore new classes, `h5xs_an` and `h5xs_scan`, are created to provide more flexibility. A new h5 file is created for the processed data, while the raw data are kept separately in their original h5 files. The processed data are organized in a `proc_data` dictionary, organized in three levels:
 
 * *Sample name.* 
   This could be the sample name defined in the scan when collecting the raw data, or `overall`, if the final results are assembled from multiple raw data files.
@@ -26,6 +26,8 @@ In the data processing work-flow for scanning mapping measurements, a wide varie
 Here's an example of typical code for data processing. First we instantiate the `h5xs_scan` object: 
 
 ```python
+from lixtools.hdf import h5xs_scan
+
 rn = "time_series1"
 dt = h5xs_scan(f"{rn}_an.h5", [de.detectors, qgrid], Nphi=61, pre_proc="2D", 
                replace_path={"legacy": "proposals"})
@@ -33,7 +35,7 @@ dt = h5xs_scan(f"{rn}_an.h5", [de.detectors, qgrid], Nphi=61, pre_proc="2D",
 
 `de` defines the detectors as in solution scattering. `Nphi` specifies the number of azimuthal
 angles (evenly spaced) to be used for pre-processing that generates the $q$-$\phi$ maps, as specified by `pre_proc`. The `replace_path` argument
-is necessary since currently the hdf5 files for raw data must be moved to the proposal directory manually.
+is necessary since currently the h5 files for raw data must be moved to the proposal directory manually.
 
 
 Next we connect the `h5xs_scan` to the raw data files and import the metadata from the scans that produced the raw data:

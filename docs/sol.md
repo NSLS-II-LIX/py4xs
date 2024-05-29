@@ -6,11 +6,11 @@ The sample is flowed from a PCR tube in the sample holder through the flow-cell,
 
 This method is typically used for protein samples in aqueous solution. A matching buffer must also be measured, in the same flow channel to ensure reproducible sample thickness and background scattering. Buffer scattering is subtracted based on the intensity of the water peak. It is assumed that the contribution of empty cell scattering is minimal, once the buffer scattering subtracted. For this assumption to be valid, the sample and the buffer should be measured close in time, ideally back-to-back, to avoid change in background scattering due to accumulation of materials on the flow-cell window. Also the protein concentration (volume fraction) should be reasonably low. See our workbench presentations for a more detailed discussion.
 
-After data collection is completed for each sample holder, data from all samples are packed into a hdf5 file. As automated data processing takes place, the processed data are added to the same hdf5 file. And a html data processing report is produced. The process typically consists of the following steps:
+After data collection is completed for each sample holder, data from all samples are packed into a h5 file. As automated data processing takes place, the processed data are added to the same h5 file. And a html data processing report is produced. The process typically consists of the following steps:
 
 <h6> Define the python object that corresponds to the dataset</h6>
 ```python
-from lixtools.hdf5.sol import h5sol_HT
+from lixtools.hdf import h5sol_HT
 from lixtools.samples import get_sample_dicts
 
 dt = h5sol_HT(h5_file_name, (de.detectors, de.grid))
@@ -32,7 +32,7 @@ from lixtools.atsas import gen_report
 
 gen_report(h5_file_name)
 ```
-This will produce a html report for all samples in the hdf5 file. Things could go wrong during automated data processing. The processing report provides an overview of the processing results and provide a guide on whether frame selection for averaging and scaling for buffer subtraction need to be adjusted. These adjustment can be done by using the data visualization GUI or by code.
+This will produce a html report for all samples in the h5 file. Things could go wrong during automated data processing. The processing report provides an overview of the processing results and provide a guide on whether frame selection for averaging and scaling for buffer subtraction need to be adjusted. These adjustment can be done by using the data visualization GUI or by code.
 
 ![flow-cell data visualization GUI](fig/sol_fl_GUI.png)
 
@@ -42,7 +42,7 @@ Alternatively, the sample can be scanned such that the x-ray beam moves across t
 The data processing work-flow is slightly different from flow-cell measurements:
 
 ```python
-from lixtools.hdf5.sol import h5sol_fc
+from lixtools.hdf import h5sol_fc
 from lixtools.samples import get_sample_dicts
 
 dt = h5sol_fc(f'{sample_hn}.h5', [de.detectors, de.qgrid])
@@ -64,7 +64,7 @@ gui.dt.export_NXcanSAS()
 
 ## Common utilities
 
-Both `h5sol_HT` and `h5sol_HT` are derived from the `h5xs` class from `py4xs`, and therefore can access methods described under `h5xs` docs. For instance, once the data processing is done once, the 1D data can be reloaded from the hdf5 file using `load_d1s()`, visualized using `plot_d1s()`, compared between different samples in the same file using `compare_d1s()`, and exported using `export_d1s()`.
+Both `h5sol_HT` and `h5sol_HT` are derived from the `h5xs` class from `py4xs`, and therefore can access methods described under `h5xs` docs. For instance, once the data processing is done once, the 1D data can be reloaded from the h5 file using `load_d1s()`, visualized using `plot_d1s()`, compared between different samples in the same file using `compare_d1s()`, and exported using `export_d1s()`.
 
 #### Frame selection
 In some situations, the scattering patterns (typically 10-20 frames) collected from the same sample may be different. This can happen if bubbles form when the sample is loaded into the flow cell, or if there is not enough sample to cover the entire scan range in the fixed cell. It is therefore necessary to exclude the frames that do not correspond to the beam fully illuminating the sample. While simple similarity comparison is often sufficient, it is more reliable to also check the x-ray transmission through the sample, which is expected to be higher is the beam-illuminated volume is not completely filled with sample. This GUI below is useful for identifying what the threshold values should be for transmission and similarity (max pairwise distance), so that they can be applied in automated frame selection.

@@ -1538,15 +1538,12 @@ class h5xs():
             grp = fh5[sn+'/processed']
             self.d1s[sn],self.attrs[sn] = get_d1s_from_grp(grp, self.qgrid, sn)
             
-            # load processed/attrs into self.d0s
-            if "attrs" not in list(grp.keys()): 
-                continue
-                
-            for k in list(grp['attrs'].keys()):
-                self.d0s[sn][k] = grp['attrs'][k][...]
+            # load attributes of processed group into self.d0s
+            for k in list(grp.attrs.keys()):
+                self.d0s[sn][k] = grp.attrs[k]
 
     @h5_file_access  
-    def save_d1s(self, sn=None, skip_d0s=False, debug=False):
+    def save_d1s(self, sn=None, skip_d0s=True, debug=False):
         """
         save the 1d data in memory to the hdf5 file 
         processed data go under the group sample_name/processed
@@ -1602,29 +1599,13 @@ class h5xs():
                 if (np.asarray(tvs)>0).any(): 
                     grp[k].attrs['trans'] = tvs
             
-            if not skip_d0s:
-                # save d0s under processed/attrs
-                grp0 = self.fh5[sn]["processed"]
-                if "attrs" not in list(grp0.keys()):
-                    grp = grp0.create_group("attrs")
-                else:
-                    grp = grp0["attrs"]
-                    if len(grp.keys())>0: # not empty
-                        g0 = list(grp.keys())[0]
-                        if len(grp[g0])!=len(list(self.d0s[sn].values())[0]): 
-                            # new size for the data
-                            del grp0["attrs"]
-                            grp = grp0.create_group("attrs")
-
-                ds_names = list(grp.keys())
+            # this may break, d0s is saved as attributes, not datasets, size limit 64kB
+            if not skip_d0s: 
                 if sn in self.d0s.keys():
                     for k in list(self.d0s[sn].keys()):
                         if debug is True:
-                            print(f"writing attribute to {sn}/processed/attrs: {k}")
-                        if k not in ds_names:
-                            grp.create_dataset(k, data=self.d0s[sn][k])
-                        else:
-                            grp[k][...] = self.d0s[sn][k]   
+                            print(f"writing attribute to {sn}/processed: {k}")
+                        grp.attrs[k] = self.d0s[sn][k]   
                 
         self.enable_write(False, debug=debug)
 

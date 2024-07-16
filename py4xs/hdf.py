@@ -507,7 +507,7 @@ def gen_p900k_mask(img, radius=3, thresh=1.5):
         msk = (img_d>np.sqrt(img_s1)*thresh)
         msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
         msk = (img_d<-np.sqrt(img_s1)*thresh)
-        msk2[mm[0]:mm[1], mm[2]:mm[3]] |= morph.dilation(msk, morph.disk(radius))   
+        msk2[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))  # used to be |= instead of =   
     
     msk1[424:619,493:981] = True
     return msk1|msk2
@@ -601,12 +601,15 @@ class h5exp():
         if "dark" in samples.keys():
             # this is over-simplifying, assuming SAXS and WAXS2 only
             # to be revised for more generic scenarios
+            dstd.detectors[0].fix_scale = 1
+            dstd.detectors[1].fix_scale = (self.detectors[0].s2d_distance/self.detectors[1].s2d_distance)**2
             dstd.load_data()
             d1s = dstd.d1s[samples['carbon']]
             idx = (~np.isnan(d1s['_SAXS'][0].data))&(~np.isnan(d1s['_WAXS2'][0].data))
             s1 = np.sum(d1s['_SAXS'][0].data[idx])/np.sum(d1s['_WAXS2'][0].data[idx])
-            dstd.detectors[0].fix_scale *= s1
+            dstd.detectors[0].fix_scale = s1
             self.detectors[0].fix_scale = dstd.detectors[0].fix_scale
+            self.detectors[1].fix_scale = dstd.detectors[1].fix_scale
             dstd.load_data()
             
         self.save_detectors()

@@ -392,8 +392,10 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
             dmask = det.exp_para.mask.map
         if det.extension in bkg.keys():
             img -= bkg[det.extension]
-        fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+        #fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+        fabio.cbfimage.CbfImage(data=img).write(data_file)
 
+        
     if use_recalib:
         # WARNING: pyFAI-recalib is obselete
         poni_file = f"/tmp/{uname}{det.extension}.poni"
@@ -459,23 +461,26 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
     ep.init_coordinates()
     #if det.extension is not "_SAXS":        
     
-def generate_mask_from_std(det, dstd, std_samples, template_map=None):
+def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=1000):
     """ some LiX-specific assumptions are made
+        all pixels with counts higher than the specified thresh value are discarded
     """
     d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension).data.d
     d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension).data.d
     d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension).data.d for sn in std_samples['empty']], axis=0)
     
     if "SAXS" in det.extension:
-        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
+        cstd = np.std(d2carbon[d2carbon<thresh])
+        cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
         bb0 = (bb[:-1]+bb[1:])/2
-        carbon_thresh = np.min(cc)*2
+        carbon_thresh = np.average(bb0[cc<2*np.min(cc)])
 
-        bs = (d2carbon<np.std(d2carbon)/4) & (d2carbon>0)
+        bs = (d2carbon<carbon_thresh) & (d2carbon>0)
         bs = (morph.dilation(bs, morph.disk(2))>0)
         extra = bs
     else: # WAXS
-        cc,bb = np.histogram(d2empty.flatten(), bins=50, range=[0, np.std(d2empty)])
+        cstd = np.std(d2carbon[d2carbon<thresh])
+        cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
         bb0 = (bb[:-1]+bb[1:])/2
         cc0 = cc[-1]/2 
         empty_thresh = np.average(bb0[cc>0.1*np.max(cc)])*3

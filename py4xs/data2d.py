@@ -133,7 +133,7 @@ class MatrixWithCoords:
         ret.yc = self.yc
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
-        ret.d = np.copy(self.d)
+        ret.d = self.d.copy() #np.copy(self.d)
         ret.err = self.err
         ret.datatype = self.datatype
         

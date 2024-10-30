@@ -473,25 +473,25 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=100
         cstd = np.std(d2carbon[d2carbon<thresh])
         cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
         bb0 = (bb[:-1]+bb[1:])/2
-        carbon_thresh = np.average(bb0[cc<2*np.min(cc)])
+        carbon_thresh = np.average(bb0[cc<2*np.min(cc[cc>0])])
 
         bs = (d2carbon<carbon_thresh) & (d2carbon>0)
         bs = (morph.dilation(bs, morph.disk(2))>0)
         extra = bs
     else: # WAXS
-        cstd = np.std(d2carbon[d2carbon<thresh])
-        cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
+        d2empty1 = ft.gaussian(d2empty, 2)
+        cstd = np.std(d2empty1[d2empty1<thresh])
+        cc,bb = np.histogram(d2empty1.flatten(), bins=50, range=[cstd*0.1, cstd*10])
         bb0 = (bb[:-1]+bb[1:])/2
         cc0 = cc[-1]/2 
-        empty_thresh = np.average(bb0[cc>0.1*np.max(cc)])*3
-                
-        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
-        bb0 = (bb[:-1]+bb[1:])/2
-        carbon_thresh = cc[-1]/5         
-        mica_pks = (d2empty>empty_thresh)
+        empty_thresh = np.average(bb0[cc>0.01*np.max(cc)])*3   # 1% of max should eliminate most air scattering
+        mica_pks = (d2empty1>empty_thresh)
         extra = mica_pks
 
-    hot_pix = (d2dark>1)
+        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
+        carbon_thresh = cc[-1]/5         
+
+    hot_pix = (d2dark>10)
     dead_pix = (d2carbon<carbon_thresh)
     return hot_pix|dead_pix|extra
     
@@ -545,7 +545,7 @@ class h5exp():
         return np.asarray(qgrid)            
     
     def recalibrate(self, fn_std, energy=None,
-                    e_range=[5, 20], use_recalib=False, generate_mask=False,
+                    e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, 
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,
                     bkg={}, temp_file_location="/tmp"):
         """ fn_std should be a h5 file that contains standard pattern
@@ -596,7 +596,7 @@ class h5exp():
 
         for i in range(len(self.detectors)):
             if generate_mask:
-                bmap = generate_mask_from_std(self.detectors[i], dstd, samples)
+                bmap = generate_mask_from_std(self.detectors[i], dstd, samples, thresh=thresh)
                 dstd.detectors[i].exp_para.mask.map = bmap
                 self.detectors[i].exp_para.mask.map = bmap
             if calib:

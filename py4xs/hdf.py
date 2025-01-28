@@ -448,7 +448,10 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
                     lines[tl[0]] = tl[1]
 
         print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-        ep.ratioDw *= float(lines['Distance'])/(ep.Dd*pxsize)
+        ep.Dd = float(lines['Distance'])/pxsize
+        D = ep.Dd/np.dot(np.dot(ep.rot_matrix, np.asarray([0, 0, 1.])), np.asarray([0, 0, 1.])) 
+        ep.ratioDw = D/(ep.ImageWidth)
+        #ep.ratioDw *= float(lines['Distance'])/(ep.Dd*pxsize)
         xc = float(lines['Poni2'])/pxsize
         yc = float(lines['Poni1'])/pxsize
         if ep.flip: ## can only handle flip=1 right now
@@ -461,7 +464,7 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
     ep.init_coordinates()
     #if det.extension is not "_SAXS":        
     
-def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=1000):
+def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=1000, mica_window=True):
     """ some LiX-specific assumptions are made
         all pixels with counts higher than the specified thresh value are discarded
     """
@@ -469,6 +472,7 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=100
     d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension).data.d
     d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension).data.d for sn in std_samples['empty']], axis=0)
     
+    hot_pix = (d2dark>10)
     if "SAXS" in det.extension:
         cstd = np.std(d2carbon[d2carbon<thresh])
         cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
@@ -486,12 +490,15 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=100
         cc0 = cc[-1]/2 
         empty_thresh = np.average(bb0[cc>0.01*np.max(cc)])*3   # 1% of max should eliminate most air scattering
         mica_pks = (d2empty1>empty_thresh)
-        extra = mica_pks
+        if mica_window:
+            extra = mica_pks
+        else:
+            extra = mica_pks*0
 
-        cc,bb = np.histogram(d2carbon.flatten(), bins=100, range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
+        cc,bb = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
+                             range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
         carbon_thresh = cc[-1]/5         
 
-    hot_pix = (d2dark>10)
     dead_pix = (d2carbon<carbon_thresh)
     return hot_pix|dead_pix|extra
     
@@ -545,7 +552,7 @@ class h5exp():
         return np.asarray(qgrid)            
     
     def recalibrate(self, fn_std, energy=None,
-                    e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, 
+                    e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, mica_window=True,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,
                     bkg={}, temp_file_location="/tmp"):
         """ fn_std should be a h5 file that contains standard pattern
@@ -596,7 +603,7 @@ class h5exp():
 
         for i in range(len(self.detectors)):
             if generate_mask:
-                bmap = generate_mask_from_std(self.detectors[i], dstd, samples, thresh=thresh)
+                bmap = generate_mask_from_std(self.detectors[i], dstd, samples, thresh=thresh, mica_window=mica_window)
                 dstd.detectors[i].exp_para.mask.map = bmap
                 self.detectors[i].exp_para.mask.map = bmap
             if calib:

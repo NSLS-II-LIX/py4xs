@@ -25,36 +25,20 @@ class Axes2dPlot:
         self.exp = exp
         self.n_step = 121
         self.datatype = datatype
-        self.capture_mouse()
 
-    def capture_mouse(self):
-        self.ax.figure.canvas.mpl_connect('button_press_event', self.clicked)
-        # self.ax.figure.canvas.mpl_connect('motion_notify_event', self.move_event)
-
-    def right_click(self, event):
-        """ display menu to change image color scale etc.
-        """
-        pass
-
-    def clicked(self, event):
-        if event.inaxes != self.ax:
-            return True
-        x = event.xdatta 
-        y = event.ydata 
+    def format_coord(self,x,y):
         if self.coordinate_translation=="xy2qrqz":
             (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
-            msg = "qr=%.4f , qz=%.4f" % (qr[0], qz[0])
+            msg = f"qr={qr[0]:.4f} , qz={qz[0]:.4f}" 
         elif self.coordinate_translation=="xy2qphi":
             (q, phi, qr, qz) = self.exp.calc_from_XY(np.asarray([x]),np.asarray([y]))
-            msg = "q=%.4f, phi=%.1f" % (q[0],phi[0])
+            msg = f"q={q[0]:.4f}, phi={phi[0]:.1f}" 
         else:
             msg = f"({x:.1f}, {y:.1f})"
-        self.ax.set_title(msg, fontsize="small")
-        print(msg)
-        return True
+        return msg
 
     # best modify d2.xc/d2.yc instead of using xscale/yscale
-    def plot(self, showMask=None, logScale=False, mask_alpha=0.1,
+    def plot(self, showMask=None, mask_alpha=0.1, norm="log",
              aspect='auto', xscale=1., yscale=1.):
 
         dd = np.asarray(self.d2.d, dtype=float)
@@ -66,19 +50,17 @@ class Axes2dPlot:
 
         if showMask and self.exp:
             self.ax.imshow(self.exp.mask.map, cmap="gray")
-        if logScale:
-            self.img = self.ax.imshow(dd, aspect=aspect, alpha=1-mask_alpha,
-                                      cmap=self.cmap, interpolation='nearest', norm=LogNorm(),
-                                      extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
-                                              self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale])
-        else:
-            self.img = self.ax.imshow(dd, vmax=immax, vmin=immin, 
-                                      aspect=aspect, alpha=1-mask_alpha,
-                                      cmap=self.cmap, interpolation='nearest',
-                                      extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
-                                              self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]) 
+        self.img = self.ax.imshow(dd, vmax=immax, vmin=immin, norm=norm,
+                                  aspect=aspect, alpha=1-mask_alpha,
+                                  cmap=self.cmap, interpolation='nearest',
+                                  extent=[self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale, 
+                                          self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]) 
         self.xlim = [self.d2.xc[0]*xscale, self.d2.xc[-1]*xscale]
         self.ylim = [self.d2.yc[0]*yscale, self.d2.yc[-1]*yscale]
+
+        #self.ax.format_coord = lambda x, y: f"test [{x}, {y}]"#format_coord(x,y,self)
+        #self.ax.format_coord = lambda x, y: format_coord(x,y,self.exp,self.coordinate_translation)
+        self.ax.format_coord = self.format_coord
 
     def set_color_scale(self, cmap, gamma=1):
         """ linear, log/gamma
@@ -190,7 +172,7 @@ class Axes2dPlot:
             self.ax.plot(px, py, fmt)
         self.ax.set_xlim(self.xlim)
         self.ax.set_ylim(self.ylim)
-        
+
 
 def show_data(d2s, detectors=None, ax=None, fig=None, showRef=None,
               logScale=True, showMask=True, mask_alpha=0.1, 

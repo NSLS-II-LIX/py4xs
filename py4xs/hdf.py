@@ -981,7 +981,12 @@ class h5xs():
         ene = bshdr["energy"]["energy"]
         md["Wavelength (A)"] = f"{2.*3.1416*1973/ene:.4f}"
         
-        bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        try:
+            bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        except:
+            print("unable to get scan configuration ...")
+            return md
+
         hdr = self.header(sn)
         exp = self.exp_time(sn)
         for det in self.detectors:
@@ -1326,7 +1331,12 @@ class h5xs():
         return ts0
     
     def exp_time(self, sn):
-        bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        try:
+            bscfg = json.loads(self.get_h5_attr(sn, "descriptors"))[0]['configuration']
+        except:
+            print("unable to read scan configuration ...")
+            return 1
+            
         hdr = self.header(sn)
         dn = self.det_name[self.detectors[0].extension].strip("_image")
         try:

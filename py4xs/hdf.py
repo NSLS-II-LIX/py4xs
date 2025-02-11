@@ -8,6 +8,7 @@ import os,copy,subprocess,re
 import json,pickle,fabio
 import multiprocessing as mp
 import numbers
+import redis
 
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
@@ -543,6 +544,11 @@ class h5exp():
         self.fh5.flush()
         self.fh5.close()
     
+    def save_detectors_to_redis(self, host="xf16id-ioc2", port=6379):
+        dets_attr = [det.pack_dict() for det in self.detectors]
+        with redis.Redis(host=host, port=port, db=0) as r:
+            r.set("det_config", json.dumps(dets_attr))
+    
     def read_detectors(self):
         self.fh5 = h5py.File(self.fn, "r")   # file must exist
         dets_attr = self.fh5.attrs['detectors']
@@ -551,6 +557,12 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)            
     
+    def read_detectors_from_redis(self, host="xf16id-ioc2", port=6379):
+        with redis.Redis(host=host, port=port, db=0) as r:
+            dets_attr = r.get("det_config", json.dumps(dets_attr))
+        self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+        return None #np.asarray(qgrid)            
+
     def recalibrate(self, fn_std, energy=None,
                     e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, mica_window=True,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,

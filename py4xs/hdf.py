@@ -559,8 +559,8 @@ class h5exp():
     
     def read_detectors_from_redis(self, host="xf16id-ioc2", port=6379):
         with redis.Redis(host=host, port=port, db=0) as r:
-            dets_attr = r.get("det_config", json.dumps(dets_attr))
-        self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+            dets_attr = json.loads(r.get("det_config"))
+        self.detectors = [create_det_from_attrs(attrs) for attrs in dets_attr]  
         return None #np.asarray(qgrid)            
 
     def recalibrate(self, fn_std, energy=None,

@@ -485,20 +485,25 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=100
         extra = bs
     else: # WAXS
         d2empty1 = ft.gaussian(d2empty, 2)
+        # this may need another look; affected by mica peaks
         cstd = np.std(d2empty1[d2empty1<thresh])
         cc,bb = np.histogram(d2empty1.flatten(), bins=50, range=[cstd*0.1, cstd*10])
         bb0 = (bb[:-1]+bb[1:])/2
         cc0 = cc[-1]/2 
         empty_thresh = np.average(bb0[cc>0.01*np.max(cc)])*3   # 1% of max should eliminate most air scattering
+        
         mica_pks = (d2empty1>empty_thresh)
         if mica_window:
             extra = mica_pks
         else:
             extra = mica_pks*0
 
-        cc,bb = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
-                             range=[np.std(d2carbon)*0.05, np.std(d2carbon)*2])
-        carbon_thresh = cc[-1]/5         
+        # based on observation, 
+        # the bin with the lowest intensity also has the msot counts
+        # anything below should be dead pixels
+        cc1,bb1 = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
+                             range=[0, np.std(d2carbon)*0.1])
+        carbon_thresh = bb1[np.argmax(cc1[1:])]/3         
 
     dead_pix = (d2carbon<carbon_thresh)
     return hot_pix|dead_pix|extra
@@ -1149,6 +1154,10 @@ class h5xs():
             
     @h5_file_access  
     def get_d2(self, sn=None, det_ext=None, frn=None, dtype=None, detectors=None, client=None):
+        """ if frn is "average", use Dask to average all frames, this is useful for a large dataset
+            if frn is "sum", use numpy to add frames together, this is useful for a small dataset
+            the user should supply the Dask client, or make sure the dataset is not too large for summing
+        """
         if sn is None:
             sn = self.samples[0]
         d2s = {}
@@ -1162,7 +1171,7 @@ class h5xs():
             try:
                 strn = find_field(self.fh5, self.det_name[det.extension], sn)
                 dset = self.fh5[f"{sn}/{strn}/data/{self.det_name[det.extension]}"]
-                if frn!="average": # this could raise an exception if frn is out of bounds
+                if frn not in ["average", "sum"]: # this could raise an exception if frn is out of bounds
                     frn = self.verify_frn(sn, frn)
                     d2 = Data2d(dset[tuple(frn)], exp=det.exp_para, dtype=dtype)
             except:
@@ -1172,6 +1181,9 @@ class h5xs():
                 fut = da.average(imgs, axis=tuple(range(len(dset.shape)-2)))
                 davg = fut.compute(client=client)
                 d2 = Data2d(davg, exp=det.exp_para, dtype=dtype)
+            elif frn=="sum":
+                dsum = np.sum(dset, axis=0)
+                d2 = Data2d(dsum, exp=det.exp_para, dtype=dtype)
             d2.md["frame #"] = frn 
             d2s[det.extension] = d2
 

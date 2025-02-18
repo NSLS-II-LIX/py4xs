@@ -175,7 +175,7 @@ class Axes2dPlot:
 
 
 def show_data(d2s, detectors=None, ax=None, fig=None, showRef=None,
-              logScale=True, showMask=True, mask_alpha=0.1, 
+              norm='log', showMask=True, mask_alpha=0.1, 
               aspect='auto', clim='auto', cmap=None, **kwargs):
     """ d2s should be a dictionary
     """
@@ -190,7 +190,7 @@ def show_data(d2s, detectors=None, ax=None, fig=None, showRef=None,
             fig.add_subplot(1, ndet, i)
             ax = plt.gca()
             show_data(d2, ax=ax, aspect=aspect,
-                      logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
+                      norm=norm, showMask=showMask, mask_alpha=mask_alpha, 
                       clim=clim, showRef=showRef, cmap=cmap, **kwargs)
     elif isinstance(d2s, Data2d):
         d2 = d2s
@@ -200,19 +200,19 @@ def show_data(d2s, detectors=None, ax=None, fig=None, showRef=None,
         pax = Axes2dPlot(ax, d2.data, exp=d2.exp)
         if cmap is not None:
             pax.set_color_scale(plt.get_cmap(cmap)) 
-        pax.plot(logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, aspect=aspect)
-        if clim=="auto":
-            clim = auto_clim(d2.data.d[~d2.exp.mask.map], logScale)
-        pax.img.set_clim(*clim)
+        pax.plot(norm=norm, showMask=showMask, mask_alpha=mask_alpha, aspect=aspect)
+        #if clim=="auto":
+        #    clim = auto_clim(d2.data.d[~d2.exp.mask.map], logScale)
+        #pax.img.set_clim(*clim)
         pax.coordinate_translation="xy2qphi"
         if showRef:
             pax.mark_standard(*showRef)
         ax.set_title(f"frame #{d2.md['frame #']}")
-        pax.capture_mouse()
+        #pax.capture_mouse()
 
 
 def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
-                  logScale=True, useMask=True, clim=(0.1,14000), 
+                  norm='log', useMask=True, clim=(0.1,14000), 
                   aspect=1, cmap=None, colorbar=False, **kwargs):
     
     if ax is None:
@@ -265,9 +265,9 @@ def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
 
     dm = xyqmaps[0].merge(xyqmaps[1:])
 
-    if clim=="auto":
-        clim = auto_clim(dm.d, logScale)
-    dm.plot(ax=ax, logScale=logScale, clim=clim, aspect=aspect, colorbar=colorbar)
+    #if clim=="auto":
+    #    clim = auto_clim(dm.d, logScale)
+    dm.plot(ax=ax, norm=norm, aspect=aspect, colorbar=colorbar) # clim=clim, 
     ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
     
     return dm
@@ -275,7 +275,7 @@ def show_data_qxy(d2s, detectors, ax=None, dq=0.01, bkg=None,
     
 def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,
                    apply_symmetry=False, fill_gap=False, sc_factor=None, 
-                   logScale=True, useMask=True, clim=(0.1,14000), bkg=None,
+                   norm='log', useMask=True, clim=(0.1,14000), bkg=None,
                    aspect="auto", cmap=None, colorbar=False, **kwargs):
 
     if ax is None:
@@ -353,7 +353,7 @@ def show_data_qphi(d2s, detectors, ax=None, Nq=200, Nphi=60,
 
     dm = dms[0].merge(dms[1:])
 
-    dm.plot(ax=ax, sc_factor=sc_factor, logScale=logScale, clim=clim, cmap=cmap, colorbar=colorbar)
+    dm.plot(ax=ax, sc_factor=sc_factor, norm=norm, clim=clim, cmap=cmap, colorbar=colorbar)
     ax.set_title(f"frame #{d2s[list(d2s.keys())[0]].md['frame #']}")
 
     return dm

@@ -77,6 +77,8 @@ class Data1d:
         self.label = "data"
         self.overlaps = []
         self.raw_data = {}
+        self.data = None
+        self.err = None
         self.timestamp = None
         self.trans_w = -1
         self.trans_e = -1

@@ -8,7 +8,6 @@ import os,copy,subprocess,re
 import json,pickle,fabio
 import multiprocessing as mp
 import numbers
-import redis
 
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
 from py4xs.utils import common_name,max_len,Schilling_p_value
@@ -318,8 +317,11 @@ def merge_d1s(d1s, detectors, save_merged=False, debug=False):
     #s0.data[idx] /= c_tot[idx]
     #s0.err[idx] /= np.sqrt(c_tot[idx])
     # averaging by weight
-    s0.data = d_tot/w_tot
-    s0.err = np.sqrt(e_tot)/w_tot
+    s0.data = np.zeros(len(s0.qgrid))
+    s0.err = np.zeros(len(s0.qgrid))
+    idx = (w_tot>0)
+    s0.data[idx] = d_tot[idx]/w_tot[idx]
+    s0.err[idx] = np.sqrt(e_tot[idx])/w_tot[idx]
     idx = (c_tot>1)
     s0.overlaps.append({'q_overlap': s0.qgrid[idx],
                         'raw_data1': d_max[idx],
@@ -496,7 +498,7 @@ def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=100
         if mica_window:
             extra = mica_pks
         else:
-            extra = mica_pks*0
+            extra = np.zeros_like(mica_pks)
 
         # based on observation, 
         # the bin with the lowest intensity also has the msot counts
@@ -548,12 +550,7 @@ class h5exp():
         self.fh5.attrs['qgrid'] = list(self.qgrid)
         self.fh5.flush()
         self.fh5.close()
-    
-    def save_detectors_to_redis(self, host="xf16id-ioc2", port=6379):
-        dets_attr = [det.pack_dict() for det in self.detectors]
-        with redis.Redis(host=host, port=port, db=0) as r:
-            r.set("det_config", json.dumps(dets_attr))
-    
+        
     def read_detectors(self):
         self.fh5 = h5py.File(self.fn, "r")   # file must exist
         dets_attr = self.fh5.attrs['detectors']
@@ -562,12 +559,6 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)            
     
-    def read_detectors_from_redis(self, host="xf16id-ioc2", port=6379):
-        with redis.Redis(host=host, port=port, db=0) as r:
-            dets_attr = json.loads(r.get("det_config"))
-        self.detectors = [create_det_from_attrs(attrs) for attrs in dets_attr]  
-        return None #np.asarray(qgrid)            
-
     def recalibrate(self, fn_std, energy=None,
                     e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, mica_window=True,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,
@@ -1277,7 +1268,7 @@ class h5xs():
         plt.show()
         
     def show_data(self, sn=None, det_ext=None, frn=None, ax=None, fig=None, aspect=1,
-                  logScale=True, showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
+                  norm='log', showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
                   showRef=["AgBH", "r:"], cmap=None, detectors=None, dtype=None, **kwargs):
         """ display frame #frn of the data for sample sn and frame number frn
             if not specified, take the first sample and/or first frame
@@ -1292,12 +1283,12 @@ class h5xs():
             detectors = self.detectors
         d2s = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, dtype=dtype, detectors=detectors, **kwargs)
         show_data(d2s, ax=ax, fig=fig, aspect=aspect,
-                  logScale=logScale, showMask=showMask, mask_alpha=mask_alpha, 
+                  norm=norm, showMask=showMask, mask_alpha=mask_alpha, 
                   clim=clim, showRef=showRef, cmap=cmap, dtype=dtype, **kwargs)
         return d2s
     
     def show_data_qxy(self, sn=None, frn=None, ax=None, dq=0.01, bkg=None,
-                      logScale=True, useMask=True, clim=(0.1,14000), 
+                      norm='log', useMask=True, clim=(0.1,14000), 
                       aspect=1, cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         """ display frame #frn of the data under det for sample sn
         """
@@ -1305,12 +1296,12 @@ class h5xs():
         if detectors is None:
             detectors = self.detectors
         return show_data_qxy(d2s, detectors, ax=ax, dq=dq, bkg=bkg,
-                             logScale=logScale, useMask=useMask, clim=clim, 
+                             norm=norm, useMask=useMask, clim=clim, 
                              aspect=aspect, cmap=cmap, colorbar=colorbar, **kwargs)
 
     def show_data_qphi(self, sn=None, frn=None, ax=None, Nq=200, Nphi=60,
                        apply_symmetry=False, fill_gap=False, sc_factor=None,
-                       logScale=True, useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
+                       norm='log', useMask=True, clim=(0.1,14000), showRef=True, bkg=None,
                        aspect="auto", cmap=None, detectors=None, dtype=None, colorbar=False, **kwargs):
         """ display frame #frn of the data under det for sample sn
             Nq can be given as a integer, for the number of data points, or as an array
@@ -1321,7 +1312,7 @@ class h5xs():
         return show_data_qphi(d2s, detectors, ax=ax, Nq=Nq, Nphi=Nphi,
                               apply_symmetry=apply_symmetry, fill_gap=fill_gap, 
                               sc_factor=sc_factor, bkg=bkg,
-                              logScale=logScale, useMask=useMask, clim=clim, 
+                              norm=norm, useMask=useMask, clim=clim, 
                               aspect=aspect, cmap=cmap, colorbar=colorbar, **kwargs)
 
     @h5_file_access  

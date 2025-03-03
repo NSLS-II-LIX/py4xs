@@ -467,13 +467,30 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
     ep.init_coordinates()
     #if det.extension is not "_SAXS":        
     
-def generate_mask_from_std(det, dstd, std_samples, template_map=None, thresh=1000, mica_window=True):
+def generate_mask_from_std(det, dstd, std_samples=None, template_map=None, thresh=1000, mica_window=True):
     """ some LiX-specific assumptions are made
         all pixels with counts higher than the specified thresh value are discarded
     """
-    d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension).data.d
-    d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension).data.d
-    d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension).data.d for sn in std_samples['empty']], axis=0)
+
+    if std_samples is None:
+        std_samples = {}
+        std_samples["empty"] = []
+        for sn in dstd.samples:
+            if re.search('AgBH', sn, re.IGNORECASE):
+                std_samples['AgBH'] = sn
+            elif re.search('empty', sn, re.IGNORECASE):
+                std_samples['empty'].append(sn)
+            elif re.search('dark', sn, re.IGNORECASE):
+                std_samples['dark'] = sn
+            elif re.search('carbon', sn, re.IGNORECASE):
+                std_samples['carbon'] = sn
+        
+        if not set(["dark", "carbon"]).issubset(std_samples.keys()) or len(std_samples["empty"])==0:
+            raise Exception(f"Not all required data are present for mask generation ...: {dstd_samples.keys()}")
+    
+    d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension, frn='sum').data.d
+    d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension, frn='sum').data.d
+    d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension, frn='sum').data.d for sn in std_samples['empty']], axis=0)
     
     hot_pix = (d2dark>10)
     if "SAXS" in det.extension:

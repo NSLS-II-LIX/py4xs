@@ -364,8 +364,9 @@ class MatrixWithCoords:
         else:
             im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
         if not nolabel:
-            ax.set_xlabel('ix')
-            ax.set_ylabel('iy')
+            ax.set_xlabel('ix', loc='left')
+            ax.tick_params("y", rotation=90)
+            ax.set_ylabel('iy', loc='top')
         else:
             ax.xaxis.set_visible(False)
             ax.yaxis.set_visible(False)
@@ -378,7 +379,7 @@ class MatrixWithCoords:
             if not nolabel:
                 axx.set_xticklabels(gplabels)
                 if self.xc_label:
-                    axx.set_xlabel(self.xc_label)
+                    axx.set_xlabel(self.xc_label, loc='right')
             else:
                 axx.xaxis.set_visible(False)
 
@@ -386,9 +387,9 @@ class MatrixWithCoords:
             gpindex,gpvalues,gplabels = grid_labels(self.yc)
             axy.set_yticks(gpindex)
             if not nolabel:
-                axy.set_yticklabels(gplabels)
+                axy.set_yticklabels(gplabels, rotation='vertical')
                 if self.yc_label:
-                    axy.set_ylabel(self.yc_label)
+                    axy.set_ylabel(self.yc_label, loc='bottom')
             else:
                 axy.yaxis.set_visible(False)
 

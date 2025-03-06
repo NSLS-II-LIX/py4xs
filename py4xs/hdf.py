@@ -522,7 +522,7 @@ def generate_mask_from_std(det, dstd, std_samples=None, template_map=None, thres
         # anything below should be dead pixels
         cc1,bb1 = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
                              range=[0, np.std(d2carbon)*0.1])
-        carbon_thresh = bb1[np.argmax(cc1[1:])]/3         
+        carbon_thresh = bb1[np.argmax(cc1[1:])]/5   # this scaling factor is sensitive         
 
     dead_pix = (d2carbon<carbon_thresh)
     return hot_pix|dead_pix|extra

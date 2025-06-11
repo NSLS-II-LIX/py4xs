@@ -60,11 +60,13 @@ the supported types of experiments:
             sol_static.py  # GUI for static solution scattering
             sol_hplc.py    # GUI for in-line SEC
             scanning.py    # GUI for scanning mapping and tomography
+        mapping/
+            common.py      # functions for structural mapping
+            plants.py      # functions specific to scattering data from plant samples
         tomo/
             common.py      # functions for tomography
             FLcorrections.py
                            # functions for XRF absorption correction, from Mingyuan Ge
-            plants.py      # functions specific to scattering tomography on plant samples
         inst/
             check_deck_config2.py
                            # script for sample prep using Opentrons OT2, runs on the RasPi 

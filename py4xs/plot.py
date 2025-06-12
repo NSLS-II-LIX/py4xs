@@ -44,10 +44,13 @@ class Axes2dPlot:
         dd = np.asarray(self.d2.d, dtype=float)
         mm = ~self.exp.mask.map
 
-        immax = np.average(dd[mm]) + 5 * np.std(dd[mm])
-        immin = np.average(dd[mm]) - 5 * np.std(dd[mm])
-        if immin < 0:
-            immin = 0
+        vavg = np.average(dd[mm])
+        vstd = np.std(dd[mm])
+        immax = vavg + 5*vstd
+        immin = vavg - 3*vstd
+        vv = np.max([0, np.nanmin(dd[mm])])
+        if immin < vv:
+            immin = vv
 
         if showMask and self.exp:
             self.ax.imshow(self.exp.mask.map, cmap="gray")

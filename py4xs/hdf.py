@@ -1172,9 +1172,11 @@ class h5xs():
         if detectors is None:
             detectors = self.detectors
             
-        if frn=="average" and client is None:
-            raise Exception("need a dask client for calculating the average.")
-            
+        if frn=="average":
+            if client is None:
+                raise Exception("need a dask client for calculating the average.")
+            import dask.array as da
+
         for det in detectors:
             try:
                 strn = find_field(self.fh5, self.det_name[det.extension], sn)

@@ -42,9 +42,10 @@ class Axes2dPlot:
              aspect='auto', xscale=1., yscale=1.):
 
         dd = np.asarray(self.d2.d, dtype=float)
+        mm = ~self.exp.mask.map
 
-        immax = np.average(dd) + 5 * np.std(dd)
-        immin = np.average(dd) - 5 * np.std(dd)
+        immax = np.average(dd[mm]) + 5 * np.std(dd[mm])
+        immin = np.average(dd[mm]) - 5 * np.std(dd[mm])
         if immin < 0:
             immin = 0
 

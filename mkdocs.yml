@@ -26,6 +26,7 @@ nav:
   - Grazing incidence: GID.ipynb
   - Data processing workflow: mapping.ipynb
 - LiX experiments: 
+  - Detector calibration: calib.ipynb
   - Static solution scattering: 'sol.md'
   - In-line SEC:  SEC.ipynb
   - Scanning mapping: 'scan.md'

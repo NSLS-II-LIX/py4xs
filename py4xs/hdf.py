@@ -544,6 +544,16 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)            
     
+    def report(self):
+        wl = self.detectors[0].exp_para.wavelength
+        ene = 2.*np.pi*1.973/wl
+        print(f"x-ray energy: {ene:.4f} keV [{wl:.4f} A] ")
+        for i,det in enumerate(self.detectors):
+            print(f"detector #{i}:")
+            print(f"    detector name: {det.extension}")        
+            print(f"    beam center: [{det.exp_para.bm_ctr_x:.1f}, {det.exp_para.bm_ctr_y:.1f}]")        
+            print(f"    sample-to-detector distance: {det.s2d_distance:.1f} mm")
+        
     def recalibrate(self, fn_std, energy=None, e_range=[5, 20], 
                     use_existing_poni=False, generate_mask=False, thresh=1000, mica_window=True,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,

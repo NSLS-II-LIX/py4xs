@@ -369,69 +369,38 @@ def proc_merge1d(args):
     return [sn, starting_frame_no, ret]
 
 def calib_detector(det, dstd, sn, wl, det_type, pxsize, 
-                   bkg, use_recalib, temp_file_location):
+                   bkg, temp_file_location, use_existing_poni=False):
     print(f"processing detector {det.extension} ...")    
     ep = det.exp_para
     ep.wavelength = wl
     uname = os.getenv("USER")
     data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
 
-    with h5py.File(dstd.fn, "r") as fh5:
-        dn = dstd.det_name[det.extension]
-        strn = find_field(fh5, dn, sn)
-        img = fh5[f"{sn}/{strn}/data/{dn}"][0]
+    if not use_existing_poni:
+        with h5py.File(dstd.fn, "r") as fh5:
+            dn = dstd.det_name[det.extension]
+            strn = find_field(fh5, dn, sn)
+            img = fh5[f"{sn}/{strn}/data/{dn}"][0]
+    
+            # this would work better if the detector geometry specification 
+            # can be more flexible for pyFAI-recalib 
+            if ep.flip: ## can only handle flip=1 right now
+                if ep.flip!=1: 
+                    raise Exception(f"don't know how to handle flip={ep.flip}.")
+                poni1 = pxsize*ep.bm_ctr_x
+                poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
+                dmask = np.fliplr(det.exp_para.mask.map.T)
+            else: 
+                poni1 = pxsize*ep.bm_ctr_y
+                poni2 = pxsize*ep.bm_ctr_x
+                dmask = det.exp_para.mask.map
+            if det.extension in bkg.keys():
+                img -= bkg[det.extension]
+            #fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+            fabio.cbfimage.CbfImage(data=img).write(data_file)
 
-        # this would work better if the detector geometry specification 
-        # can be more flexible for pyFAI-recalib 
-        if ep.flip: ## can only handle flip=1 right now
-            if ep.flip!=1: 
-                raise Exception(f"don't know how to handle flip={ep.flip}.")
-            poni1 = pxsize*ep.bm_ctr_x
-            poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
-            dmask = np.fliplr(det.exp_para.mask.map.T)
-        else: 
-            poni1 = pxsize*ep.bm_ctr_y
-            poni2 = pxsize*ep.bm_ctr_x
-            dmask = det.exp_para.mask.map
-        if det.extension in bkg.keys():
-            img -= bkg[det.extension]
-        #fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
-        fabio.cbfimage.CbfImage(data=img).write(data_file)
-
-        
-    if use_recalib:
-        # WARNING: pyFAI-recalib is obselete
-        poni_file = f"/tmp/{uname}{det.extension}.poni"
-        poni_file_text = ["poni_version: 2",
-                          f"Detector: {det_type[det.extension]}",
-                          "Detector_config: {}",
-                          f"Distance: {pxsize*ep.Dd}",
-                          f"Poni1: {poni1}", # y-axis
-                          f"Poni2: {poni2}", # x-axis
-                          "Rot1: 0.0", "Rot2: 0.0", "Rot3: 0.0",
-                          f"Wavelength: {ep.wavelength*1e-10:.4g}"]
-        fh = open(poni_file, "w")
-        fh.write("\n".join(poni_file_text))
-        fh.close()
-        #cmd = ["pyFAI-recalib", "-i", poni_file, 
-        #       "-c", "AgBh", "-r", "11", "--no-tilt", "--no-gui", "--no-interactive", data_file]
-        cmd = ["pyFAI-calib", "-i", poni_file, 
-               "-c", "AgBh", "--no-tilt", "--no-gui", "--no-interactive", data_file]
-        print(" ".join(cmd))
-        ret = run(cmd)
-        txt = ret.strip().split('\n')[-1]
-        #print(txt)
-        print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-        d,xc,yc = np.asarray(re.findall('\d+\.\d*', txt), dtype=float)[:3]
-        dr = d/(ep.Dd*pxsize)/1000  # d is in mm
-        ep.ratioDw *= dr
-        if ep.flip: ## can only handle flip=1 right now
-            ep.bm_ctr_x = yc
-            ep.bm_ctr_y = ep.ImageHeight-xc
-        else: 
-            ep.bm_ctr_y = yc
-            ep.bm_ctr_x = xc
-        print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    if use_existing_poni:
+        fp = use_existing_poni
     else:
         cmd = ["pyFAI-calib2",
                "-D", det_type[det.extension],
@@ -443,29 +412,28 @@ def calib_detector(det, dstd, sn, wl, det_type, pxsize,
         print(" ".join(cmd))
         fp = input("Then enter the path/name of the PONI file:")
 
-        with open(fp, "r") as fh:
-            lines = {}
-            for _ in fh.read().split("\n"):
-                tl = _.split(":")
-                if len(tl)==2:
-                    lines[tl[0]] = tl[1]
+    with open(fp, "r") as fh:
+        lines = {}
+        for _ in fh.read().split("\n"):
+            tl = _.split(":")
+            if len(tl)==2:
+                lines[tl[0]] = tl[1]
 
-        print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-        ep.Dd = float(lines['Distance'])/pxsize
-        D = ep.Dd/np.dot(np.dot(ep.rot_matrix, np.asarray([0, 0, 1.])), np.asarray([0, 0, 1.])) 
-        ep.ratioDw = D/(ep.ImageWidth)
-        #ep.ratioDw *= float(lines['Distance'])/(ep.Dd*pxsize)
-        xc = float(lines['Poni2'])/pxsize
-        yc = float(lines['Poni1'])/pxsize
-        if ep.flip: ## can only handle flip=1 right now
-            ep.bm_ctr_x = yc
-            ep.bm_ctr_y = ep.ImageHeight-xc
-        else: 
-            ep.bm_ctr_y = yc
-            ep.bm_ctr_x = xc
-        print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    ep.Dd = float(lines['Distance'])/pxsize
+    D = ep.Dd/np.dot(np.dot(ep.rot_matrix, np.asarray([0, 0, 1.])), np.asarray([0, 0, 1.])) 
+    ep.ratioDw = D/(ep.ImageWidth)
+    xc = float(lines['Poni2'])/pxsize
+    yc = float(lines['Poni1'])/pxsize
+    if ep.flip: ## can only handle flip=1 right now
+        ep.bm_ctr_x = yc
+        ep.bm_ctr_y = ep.ImageHeight-xc
+    else: 
+        ep.bm_ctr_y = yc
+        ep.bm_ctr_x = xc
+    print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+
     ep.init_coordinates()
-    #if det.extension is not "_SAXS":        
     
 def generate_mask_from_std(det, dstd, std_samples=None, template_map=None, thresh=1000, mica_window=True):
     """ some LiX-specific assumptions are made
@@ -576,8 +544,8 @@ class h5exp():
         self.fh5.close()
         return np.asarray(qgrid)            
     
-    def recalibrate(self, fn_std, energy=None,
-                    e_range=[5, 20], use_recalib=False, generate_mask=False, thresh=1000, mica_window=True,
+    def recalibrate(self, fn_std, energy=None, e_range=[5, 20], 
+                    use_existing_poni=False, generate_mask=False, thresh=1000, mica_window=True,
                     det_type={"_SAXS": "Pilatus1M", "_WAXS2": "Pilatus1M"}, pxsize=0.172e-3,
                     bkg={}, temp_file_location="/tmp"):
         """ fn_std should be a h5 file that contains standard pattern
@@ -592,12 +560,18 @@ class h5exp():
             if carbon data is present, will also adjust scaling between detectors
             
             use the specified energy (keV) if the value is valid
+
+            Make use of pyFAI for automatic calibration. The PONI files can be specified if existing.
+            
             detector type            
         """
         dstd = h5xs(fn_std, [self.detectors, self.qgrid]) 
         if energy is None:
             energy = dstd.header(dstd.samples[0])["energy"]["energy"]/1000
-
+        if use_existing_poni:
+            if len(use_existing_poni)!=len(self.detectors):
+                raise Exception(f"{use_existing_poni}: does not correspond to the {len(self.detectors)} detector(s) ...")
+        
         samples = {}
         samples["empty"] = []
         for sn in dstd.samples:
@@ -632,14 +606,19 @@ class h5exp():
                 dstd.detectors[i].exp_para.mask.map = bmap
                 self.detectors[i].exp_para.mask.map = bmap
             if calib:
+                if use_existing_poni:
+                    pf = use_existing_poni[i]
+                else:
+                    pf = False
                 calib_detector(self.detectors[i], dstd, samples['AgBH'], wl, det_type, pxsize, 
-                               bkg, use_recalib, temp_file_location)
+                               bkg, temp_file_location, pf)
         
         if "dark" in samples.keys():
             # this is over-simplifying, assuming SAXS and WAXS2 only
             # to be revised for more generic scenarios
             dstd.detectors[0].fix_scale = 1
             dstd.detectors[1].fix_scale = (self.detectors[0].s2d_distance/self.detectors[1].s2d_distance)**2
+            print("processing data ...")
             dstd.load_data()
             d1s = dstd.d1s[samples['carbon']]
             idx = (~np.isnan(d1s['_SAXS'][0].data))&(~np.isnan(d1s['_WAXS2'][0].data))
@@ -647,6 +626,7 @@ class h5exp():
             dstd.detectors[0].fix_scale = s1
             self.detectors[0].fix_scale = dstd.detectors[0].fix_scale
             self.detectors[1].fix_scale = dstd.detectors[1].fix_scale
+            print("re-processing data with updated scaling factor ...")
             dstd.load_data()
             
         self.save_detectors()

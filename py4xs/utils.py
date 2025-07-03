@@ -34,10 +34,29 @@ def auto_clim(v, logScale, ch_thresh=10):
     
     return clim
 
-def get_bin_ranges_from_grid(qgrid, prec=1e-5):
-    """ convert the given qgrid, which is composed of multiple evenly spaced segments, into a sereis 
-        of bin_ranges that can be used for histogramming
+def get_bin_ranges_from_grid(qgrid, tol=0.01):
+    """ break down non-uniform qgrid into multiple evenly spaced ranges 
+        [[[min1, max1], N1], [[min2, max2], N2], ...]
+        there will be a gap between neighonring ranges
     """
+    bin_range = []
+    while True:
+        qmin = qgrid[0]
+        dq = qgrid[1]-qgrid[0]
+        pq = qmin+dq*np.arange(len(qgrid))
+        N = len(qgrid[np.fabs(qgrid-pq)<dq*tol])
+        bin_range.append([[qmin-0.5*dq, qmin+(N-0.5)*dq], N])
+        if N==len(qgrid):
+            break
+        qgrid = qgrid[N:]
+        
+    return bin_range
+
+""" this is incorrect
+def get_bin_ranges_from_grid(qgrid, prec=1e-5):
+    ''' convert the given qgrid, which is composed of multiple evenly spaced segments, into a sereis 
+        of bin_ranges that can be used for histogramming
+    '''
     sc = int(1./prec)
     df = np.floor(np.diff(qgrid)*sc+0.5)
     df = np.append(df, df[-1])
@@ -49,6 +68,7 @@ def get_bin_ranges_from_grid(qgrid, prec=1e-5):
         bin_ranges.append([[llmt, hlmt],len(df[idx])])
     
     return bin_ranges
+"""
 
 def get_grid_from_bin_ranges(bin_ranges):
     """ construct a qgrid from the given bin_ranges, which should not overlap and have the format of 

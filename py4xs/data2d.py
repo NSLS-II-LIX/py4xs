@@ -445,12 +445,12 @@ class MatrixWithCoords:
         if yrange is None:
             yrange = [self.yc[0], self.yc[-1]]
         if direction=="x":
-            x0 = np.min([self.xc[0], self.xc[-1]])
-            x1 = np.max([self.xc[0], self.xc[-1]])
+            x0 = np.max([np.min([self.xc[0], self.xc[-1]]), np.min([xrange[0], xrange[1]])])
+            x1 = np.min([np.max([self.xc[0], self.xc[-1]]), np.max([xrange[0], xrange[1]])])
             cc = self.xc[(self.xc>=x0) & (self.xc<=x1)]
         elif direction=="y":
-            y0 = np.min([self.yc[0], self.yc[-1]])
-            y1 = np.max([self.yc[0], self.yc[-1]])
+            y0 = np.max([np.min([self.yc[0], self.yc[-1]]), np.min([yrange[0], yrange[1]])])
+            y1 = np.min([np.max([self.yc[0], self.yc[-1]]), np.max([yrange[0], yrange[1]])])
             cc = self.yc[(self.yc>=y0) & (self.yc<=y1)]
         else:
             raise exception(f"invalid direction: {direction}")

@@ -541,11 +541,20 @@ class MatrixWithCoords:
                 ret.err = self.err + dbkg.err*scale_factor
         
     def apply_symmetry(self):
-        """ this only applies if the y coordinate is angle and covers 360deg
+        """ apply centro-symmetry. this only applies for special cases:
+            1. q-phi maps whose angle and covers 360deg: shift angle by 180 then merge
+            2. qx-qy maps centered at (0,0): flip diagnally then merge
         """
         t = self.copy()
-        Np = int(len(self.yc)/2)
-        t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
+        if self.xc_label=='q' and self.xc_label=='phi':
+            Np = int(len(self.yc)/2)
+            t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
+        elif self.xc_label=='qx' and self.yc_label=='qy':
+            discrep = np.std(self.xc+np.flip(self.xc))/np.std(self.xc)
+            discrep +=  np.std(self.yc+np.flip(self.yc))/np.std(self.yc)
+            if discrep>1e-10:
+                raise Exception("cannot invert qx-qy map easily")
+            t.d = np.fliplr(np.flipud(self.d))
         return self.merge([t])
 
     def fill_gap(self, method="spline", param=0.05):

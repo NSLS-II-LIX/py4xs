@@ -318,11 +318,12 @@ class MatrixWithCoords:
         ret.err[idx] = np.nan
         return ret
 
-    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", nolabel=False, **kwargs):
+    def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", 
+             nolabel=False, noaxis=False, **kwargs):
         if ax is None:
             plt.figure()
             ax = plt.gca()
-
+    
         # need to fix the direction of y-axis; in HPLC y is q and increases downward; q-phi map is the opposite 
         xx = np.tile(self.xc, [len(self.yc),1])
         if sc_factor=="x":
@@ -345,16 +346,21 @@ class MatrixWithCoords:
             im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
         else:
             im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
-        if not nolabel:
+    
+        if noaxis:
+            ax.axis('off')
+            return 
+        elif nolabel:
+            ax.xaxis.set_visible(False)
+            ax.yaxis.set_visible(False)
+        else:
             ax.set_xlabel('ix', loc='left')
             ax.tick_params("y", rotation=90)
             ax.set_ylabel('iy', loc='top')
-        else:
-            ax.xaxis.set_visible(False)
-            ax.yaxis.set_visible(False)
+    
         ax.format_coord = self.format_coord
         
-        if aspect=='auto':
+        if aspect=='auto':  # causes errors when apsect is number; seems to be a well-known issue for matplotlib
             axx = ax.twiny()
             gpindex,gpvalues,gplabels = grid_labels(self.xc)
             axx.set_xticks(gpindex)
@@ -364,7 +370,7 @@ class MatrixWithCoords:
                     axx.set_xlabel(self.xc_label, loc='right')
             else:
                 axx.xaxis.set_visible(False)
-
+        
             axy = ax.twinx()
             gpindex,gpvalues,gplabels = grid_labels(self.yc)
             axy.set_yticks(gpindex)
@@ -374,7 +380,7 @@ class MatrixWithCoords:
                     axy.set_ylabel(self.yc_label, loc='bottom')
             else:
                 axy.yaxis.set_visible(False)
-
+    
             axy.format_coord = ax.format_coord #ax.format_coord #make_format(ax2, ax1)
         
         if colorbar:
@@ -382,7 +388,7 @@ class MatrixWithCoords:
         #plt.connect('button_press_event', self.mouse_press)
         #plt.connect('button_release_event', self.mouse_release)
         return im
-
+        
     def format_coord(self, x, y):
         ix = x
         iy = y-0.5   # based on the actual behavior of the plots
@@ -546,7 +552,7 @@ class MatrixWithCoords:
             2. qx-qy maps centered at (0,0): flip diagnally then merge
         """
         t = self.copy()
-        if self.xc_label=='q' and self.xc_label=='phi':
+        if self.xc_label=='q' and self.yc_label=='phi':
             Np = int(len(self.yc)/2)
             t.d = np.vstack([self.d[Np:,:], self.d[:Np,:]])
         elif self.xc_label=='qx' and self.yc_label=='qy':

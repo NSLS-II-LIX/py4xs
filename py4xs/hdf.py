@@ -679,6 +679,7 @@ def h5_file_access(method):
             ref.fh5 = h5py.File(ref.fn, "r", swmr=True)
         else:
             file_previously_open = True
+            #print("the h5 file is currently open!")
             
         try:
             ret = method(ref, *args, **kwargs)
@@ -955,7 +956,7 @@ class h5xs():
             return self.fh5[dpath][...]
     
     @h5_file_access  
-    def md_dict(self, sn, md_keys=[]):
+    def md_dict(self, sn=None, md_keys=[]):
         """ create the meta data to be recorded in ascii data files
             from the detector_config (attribute of the h5xs object) 
             and scan header (in the dataset attribute, value set when writting h5 using suitcase)
@@ -988,6 +989,9 @@ class h5xs():
             Sample injection volume (ml): 0.0750
         """    
         md = {}
+        if sn is None:
+            sn = list(self.fh5.keys())[0]
+        
         bshdr = json.loads(self.fh5[sn].attrs['start'])
         md["Instrument"] = bshdr['beamline_id']
         ts = time.localtime(bshdr['time'])
@@ -1030,7 +1034,9 @@ class h5xs():
         return md_str
     
     @h5_file_access  
-    def header(self, sn):
+    def header(self, sn=None):
+        if sn is None:
+            sn = list(self.fh5.keys())[0]
         if not sn in self.samples:
             raise Exception(f"{sn} is not a valid sample.")
         if "start" in self.fh5[sn].attrs:

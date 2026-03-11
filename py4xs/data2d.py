@@ -96,8 +96,13 @@ def histogram2d(x, y, range, bins, weights):
     #return fh.histogram2d(x, y, range=range, bins=bins, weights=weights)
 
 class MatrixWithCoords:
-    # 2D data with coordinates
-    
+    """
+    2D data with coordinates
+
+    some lingering issue with plotting
+    cannot really specify aspect ratio
+    also axis label and coordinate reporting when plotting
+    """
     def __init__(self):
         self.d = None
         self.xc = None
@@ -343,9 +348,9 @@ class MatrixWithCoords:
         if logScale:
             d = self.d
             d[d<=0] = np.nan
-            im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs)
+            im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), **kwargs)  # , origin="lower"
         else:
-            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
+            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, **kwargs)   # , origin="lower"
     
         if noaxis:
             ax.axis('off')
@@ -372,6 +377,8 @@ class MatrixWithCoords:
                 axx.xaxis.set_visible(False)
         
             axy = ax.twinx()
+            if self.yc[-1]<self.yc[0]:
+                axy.invert_yaxis()   # to be conssitent with imshow() origin on the top
             gpindex,gpvalues,gplabels = grid_labels(self.yc)
             axy.set_yticks(gpindex)
             if not nolabel:
@@ -397,14 +404,26 @@ class MatrixWithCoords:
         col = int(ix+0.5)
         row = int(iy+0.5)
         xc0 = self.xc[col] #np.interp(col, np.arange(len(self.xc)), self.xc)
-        yc0 = self.yc[row] #np.interp(row, np.arange(len(self.yc)), self.yc)
-        msg += f"{self.xc_label}={xc0:.{self.xc_prec}f}, {self.yc_label}={yc0:.{self.yc_prec}f}: "
+        #yc0 = self.yc[row] #np.interp(row, np.arange(len(self.yc)), self.yc)
+        if self.yc[0]>self.yc[-1]:
+            yc0 = np.flip(self.yc)[row]
+        else:
+            yc0 = self.yc[row]
+        msg += f"{self.xc_label}={xc0:.{self.xc_prec}g}, {self.yc_label}={yc0:.{self.yc_prec}g}: "
         
         if col>=0 and col<len(self.xc) and row>=0 and row<len(self.yc):
             val = self.d[row][col]
-            msg += f"{val:.2f}  "
+            msg += f"{val:.3g}  "
         return msg
-                
+
+    def COM(self):
+        """ return center of mass
+        """
+        xc = np.average(np.tile(self.xc, [len(self.yc),1]), weights=self.d)
+        yc = np.average(np.tile(np.flip(self.yc), [len(self.xc),1]).T, weights=self.d)
+
+        return xc,yc
+    
     def roi(self, x1, x2, y1, y2, mask=None):
         """ return a ROI within coordinates of x=x1~x2 and y=y1~y2 
         """
@@ -413,20 +432,23 @@ class MatrixWithCoords:
         
         xidx = (self.xc>=np.min([x1,x2])) & (self.xc<=np.max([x1,x2]))
         yidx = (self.yc>=np.min([y1,y2])) & (self.yc<=np.max([y1,y2]))
-        t1 = np.tile(xidx, [len(yidx),1])
-        t2 = np.tile(yidx, [len(xidx),1]).T
+        #t1 = np.tile(xidx, [len(yidx),1])
+        #t2 = np.tile(yidx, [len(xidx),1]).T 
 
         ret.xc = self.xc[xidx]
         ret.yc = self.yc[yidx]
         ret.xc_label = self.xc_label
         ret.yc_label = self.yc_label
-        ret.d = np.asarray(self.d[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
+        #ret.d = np.asarray(self.d[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
+        ret.d = self.d[np.flip(yidx), :][:, xidx]
         if self.err is not None:
-            ret.err = np.asarray(self.err[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
+            #ret.err = np.asarray(self.err[t1*t2].reshape((len(ret.yc),len(ret.xc))), dtype=float)
+            ret.err = self.err[np.flip(yidx), :][:, xidx]
         
         if mask is not None:
-            idx = mask.map[t1*t2].reshape((len(ret.yc),len(ret.xc)))
-            ret.d[idx] = np.nan
+            #mask1 = mask.map[t1*t2].reshape((len(ret.yc),len(ret.xc)))
+            mask1 = mask[np.flip(yidx), :][:, xidx]
+            ret.d[mask1] = np.nan
         
         return ret
 

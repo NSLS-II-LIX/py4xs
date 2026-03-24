@@ -780,7 +780,7 @@ class h5xs():
         for i in range(len(self.detectors)):
             ext = self.detectors[i].extension
             dn = det_model[ext]
-            if not re.match('pilatus[\s\w]+900k', dn, re.IGNORECASE):
+            if not re.match('pilatus[\\s\\w]+900k', dn, re.IGNORECASE):
                 continue
             
             img = self.get_d2(sn=sn, det_ext=ext, frn=frn, **kwargs).data.d

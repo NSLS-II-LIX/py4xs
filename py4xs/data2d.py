@@ -325,6 +325,8 @@ class MatrixWithCoords:
 
     def plot(self, ax=None, logScale=False, aspect='auto', colorbar=False, sc_factor=None, clim="auto", 
              nolabel=False, noaxis=False, **kwargs):
+        """ double check when reading coordinates from the plot
+        """
         if ax is None:
             plt.figure()
             ax = plt.gca()
@@ -348,9 +350,9 @@ class MatrixWithCoords:
         if logScale:
             d = self.d
             d[d<=0] = np.nan
-            im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), **kwargs)  # , origin="lower"
+            im = ax.imshow(np.log(d*sc_factor), aspect=aspect, clim=np.log(clim), origin="lower", **kwargs) 
         else:
-            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, **kwargs)   # , origin="lower"
+            im = ax.imshow(self.d*sc_factor, aspect=aspect, clim=clim, origin="lower", **kwargs)
     
         if noaxis:
             ax.axis('off')
@@ -367,6 +369,8 @@ class MatrixWithCoords:
         
         if aspect=='auto':  # causes errors when apsect is number; seems to be a well-known issue for matplotlib
             axx = ax.twiny()
+            if self.xc[-1]<self.xc[0]:
+                axx.invert_xaxis()   
             gpindex,gpvalues,gplabels = grid_labels(self.xc)
             axx.set_xticks(gpindex)
             if not nolabel:
@@ -378,7 +382,7 @@ class MatrixWithCoords:
         
             axy = ax.twinx()
             if self.yc[-1]<self.yc[0]:
-                axy.invert_yaxis()   # to be conssitent with imshow() origin on the top
+                axy.invert_yaxis()   
             gpindex,gpvalues,gplabels = grid_labels(self.yc)
             axy.set_yticks(gpindex)
             if not nolabel:
@@ -409,7 +413,7 @@ class MatrixWithCoords:
             yc0 = np.flip(self.yc)[row]
         else:
             yc0 = self.yc[row]
-        msg += f"{self.xc_label}={xc0:.{self.xc_prec}g}, {self.yc_label}={yc0:.{self.yc_prec}g}: "
+        msg += f"{self.xc_label}={xc0:.{self.xc_prec}f}, {self.yc_label}={yc0:.{self.yc_prec}f}: "
         
         if col>=0 and col<len(self.xc) and row>=0 and row<len(self.yc):
             val = self.d[row][col]

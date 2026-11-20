@@ -333,7 +333,9 @@ class MatrixWithCoords:
     
         # need to fix the direction of y-axis; in HPLC y is q and increases downward; q-phi map is the opposite 
         xx = np.tile(self.xc, [len(self.yc),1])
-        if sc_factor=="x":
+        if isinstance(sc_factor, (int, float)):
+            sc_factor = np.power(xx, sc_factor)  
+        elif sc_factor=="x":
             sc_factor = xx
         elif sc_factor=="x2":
             sc_factor = xx*xx

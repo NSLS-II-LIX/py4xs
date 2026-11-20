@@ -1,7 +1,11 @@
 import numpy as np
+import pylab as plt
 import matplotlib.colors as mc
 from functools import reduce
-import subprocess
+import subprocess,re,os
+
+import skimage.morphology as morph
+import skimage.filters as ft
 
 def auto_clim(v, logScale, ch_thresh=10):
     if logScale:
@@ -301,3 +305,258 @@ def run(cmd, path="", ignoreErrors=True, returnError=False, debug=False):
         return out.decode(),err.decode()
     else:
         return out.decode()
+
+def check_bm_center(dt, sn=None, det_ext='_SAXS', frn=0, 
+                    qs=0.005, qe=0.05, qn=100, Ns=9, **kwargs):
+    """ dt is an instance of h5xs
+        
+        this function compares the beam intensity on both sides of the beam center,
+        and advise if the beam center as defined in the detector configuration is incorrect
+        dividing data into 4*Ns slices, show data in horizontal and vertical cuts
+    """
+    i = 0
+    d2 = dt.get_d2(sn=sn, det_ext=det_ext, frn=frn, **kwargs)
+    qg = np.linspace(qs, qe, qn)
+    d2.conv_Iqphi(Nq=qg, Nphi=Ns*4, mask=d2.exp.mask)
+
+    dch1 = d2.qphi_data.d[i]
+    dch2 = d2.qphi_data.d[i+2*Ns]
+    dcv1 = d2.qphi_data.d[i+Ns]
+    dcv2 = d2.qphi_data.d[i+3*Ns]
+
+    sh0,dh0 = max_len(dch1, dch2, return_all=True)
+    ph0 = Schilling_p_value(qn, np.max(dh0))
+    sh1,dh1 = max_len(dch1[1:], dch2[:-1], return_all=True)
+    ph1 = Schilling_p_value(qn, np.max(dh1))
+    sh_1,dh_1 = max_len(dch1[:-1], dch2[1:], return_all=True)
+    ph_1 = Schilling_p_value(qn, np.max(dh_1))
+
+    print(f"horizontal cuts:")
+    print(f"p-values(C): {ph0:.4f} (as is), {ph1:.4f} (shift +1), {ph_1:.4f} (shift -1)")
+    fig = plt.figure(figsize=(6,3), constrained_layout=True)
+    #fig.subplots_adjust(bottom=0.3)
+    gs = fig.add_gridspec(2,2)
+
+    fig.add_subplot(gs[:, 0])
+    plt.semilogy(d2.qphi_data.xc, dch1)
+    plt.semilogy(d2.qphi_data.xc, dch2)        
+    
+    fig.add_subplot(gs[1, 1])
+    plt.bar(range(len(sh0)), (sh0*2-1)/3, bottom=0, width=1)
+    plt.bar(range(len(sh1)), (sh1*2-1)/3, bottom=1, width=1)
+    plt.bar(range(len(sh_1)), (sh_1*2-1)/3, bottom=-1, width=1)
+    plt.xlabel("point position")
+
+    fig.add_subplot(gs[0, 1])
+    maxb = 2.5+int(np.max(np.hstack((dh0,dh1,dh_1,[qn/3]))))
+    plt.hist(dh0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
+    plt.hist(dh1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
+    plt.hist(dh_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
+    plt.ylim(-1.2,1.8)
+    plt.xlabel("patch size")
+    
+    sv0,dv0 = max_len(dcv1, dcv2, return_all=True)
+    pv0 = Schilling_p_value(qn, np.max(dv0))
+    sv1,dv1 = max_len(dcv1[1:], dcv2[:-1], return_all=True)
+    pv1 = Schilling_p_value(qn, np.max(dv1))
+    sv_1,dv_1 = max_len(dcv1[:-1], dcv2[1:], return_all=True)
+    pv_1 = Schilling_p_value(qn, np.max(dv_1))
+
+    print(f"vertical cuts:")
+    print(f"p-values(C): {pv0:.4f} (as is), {pv1:.4f} (shift +1), {pv_1:.4f} (shift -1)")
+    fig = plt.figure(figsize=(6,3), constrained_layout=True)
+    #fig.subplots_adjust(bottom=0.3)
+    gs = fig.add_gridspec(2,2)
+
+    fig.add_subplot(gs[:, 0])
+    plt.semilogy(d2.qphi_data.xc, dcv1)
+    plt.semilogy(d2.qphi_data.xc, dcv2)        
+    
+    fig.add_subplot(gs[1, 1])
+    plt.bar(range(len(sv0)), (sv0*2-1)/3, bottom=0, width=1)
+    plt.bar(range(len(sv1)), (sv1*2-1)/3, bottom=1, width=1)
+    plt.bar(range(len(sv_1)), (sv_1*2-1)/3, bottom=-1, width=1)
+    plt.xlabel("point position")
+
+    fig.add_subplot(gs[0, 1])
+    maxb = 2.5+int(np.max(np.hstack((dv0,dv1,dv_1,[qn/3]))))
+    plt.hist(dv0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
+    plt.hist(dv1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
+    plt.hist(dv_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
+    plt.ylim(-1.2,1.8)
+    plt.xlabel("patch size")
+    
+    dq = d2.qphi_data.xc[1]-d2.qphi_data.xc[0]
+    X,Y = d2.exp.calc_from_QPhi(np.asarray([0., dq]), np.asarray([0., 0.]))
+    dx = np.sqrt((X[1]-X[0])**2+(Y[1]-Y[0])**2)
+    print(f"1 data point = {dx:.2f} pixels")
+    plt.show()
+    
+def gen_p900k_mask(img, radius=3, thresh=1.5):
+    modules = [[0,195,0,487], [0,195,493,981],
+               [212,407,0,487], [212,407,493,981],
+               [424,619,0,487], 
+               [636,831,0,487], [636,831,493,981],
+               [848,1043,0,487], [848,1043,493,981]]
+
+    msk1 = (img<0)
+    msk2 = (img<1)
+    for mm in modules:
+        img0 = img[mm[0]:mm[1], mm[2]:mm[3]]
+        img_s1 = ft.gaussian(img0, 1, preserve_range=True)
+        img_s2 = ft.gaussian(img0, radius, preserve_range=True)
+        img_d = img_s2-img_s1
+        msk = (img_d>np.sqrt(img_s1)*thresh)
+        msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
+        msk = (img_d<-np.sqrt(img_s1)*thresh)
+        msk2[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))  # used to be |= instead of =   
+    
+    msk1[424:619,493:981] = True
+    return msk1|msk2
+
+def auto_fix_WAXS_mask(dt, sn=None, frn=None, radius=3, replace=True, **kwargs):
+    """ this is meant to deal with the mica peaks that show up in WAXS patterns
+        currently can only deal with the LiX pilatus900K
+    """
+    for i in range(len(dt.detectors)):
+        ext = dt.detectors[i].extension
+        dn = det_model[ext]
+        if not re.match('pilatus[\\s\\w]+900k', dn, re.IGNORECASE):
+            continue
+        
+        img = dt.get_d2(sn=sn, det_ext=ext, frn=frn, **kwargs).data.d
+        msk0 = gen_p900k_mask(img, radius=radius)
+            
+        if replace:
+            dt.detectors[i].exp_para.mask.map = msk0
+        else:
+            dt.detectors[i].exp_para.mask.map |= msk0
+        dt.save_detectors()
+
+def calib_detector(det, dstd, sn, wl, det_type, pxsize, 
+                   bkg, temp_file_location, use_existing_poni=False):
+    print(f"processing detector {det.extension} ...")    
+    ep = det.exp_para
+    ep.wavelength = wl
+    uname = os.getenv("USER")
+    data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
+
+    if not use_existing_poni:
+        with h5py.File(dstd.fn, "r") as fh5:
+            dn = dstd.det_name[det.extension]
+            strn = find_field(fh5, dn, sn)
+            img = fh5[f"{sn}/{strn}/data/{dn}"][0]
+    
+            # this would work better if the detector geometry specification 
+            # can be more flexible for pyFAI-recalib 
+            if ep.flip: ## can only handle flip=1 right now
+                if ep.flip!=1: 
+                    raise Exception(f"don't know how to handle flip={ep.flip}.")
+                poni1 = pxsize*ep.bm_ctr_x
+                poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
+                dmask = np.fliplr(det.exp_para.mask.map.T)
+            else: 
+                poni1 = pxsize*ep.bm_ctr_y
+                poni2 = pxsize*ep.bm_ctr_x
+                dmask = det.exp_para.mask.map
+            if det.extension in bkg.keys():
+                img -= bkg[det.extension]
+            #fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
+            fabio.cbfimage.CbfImage(data=img).write(data_file)
+
+    if use_existing_poni:
+        fp = use_existing_poni
+    else:
+        cmd = ["pyFAI-calib2",
+               "-D", det_type[det.extension],
+               "-w", f"{ep.wavelength:.4f}", "--dist", f"{pxsize*ep.Dd:.5f}",
+               "--poni1", f"{poni1:.6f}", "--poni2", f"{poni2:.6f}", "--no-tilt",
+               "-c", "AgBh", data_file]
+        print("pyFAI-recalib is now obselete ...") 
+        print("Run this interactively:")
+        print(" ".join(cmd))
+        fp = input("Then enter the path/name of the PONI file:")
+
+    with open(fp, "r") as fh:
+        lines = {}
+        for _ in fh.read().split("\n"):
+            tl = _.split(":")
+            if len(tl)==2:
+                lines[tl[0]] = tl[1]
+
+    print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+    ep.Dd = float(lines['Distance'])/pxsize
+    D = ep.Dd/np.dot(np.dot(ep.rot_matrix, np.asarray([0, 0, 1.])), np.asarray([0, 0, 1.])) 
+    ep.ratioDw = D/(ep.ImageWidth)
+    xc = float(lines['Poni2'])/pxsize
+    yc = float(lines['Poni1'])/pxsize
+    if ep.flip: ## can only handle flip=1 right now
+        ep.bm_ctr_x = yc
+        ep.bm_ctr_y = ep.ImageHeight-xc
+    else: 
+        ep.bm_ctr_y = yc
+        ep.bm_ctr_x = xc
+    print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
+
+    ep.init_coordinates()
+    
+def generate_mask_from_std(det, dstd, std_samples=None, template_map=None, thresh=1000, mica_window=True):
+    """ some LiX-specific assumptions are made
+        all pixels with counts higher than the specified thresh value are discarded
+    """
+
+    if std_samples is None:
+        std_samples = {}
+        std_samples["empty"] = []
+        for sn in dstd.samples:
+            if re.search('AgBH', sn, re.IGNORECASE):
+                std_samples['AgBH'] = sn
+            elif re.search('empty', sn, re.IGNORECASE):
+                std_samples['empty'].append(sn)
+            elif re.search('dark', sn, re.IGNORECASE):
+                std_samples['dark'] = sn
+            elif re.search('carbon', sn, re.IGNORECASE):
+                std_samples['carbon'] = sn
+        
+        if not set(["dark", "carbon"]).issubset(std_samples.keys()) or len(std_samples["empty"])==0:
+            raise Exception(f"Not all required data are present for mask generation ...: {dstd_samples.keys()}")
+    
+    d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension, frn='sum').data.d
+    d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension, frn='sum').data.d
+    d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension, frn='sum').data.d for sn in std_samples['empty']], axis=0)
+    
+    hot_pix = (d2dark>10)
+    if "SAXS" in det.extension:
+        cstd = np.std(d2carbon[d2carbon<thresh])
+        cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
+        bb0 = (bb[:-1]+bb[1:])/2
+        carbon_thresh = np.average(bb0[cc<2*np.min(cc[cc>0])])
+
+        bs = (d2carbon<carbon_thresh) & (d2carbon>0)
+        bs = (morph.dilation(bs, morph.disk(2))>0)
+        extra = bs
+    else: # WAXS
+        d2empty1 = ft.gaussian(d2empty, 2)
+        # this may need another look; affected by mica peaks
+        cstd = np.std(d2empty1[d2empty1<thresh])
+        cc,bb = np.histogram(d2empty1.flatten(), bins=50, range=[cstd*0.1, cstd*10])
+        bb0 = (bb[:-1]+bb[1:])/2
+        cc0 = cc[-1]/2 
+        empty_thresh = np.average(bb0[cc>0.01*np.max(cc)])*3   # 1% of max should eliminate most air scattering
+        
+        mica_pks = (d2empty1>empty_thresh)
+        if mica_window:
+            extra = mica_pks
+        else:
+            extra = np.zeros_like(mica_pks)
+
+        # based on observation, 
+        # the bin with the lowest intensity also has the msot counts
+        # anything below should be dead pixels
+        cc1,bb1 = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
+                             range=[0, np.std(d2carbon)*0.1])
+        carbon_thresh = bb1[np.argmax(cc1[1:])]/5   # this scaling factor is sensitive         
+
+    dead_pix = (d2carbon<carbon_thresh)
+    return hot_pix|dead_pix|extra
+    

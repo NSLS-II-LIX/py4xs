@@ -10,7 +10,7 @@ import multiprocessing as mp
 import numbers
 
 from py4xs.slnxs import Data1d,average,filter_by_similarity,trans_mode,estimate_scaling_factor
-from py4xs.utils import common_name,max_len,Schilling_p_value
+from py4xs.utils import common_name
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.local import det_names,det_model,beamline_name,incident_monitor,transmitted_monitor
 from py4xs.data2d import Data2d,MatrixWithCoords,DataType
@@ -22,9 +22,8 @@ from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter
 from scipy.interpolate import UnivariateSpline as uspline
 from scipy.integrate import simpson
-import skimage.filters as ft
-import skimage.morphology as morph
 from functools import wraps
+from contextlib import contextmanager
 
 def lsh5(hd, prefix='', top_only=False, silent=False, print_attrs=True):
     """ list the content of a HDF5 file
@@ -368,160 +367,60 @@ def proc_merge1d(args):
 
     return [sn, starting_frame_no, ret]
 
-def calib_detector(det, dstd, sn, wl, det_type, pxsize, 
-                   bkg, temp_file_location, use_existing_poni=False):
-    print(f"processing detector {det.extension} ...")    
-    ep = det.exp_para
-    ep.wavelength = wl
-    uname = os.getenv("USER")
-    data_file = f"{temp_file_location}/{uname}{det.extension}.cbf"
 
-    if not use_existing_poni:
-        with h5py.File(dstd.fn, "r") as fh5:
-            dn = dstd.det_name[det.extension]
-            strn = find_field(fh5, dn, sn)
-            img = fh5[f"{sn}/{strn}/data/{dn}"][0]
-    
-            # this would work better if the detector geometry specification 
-            # can be more flexible for pyFAI-recalib 
-            if ep.flip: ## can only handle flip=1 right now
-                if ep.flip!=1: 
-                    raise Exception(f"don't know how to handle flip={ep.flip}.")
-                poni1 = pxsize*ep.bm_ctr_x
-                poni2 = pxsize*(ep.ImageHeight-ep.bm_ctr_y)
-                dmask = np.fliplr(det.exp_para.mask.map.T)
-            else: 
-                poni1 = pxsize*ep.bm_ctr_y
-                poni2 = pxsize*ep.bm_ctr_x
-                dmask = det.exp_para.mask.map
-            if det.extension in bkg.keys():
-                img -= bkg[det.extension]
-            #fabio.cbfimage.CbfImage(data=img*(~dmask)).write(data_file)
-            fabio.cbfimage.CbfImage(data=img).write(data_file)
-
-    if use_existing_poni:
-        fp = use_existing_poni
+def find_field(fh5, fieldName, sname):
+    tstream = {}
+    if isinstance(sname,str):
+        samples = [sname]
+    elif isinstance(sname,list):
+        samples = sname
     else:
-        cmd = ["pyFAI-calib2",
-               "-D", det_type[det.extension],
-               "-w", f"{ep.wavelength:.4f}", "--dist", f"{pxsize*ep.Dd:.5f}",
-               "--poni1", f"{poni1:.6f}", "--poni2", f"{poni2:.6f}", "--no-tilt",
-               "-c", "AgBh", data_file]
-        print("pyFAI-recalib is now obselete ...") 
-        print("Run this interactively:")
-        print(" ".join(cmd))
-        fp = input("Then enter the path/name of the PONI file:")
-
-    with open(fp, "r") as fh:
-        lines = {}
-        for _ in fh.read().split("\n"):
-            tl = _.split(":")
-            if len(tl)==2:
-                lines[tl[0]] = tl[1]
-
-    print(f"  Original ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-    ep.Dd = float(lines['Distance'])/pxsize
-    D = ep.Dd/np.dot(np.dot(ep.rot_matrix, np.asarray([0, 0, 1.])), np.asarray([0, 0, 1.])) 
-    ep.ratioDw = D/(ep.ImageWidth)
-    xc = float(lines['Poni2'])/pxsize
-    yc = float(lines['Poni1'])/pxsize
-    if ep.flip: ## can only handle flip=1 right now
-        ep.bm_ctr_x = yc
-        ep.bm_ctr_y = ep.ImageHeight-xc
-    else: 
-        ep.bm_ctr_y = yc
-        ep.bm_ctr_x = xc
-    print(f"   Revised ::: bm_ctr_x = {ep.bm_ctr_x:.2f}, bm_ctr_y = {ep.bm_ctr_y:.2f}, ratioDw = {ep.ratioDw:.3f}")
-
-    ep.init_coordinates()
+        raise Exception("sname must be a string or a list: ", sname)
+        
+    for sn in samples:
+        for stream in list(fh5[f"{sn}"]):
+            if not 'data' in list(fh5[f"{sn}/{stream}"]):
+                continue
+            if fieldName in list(fh5[f"{sn}/{stream}/data"]):
+                tstream[sn] = stream
+                break
+    if isinstance(sname,list):
+        return tstream
     
-def generate_mask_from_std(det, dstd, std_samples=None, template_map=None, thresh=1000, mica_window=True):
-    """ some LiX-specific assumptions are made
-        all pixels with counts higher than the specified thresh value are discarded
+    if len(tstream.keys())==0:
+        return None
+    return tstream[sname] 
+def get_d1s_from_grp(grp, qgrid, label=""):
+    """ 
+    read processed data from a h5 group
     """
-
-    if std_samples is None:
-        std_samples = {}
-        std_samples["empty"] = []
-        for sn in dstd.samples:
-            if re.search('AgBH', sn, re.IGNORECASE):
-                std_samples['AgBH'] = sn
-            elif re.search('empty', sn, re.IGNORECASE):
-                std_samples['empty'].append(sn)
-            elif re.search('dark', sn, re.IGNORECASE):
-                std_samples['dark'] = sn
-            elif re.search('carbon', sn, re.IGNORECASE):
-                std_samples['carbon'] = sn
-        
-        if not set(["dark", "carbon"]).issubset(std_samples.keys()) or len(std_samples["empty"])==0:
-            raise Exception(f"Not all required data are present for mask generation ...: {dstd_samples.keys()}")
+    d1s = {}
+    attrs = {}
     
-    d2dark = dstd.get_d2(sn=std_samples['dark'], det_ext=det.extension, frn='sum').data.d
-    d2carbon = dstd.get_d2(sn=std_samples['carbon'], det_ext=det.extension, frn='sum').data.d
-    d2empty = np.average([dstd.get_d2(sn=sn, det_ext=det.extension, frn='sum').data.d for sn in std_samples['empty']], axis=0)
-    
-    hot_pix = (d2dark>10)
-    if "SAXS" in det.extension:
-        cstd = np.std(d2carbon[d2carbon<thresh])
-        cc,bb = np.histogram(d2carbon.flatten(), bins=50, range=[cstd*0.05, cstd*2])
-        bb0 = (bb[:-1]+bb[1:])/2
-        carbon_thresh = np.average(bb0[cc<2*np.min(cc[cc>0])])
-
-        bs = (d2carbon<carbon_thresh) & (d2carbon>0)
-        bs = (morph.dilation(bs, morph.disk(2))>0)
-        extra = bs
-    else: # WAXS
-        d2empty1 = ft.gaussian(d2empty, 2)
-        # this may need another look; affected by mica peaks
-        cstd = np.std(d2empty1[d2empty1<thresh])
-        cc,bb = np.histogram(d2empty1.flatten(), bins=50, range=[cstd*0.1, cstd*10])
-        bb0 = (bb[:-1]+bb[1:])/2
-        cc0 = cc[-1]/2 
-        empty_thresh = np.average(bb0[cc>0.01*np.max(cc)])*3   # 1% of max should eliminate most air scattering
-        
-        mica_pks = (d2empty1>empty_thresh)
-        if mica_window:
-            extra = mica_pks
+    for k in list(grp.attrs.keys()):
+        attrs[k] = grp.attrs[k]   
+    # initially only handles 1d data
+    for k in list(grp.keys()):
+        if k=='attrs': # this is for saving self.d0s
+            continue
+        if 'trans' in grp[k].attrs.keys():
+            tvs = grp[k].attrs['trans']
         else:
-            extra = np.zeros_like(mica_pks)
+            tvs = 0
+        d1s[k] = unpack_d1(grp[k], qgrid, f"{label}-{k}", tvs)   
 
-        # based on observation, 
-        # the bin with the lowest intensity also has the msot counts
-        # anything below should be dead pixels
-        cc1,bb1 = np.histogram(d2carbon[hot_pix|extra==0].flatten(), bins=100, 
-                             range=[0, np.std(d2carbon)*0.1])
-        carbon_thresh = bb1[np.argmax(cc1[1:])]/5   # this scaling factor is sensitive         
+    return d1s,attrs
 
-    dead_pix = (d2carbon<carbon_thresh)
-    return hot_pix|dead_pix|extra
-    
-def gen_p900k_mask(img, radius=3, thresh=1.5):
-    modules = [[0,195,0,487], [0,195,493,981],
-               [212,407,0,487], [212,407,493,981],
-               [424,619,0,487], 
-               [636,831,0,487], [636,831,493,981],
-               [848,1043,0,487], [848,1043,493,981]]
+def err_callback(e):
+    print(f"an error has occured: {e}")
 
-    msk1 = (img<0)
-    msk2 = (img<1)
-    for mm in modules:
-        img0 = img[mm[0]:mm[1], mm[2]:mm[3]]
-        img_s1 = ft.gaussian(img0, 1, preserve_range=True)
-        img_s2 = ft.gaussian(img0, radius, preserve_range=True)
-        img_d = img_s2-img_s1
-        msk = (img_d>np.sqrt(img_s1)*thresh)
-        msk1[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))
-        msk = (img_d<-np.sqrt(img_s1)*thresh)
-        msk2[mm[0]:mm[1], mm[2]:mm[3]] = morph.dilation(msk, morph.disk(radius))  # used to be |= instead of =   
-    
-    msk1[424:619,493:981] = True
-    return msk1|msk2
 
 class h5exp():
     """ empty h5 file for exchanging exp_setup/qgrid
     """
     def __init__(self, fn, exp_setup=None):
         self.fn = fn
+        self.fh5 = None
         if exp_setup==None:     # assume the h5 file will provide the detector config
             self.qgrid = self.read_detectors()
         else:
@@ -529,19 +428,17 @@ class h5exp():
             self.save_detectors()  
         
     def save_detectors(self):
-        self.fh5 = h5py.File(self.fn, "w")   # new file
-        dets_attr = [det.pack_dict() for det in self.detectors]
-        self.fh5.attrs['detectors'] = json.dumps(dets_attr)
-        self.fh5.attrs['qgrid'] = list(self.qgrid)
-        self.fh5.flush()
-        self.fh5.close()
+        with h5py.File(self.fn, "r+") as fh5:
+            dets_attr = [det.pack_dict() for det in self.detectors]
+            fh5.attrs['detectors'] = json.dumps(dets_attr)
+            fh5.attrs['qgrid'] = list(self.qgrid)
         
     def read_detectors(self):
-        self.fh5 = h5py.File(self.fn, "r")   # file must exist
-        dets_attr = self.fh5.attrs['detectors']
-        qgrid = self.fh5.attrs['qgrid']
-        self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
-        self.fh5.close()
+        with h5py.File(self.fn, "r") as fh5:
+            dets_attr = fh5.attrs['detectors']
+            qgrid = fh5.attrs['qgrid']
+            self.detectors = [create_det_from_attrs(attrs) for attrs in json.loads(dets_attr)]  
+
         return np.asarray(qgrid)            
     
     def report(self):
@@ -642,81 +539,16 @@ class h5exp():
         self.save_detectors()
         dstd.save_detectors()
         
-
-def find_field(fh5, fieldName, sname):
-    tstream = {}
-    if isinstance(sname,str):
-        samples = [sname]
-    elif isinstance(sname,list):
-        samples = sname
-    else:
-        raise Exception("sname must be a string or a list: ", sname)
-        
-    for sn in samples:
-        for stream in list(fh5[f"{sn}"]):
-            if not 'data' in list(fh5[f"{sn}/{stream}"]):
-                continue
-            if fieldName in list(fh5[f"{sn}/{stream}/data"]):
-                tstream[sn] = stream
-                break
-    if isinstance(sname,list):
-        return tstream
-    
-    if len(tstream.keys())==0:
-        return None
-    return tstream[sname] 
-
-
-def h5_file_access(method):
-    """ run method, open the associated h5 file if not already open
-        leave the h5 file in its origional open/closed state
-    """
-    @wraps(method)
-    def inner(ref, *args, **kwargs):
-        
-        if not ref.fh5:
-            file_previously_open = False
-            ref.fh5 = h5py.File(ref.fn, "r", swmr=True)
-        else:
-            file_previously_open = True
-            #print("the h5 file is currently open!")
-            
-        try:
-            ret = method(ref, *args, **kwargs)
-            if not file_previously_open:  # leave the file open if it was initially open
-                ref.fh5.close()
-            return ret
-        except:
-            if ref.fh5 and not file_previously_open:
-                ref.fh5.close()
-            raise
-    
-    return inner
-
-
-def get_d1s_from_grp(grp, qgrid, label=""):
-    """ 
-    read processed data from a h5 group
-    """
-    d1s = {}
-    attrs = {}
-    
-    for k in list(grp.attrs.keys()):
-        attrs[k] = grp.attrs[k]   
-    # initially only handles 1d data
-    for k in list(grp.keys()):
-        if k=='attrs': # this is for saving self.d0s
-            continue
-        if 'trans' in grp[k].attrs.keys():
-            tvs = grp[k].attrs['trans']
-        else:
-            tvs = 0
-        d1s[k] = unpack_d1(grp[k], qgrid, f"{label}-{k}", tvs)   
-
-    return d1s,attrs
-
-def err_callback(e):
-    print(f"an error has occured: {e}")
+# h5_file_access() using _read() and _write(), suggested by OpenCode, Big Pickle
+def h5_file_access(method=None, *, write=False):
+    def decorate(fn):
+        @wraps(fn)
+        def inner(self, *args, **kwargs):
+            if write: 
+                with self._write(): return fn(self, *args, **kwargs)
+            with self._read():  return fn(self, *args, **kwargs)
+        return inner
+    return decorate if method is None else decorate(method)
 
 
 class h5xs():
@@ -749,48 +581,44 @@ class h5xs():
         self.transField = ''  
         self.transStream = {} 
         self.read_only = read_only
-        self.writable = False   # this is the current state of the h5 file
 
         self.fn = fn
         self.fh5 = None
-        #self.fh5 = h5py.File(fn, "r", swmr=True)   # file must exist; reopen for writing only when necessary
+        self._depth = 0
         self.save_d1 = save_d1
 
         self.setup(exp_setup, sn, transField, have_raw_data)
         
-    def explicit_open_h5(self, readonly=True):
-        if self.fh5:
-            print(f"{self.fn} file is already open.")
-        else:
-            if readonly:
-                self.fh5 = h5py.File(self.fn, "r")
-            else:
-                self.fh5 = h5py.File(self.fn, "r+")
-                
-    def explicit_close_h5(self):
-        if not self.fh5:
-            print(f"{self.fn} file is already closed.")
-        else:
-            self.fh5.close()
+    @contextmanager
+    def _read(self):
+        if self._depth == 0:
+            self.fh5 = h5py.File(self.fn, "r")
+        self._depth += 1
+        try:
+            yield self.fh5
+        finally:
+            self._depth -= 1
+            if self._depth == 0:
+                self.fh5.close()
+                self.fh5 = None            # <- explicit, not truthiness
     
-    def auto_fix_WAXS_mask(self, sn=None, frn=None, radius=3, replace=True, **kwargs):
-        """ this is meant to deal with the mica peaks that show up in WAXS patterns
-            currently can only deal with the LiX pilatus900K
-        """
-        for i in range(len(self.detectors)):
-            ext = self.detectors[i].extension
-            dn = det_model[ext]
-            if not re.match('pilatus[\\s\\w]+900k', dn, re.IGNORECASE):
-                continue
-            
-            img = self.get_d2(sn=sn, det_ext=ext, frn=frn, **kwargs).data.d
-            msk0 = gen_p900k_mask(img, radius=radius)
-                
-            if replace:
-                self.detectors[i].exp_para.mask.map = msk0
-            else:
-                self.detectors[i].exp_para.mask.map |= msk0
-            self.save_detectors()
+    @contextmanager
+    def _write(self):
+        assert not self.read_only
+        was_open, depth = self.fh5 is not None, self._depth
+        self._depth = 1
+        if was_open:                        # must release the read lock first
+            self.fh5.close()
+            self.fh5 = None
+        self.fh5 = h5py.File(self.fn, "r+")
+        try:
+            yield self.fh5
+        finally:
+            self.fh5.close()
+            self.fh5 = None
+            self._depth = depth
+            if was_open:
+                self.fh5 = h5py.File(self.fn, "r")
         
     @h5_file_access  
     def setup(self, exp_setup=None, sn=None, transField=transmitted_monitor, have_raw_data=True):
@@ -855,57 +683,21 @@ class h5xs():
                 self.transMode = trans_mode.external
 
             if not self.read_only:
-                self.enable_write(True)
-                self.fh5.attrs['trans'] = ','.join([str(self.transMode.value), self.transField])  #elf.transStream])
-                self.enable_write(False)
-                
-    def enable_write(self, writable, debug=False):
-        """ assuming the h5 file is already open, if currently not open for writting
-            reopen it with intent to write
-        """
-        if self.read_only:
-            if not writable:
-                return
-            raise Exception(f"attempting to enable writing to a read-only h5 file ...")
-        #if self.writable == writable:
-        if self.fh5.mode=="r+" and writable:
-            self.writable = True
-            return
-        elif self.fh5.mode=="r" and not writable:
-            self.writable = False
-            return
-        if debug:
-            print(f"closing fh5: {self.fh5}")
-        self.fh5.close()
-        del self.fh5
-        self.fh5 = None
-
-        if writable:
-            if debug:
-                print(f"reopening the file for writing: {self.fn}")
-            self.fh5 = h5py.File(self.fn, "r+")
-            #self.fh5.swmr_mode = True
-        else:
-            if debug:
-                print(f"reopening the file for read-only: {self.fn}")
-            self.fh5 = h5py.File(self.fn, "r", swmr=True)
-        self.writable = writable
-    
+                self.set_h5_attr('trans', ','.join([str(self.transMode.value), self.transField]))
+                    
     def det(self, ext):
         for d in self.detectors:
             if d.extension==ext:
                 return d
         return None
     
-    @h5_file_access  
+    @h5_file_access(write=True)  
     def save_detectors(self):
         if self.read_only:
             return
-        self.enable_write(True)
         dets_attr = [det.pack_dict() for det in self.detectors]
         self.fh5.attrs['detectors'] = json.dumps(dets_attr)
         self.fh5.attrs['qgrid'] = list(self.qgrid)
-        self.enable_write(False)
     
     @h5_file_access  
     def read_detectors(self):
@@ -918,11 +710,9 @@ class h5xs():
     def get_h5_attr(self, grp, attr_name):
         return self.fh5[grp].attrs[attr_name]
 
-    @h5_file_access
+    @h5_file_access(write=True)
     def set_h5_attr(self, grp, attr_name, value):
-        self.enable_write(True)
         self.fh5[grp].attrs[attr_name] = value
-        self.enable_write(False)
         
     @h5_file_access
     def dshape(self, dsname, data_type="data", sn=None):
@@ -936,7 +726,7 @@ class h5xs():
         return self.fh5[dpath].shape
     
     @h5_file_access
-    def dset(self, dsname, data_type="data", sn=None, get_path=False, return_reference=True, debug=False):
+    def dset(self, dsname, data_type="data", sn=None, get_path=False, debug=False):
         if sn is None:
             sn = self.samples[0]
         if data_type in ["data", "timestamps"]:
@@ -950,12 +740,9 @@ class h5xs():
         
         if get_path:
             return dpath
-        if return_reference:
-            return self.fh5[dpath]   # just return a reference  
-        else:
-            return self.fh5[dpath][...]
+        return self.fh5[dpath][...]
     
-    @h5_file_access  
+    @h5_file_access 
     def md_dict(self, sn=None, md_keys=[]):
         """ create the meta data to be recorded in ascii data files
             from the detector_config (attribute of the h5xs object) 
@@ -1062,15 +849,13 @@ class h5xs():
         if not quiet:
             print(self.samples)
 
-    @h5_file_access  
+    @h5_file_access(write=True)  
     def remove_links(self):
-        self.enable_write(True)
         for sn in self.linked_grps:
             del self.fh5[sn]
-        self.enable_write(False)        
         self.list_samples(quiet=True)
         
-    @h5_file_access  
+    @h5_file_access(write=True)  
     def link_file(self, fn, samples=None):
         """ 
         this might be useful when the buffer in the same holder does not work the best
@@ -1080,8 +865,6 @@ class h5xs():
         if samples is specified, link only the specified samples
         """
         
-        self.enable_write(True)
-
         with h5py.File(fn, "r+") as fh5:
             # check for redundant sample names
             new_samples = list(fh5.keys())
@@ -1101,7 +884,6 @@ class h5xs():
                 for sn in new_samples:
                     self.fh5[f'{sn}'] = h5py.ExternalLink(f"./{fn}", sn) #SoftLink(fh5[sn])
     
-        self.enable_write(False)
         self.list_samples(quiet=True)
     
     @h5_file_access  
@@ -1198,90 +980,6 @@ class h5xs():
         else:
             return d2s[det_ext]
                 
-    def check_bm_center(self, sn=None, det_ext='_SAXS', frn=0, 
-                        qs=0.005, qe=0.05, qn=100, Ns=9, **kwargs):
-        """ this function compares the beam intensity on both sides of the beam center,
-            and advise if the beam center as defined in the detector configuration is incorrect
-            dividing data into 4*Ns slices, show data in horizontal and vertical cuts
-        """
-        i = 0
-        d2 = self.get_d2(sn=sn, det_ext=det_ext, frn=frn, **kwargs)
-        qg = np.linspace(qs, qe, qn)
-        d2.conv_Iqphi(Nq=qg, Nphi=Ns*4, mask=d2.exp.mask)
-
-        dch1 = d2.qphi_data.d[i]
-        dch2 = d2.qphi_data.d[i+2*Ns]
-        dcv1 = d2.qphi_data.d[i+Ns]
-        dcv2 = d2.qphi_data.d[i+3*Ns]
-
-        sh0,dh0 = max_len(dch1, dch2, return_all=True)
-        ph0 = Schilling_p_value(qn, np.max(dh0))
-        sh1,dh1 = max_len(dch1[1:], dch2[:-1], return_all=True)
-        ph1 = Schilling_p_value(qn, np.max(dh1))
-        sh_1,dh_1 = max_len(dch1[:-1], dch2[1:], return_all=True)
-        ph_1 = Schilling_p_value(qn, np.max(dh_1))
-
-        print(f"horizontal cuts:")
-        print(f"p-values(C): {ph0:.4f} (as is), {ph1:.4f} (shift +1), {ph_1:.4f} (shift -1)")
-        fig = plt.figure(figsize=(6,3), constrained_layout=True)
-        #fig.subplots_adjust(bottom=0.3)
-        gs = fig.add_gridspec(2,2)
-
-        fig.add_subplot(gs[:, 0])
-        plt.semilogy(d2.qphi_data.xc, dch1)
-        plt.semilogy(d2.qphi_data.xc, dch2)        
-        
-        fig.add_subplot(gs[1, 1])
-        plt.bar(range(len(sh0)), (sh0*2-1)/3, bottom=0, width=1)
-        plt.bar(range(len(sh1)), (sh1*2-1)/3, bottom=1, width=1)
-        plt.bar(range(len(sh_1)), (sh_1*2-1)/3, bottom=-1, width=1)
-        plt.xlabel("point position")
-
-        fig.add_subplot(gs[0, 1])
-        maxb = 2.5+int(np.max(np.hstack((dh0,dh1,dh_1,[qn/3]))))
-        plt.hist(dh0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
-        plt.hist(dh1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
-        plt.hist(dh_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
-        plt.ylim(-1.2,1.8)
-        plt.xlabel("patch size")
-        
-        sv0,dv0 = max_len(dcv1, dcv2, return_all=True)
-        pv0 = Schilling_p_value(qn, np.max(dv0))
-        sv1,dv1 = max_len(dcv1[1:], dcv2[:-1], return_all=True)
-        pv1 = Schilling_p_value(qn, np.max(dv1))
-        sv_1,dv_1 = max_len(dcv1[:-1], dcv2[1:], return_all=True)
-        pv_1 = Schilling_p_value(qn, np.max(dv_1))
-
-        print(f"vertical cuts:")
-        print(f"p-values(C): {pv0:.4f} (as is), {pv1:.4f} (shift +1), {pv_1:.4f} (shift -1)")
-        fig = plt.figure(figsize=(6,3), constrained_layout=True)
-        #fig.subplots_adjust(bottom=0.3)
-        gs = fig.add_gridspec(2,2)
-
-        fig.add_subplot(gs[:, 0])
-        plt.semilogy(d2.qphi_data.xc, dcv1)
-        plt.semilogy(d2.qphi_data.xc, dcv2)        
-        
-        fig.add_subplot(gs[1, 1])
-        plt.bar(range(len(sv0)), (sv0*2-1)/3, bottom=0, width=1)
-        plt.bar(range(len(sv1)), (sv1*2-1)/3, bottom=1, width=1)
-        plt.bar(range(len(sv_1)), (sv_1*2-1)/3, bottom=-1, width=1)
-        plt.xlabel("point position")
-
-        fig.add_subplot(gs[0, 1])
-        maxb = 2.5+int(np.max(np.hstack((dv0,dv1,dv_1,[qn/3]))))
-        plt.hist(dv0, bins=np.arange(0.5, maxb, 1), bottom=0, density=True)
-        plt.hist(dv1, bins=np.arange(0.5, maxb, 1), bottom=1, density=True)
-        plt.hist(dv_1, bins=np.arange(0.5, maxb, 1), bottom=-1, density=True)
-        plt.ylim(-1.2,1.8)
-        plt.xlabel("patch size")
-        
-        dq = d2.qphi_data.xc[1]-d2.qphi_data.xc[0]
-        X,Y = d2.exp.calc_from_QPhi(np.asarray([0., dq]), np.asarray([0., 0.]))
-        dx = np.sqrt((X[1]-X[0])**2+(Y[1]-Y[0])**2)
-        print(f"1 data point = {dx:.2f} pixels")
-        plt.show()
-        
     def show_data(self, sn=None, det_ext=None, frn=None, ax=None, fig=None, aspect=1,
                   norm='log', showMask=False, mask_alpha=0.1, clim='auto', ch_thresh=15,
                   showRef=["AgBH", "r:"], cmap=None, detectors=None, dtype=None, **kwargs):
@@ -1378,7 +1076,7 @@ class h5xs():
                 exp = bscfg[dn]['data'][f"{dn}_cam_acquire_time"]
         return exp
     
-    @h5_file_access  
+    @h5_file_access 
     def get_mon(self, sn=None, trigger=None, gf_sigma=2, exp=1, check_size=0,
                 force_synch='auto', 
                 force_synch_trig={'em1': 'auto', 'em2': 'auto'},
@@ -1554,7 +1252,7 @@ class h5xs():
         self.save_d1s()
 
                 
-    @h5_file_access  
+    @h5_file_access 
     def load_d1s(self, sn=None, read_attrs=[]):
         """ load the processed 1d data saved in the hdf5 file into memory 
             for each sample
@@ -1597,7 +1295,7 @@ class h5xs():
             for k in list(grp.attrs.keys()):
                 self.d0s[sn][k] = grp.attrs[k]
 
-    @h5_file_access  
+    @h5_file_access(write=True)  
     def save_d1s(self, sn=None, skip_d0s=True, debug=False):
         """
         save the 1d data in memory to the hdf5 file 
@@ -1619,7 +1317,6 @@ class h5xs():
         else:
             sns = [sn]
         
-        self.enable_write(True, debug=debug)
         for sn in sns:
             if "processed" not in list(self.fh5[sn].keys()):
                 grp = self.fh5[sn].create_group("processed")
@@ -1662,7 +1359,6 @@ class h5xs():
                             print(f"writing attribute to {sn}/processed: {k}")
                         grp.attrs[k] = self.d0s[sn][k]   
                 
-        self.enable_write(False, debug=debug)
 
     def average_d1s(self, samples=None, update_only=False, selection=None, max_distance=50,
                     filter_data=False, debug=False):
@@ -1850,7 +1546,8 @@ class h5xs():
         fh5 = self.fh5
         self.list_samples(quiet=True)
         results = {}
-        pool = mp.Pool(N)
+        if N>1:
+            pool = mp.Pool(N)
         jobs = []
         
         if samples is None:
